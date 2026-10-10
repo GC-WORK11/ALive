@@ -26,18 +26,22 @@
 <!-- screens mount here: exactly one visible at a time -->
 <main id="screens"></main>
 
-<!-- the consent layer — above everything until answered -->
+<!-- the consent layer — above everything until answered. the markup
+     inside this div is the home lane's; everything outside it is not. -->
 <div id="consent" hidden>
-  <div class="consent-card">
-    <div class="consent-dot"></div>
-    <h1>your location, on your device</h1>
-    <p>Alive reads the environment around the point you share — that's the whole trick.
-    Your position never leaves this browser: the server only ever sees anonymous,
-    rounded cells. No account, no tracking.</p>
+  <div class="consent-card" role="dialog" aria-modal="true" aria-labelledby="consent-h">
+    <div class="consent-glyph" aria-hidden="true"><i></i></div>
+    <h1 id="consent-h">your location stays on your device</h1>
+    <p class="consent-copy">alive reads the air around one point — yours, or one you
+    drop on the map. that point is only ever used to read the environment around
+    it: it stays in this browser, nothing is tracked, and there is no account.</p>
+    <p class="consent-note" hidden>the browser is blocking location for this site —
+    drop a point instead, it works exactly the same.</p>
     <div class="consent-actions">
       <button id="consent-yes" type="button" class="btn-primary">share my location</button>
-      <button id="consent-skip" type="button" class="btn-ghost">pick a place on the map instead</button>
+      <button id="consent-skip" type="button" class="btn-ghost">drop a point on the map</button>
     </div>
+    <div class="consent-fine">you can change this anytime — the chip up top reopens this</div>
   </div>
 </div>
 
