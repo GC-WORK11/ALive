@@ -67,3 +67,10 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Landing: live-preview iframe now embeds REAL /app (was scripted /static/sim) + explicit "open the app" link (e045c3c, :254).
 - Rival fleet: coordinator idle, ZERO pushes to origin (no GC-WORK11 creds) — harmless.
 - Deploys: :250 da798351, :251 758d5f4c, :252 6e81401c, :253 c686c561, :254 e045c3c2, :255 3a0c69f1.
+
+## 2026-10-10 ~18:45 UTC — wave-2 fully closed + next-wave items
+- Mobile viewport (400x911) verified on prod: home bottom-sheet card + doors, whereto full-width sheet + options — responsive correct.
+- Launch copy committed: docs/launch-copy.md (8-post X thread + 60s web demo script).
+- Mobile deliverables confirmed from earlier waves: alive-ef758f9-arm64.apk (v9, verified) + iOS reports/shots in docs/lanes/ios-*.
+- Admin gate verified on prod (engine room, token-gated, obscure mount).
+- Pending user approvals: blueprint suggestion (aws-cli venv), alive-webapp-prod-testing SKILL.md. Credential rotation reminder still standing.
