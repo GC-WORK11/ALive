@@ -544,7 +544,7 @@ html.ilock,html.ilock body{overflow:hidden;height:100%;overscroll-behavior:none}
         <div class="simfit" id="simfit">
           <div class="dev simdev" id="simdev">
             <div class="dscr">
-              <iframe id="simFrame" src="/static/sim/index.html" title="Alive — live preview" loading="lazy"></iframe>
+              <iframe id="simFrame" src="/app/" title="Alive — live preview" loading="lazy" allow="geolocation"></iframe>
               <div class="simnote" id="simNote" hidden>the live preview is being assembled —<br>check back shortly.</div>
             </div>
           </div>
@@ -559,6 +559,7 @@ html.ilock,html.ilock body{overflow:hidden;height:100%;overscroll-behavior:none}
         <button class="openbtn" id="simOpen" type="button">open the live preview</button>
       </div>
       <div class="thint">Click to use — the app, running live</div>
+      <a class="openbtn" href="/app/" style="display:block;text-align:center;text-decoration:none;margin-top:8px">open the app →</a>
     </div>
   </div>
 </section>
@@ -1075,7 +1076,7 @@ else{
    desktop: the same ghost phone, iframe lazy-mounted near the viewport.
    phones: a poster + a fullscreen takeover. the slot exists whether or
    not the sim build has landed — a quiet note stands in if it hasn't. */
-const simURL='/static/sim/index.html';
+const simURL='/app/';
 let simOk=null;
 async function simProbe(){
   if(simOk!=null)return simOk;
@@ -1115,7 +1116,7 @@ if($('#tshell'))new IntersectionObserver((es,o)=>{
    open, and rebuilt when it closes */
 const tdev=$('#tdev'),mdev=$('#mdev'),mnote=$('#mnote');
 let mframe=null,ovf=null;
-function mkSim(){const f=document.createElement('iframe');f.src=simURL;f.title='Alive — live preview';
+function mkSim(){const f=document.createElement('iframe');f.src=simURL;f.title='Alive — live preview';f.allow='geolocation';
   f.addEventListener('load',()=>{if(S.lastCity)pushCityToSims(S.lastCity)});return f}
 function mountMobile(){
   if(mframe||!mdev)return;
