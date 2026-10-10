@@ -1,0 +1,523 @@
+/** Live-trip chrome (doc 02 §S6): next-turn card, off-route pill,
+ * the two live counters (smoke you breathe / smoke your ride puts out)
+ * as one bottom instrument cluster + an ETA/distance-left footer.
+ *
+ * Consumes useNavEngine output via the optional `nav` prop; without it
+ * the legacy props (option/steps/doseUg) still render a working chrome
+ * so the pre-integration call site keeps compiling. Bands stay intact
+ * in `nav` — the counters render the mid with "≈" per copy rules, and
+ * the lo→hi spread shows as a thin band bar + a small range label under
+ * each value. Maneuver arrows come from the shared set (icons.tsx —
+ * Material Symbols turn/merge/ramp geometry). */
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { NUM, V2Elev, V2Radius, V2T, V2Type, cigOf, fam, famMonoText } from "../../theme";
+import { DYNAMIC_TYPE, useReduceMotion } from "../../a11y";
+import { Icon, vehicleGlyph, type Glyph } from "../../icons";
+import { approx, clockLabel, doseUgRound, t, type Lang } from "../../i18n/strings";
+import { confirm, tap } from "../../haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { Band } from "../../nav/strip";
+import { localizeStep } from "../../nav/instructions";
+import { isTransit } from "./types";
+import type { CompareOption, Step } from "./types";
+import { bump, jank } from "../../perf";
+
+/** The slice of the engine the chrome needs (subset of useNavEngine's
+ *  return — pass the whole object, it satisfies this shape). */
+export type NavView = {
+  dose: Band;            // µg inhaled
+  co2: Band;             // kg put out
+  pm25?: Band;           // g put out (banner detail only)
+  etaS: number;
+  distRemainingM: number;
+  offRoute: boolean;
+  stripOk?: boolean;       // false → /v2/strip failed, counters frozen
+  outsideField?: boolean;  // true once reroute answers 'outside_service_area'
+  running?: boolean;
+  progress?: number;       // 0..1 along-route → cluster hairline
+  nextStep?: {
+    instruction: string;
+    distM: number;                          // metres to the maneuver
+    type?: string | null;                   // OSRM/transit type if carried
+    modifier?: string | null;               // e.g. "slight left"
+  } | null;
+  snapped?: [number, number] | null;
+  gapActive?: boolean;    // fixes gone right now — meters paused pill
+  pausedS?: number;       // cumulative paused seconds → meta suffix
+};
+
+/* arrival wall-time in the app's one clock convention — 12h,
+   '4:42 pm', the same form the ledger/receipt surfaces print */
+const clock = (etaS: number, lang: Lang) =>
+  clockLabel(Date.now() + Math.max(0, etaS) * 1000, lang);
+
+/** Trip-remaining distance as a plain number string — the template
+ *  carries the unit. km at 1dp ≥950 m; below that it reads metres
+ *  (a bare "0.35 km" is a decimal nobody reads mid-trip). */
+const kmNum = (m: number) =>
+  (m / 1000).toFixed(1);
+const leftIsKm = (m: number) => m >= 950;
+const leftMNum = (m: number) => Math.max(10, Math.round(m / 10) * 10);
+
+/** Distance to the next maneuver — "350 m" / "1.2 km". */
+const distToStr = (m: number, lang: Lang) =>
+  m >= 950
+    ? `${(m / 1000).toFixed(1)} ${t("unitsKm", lang)}`
+    : `${Math.max(10, Math.round(m / 10) * 10)} ${t("unitsM", lang)}`;
+
+/* ------------------------------------------------------------------ */
+/* maneuver glyph                                                      */
+/* ------------------------------------------------------------------ */
+
+type Maneuver =
+  | "left" | "right" | "slightLeft" | "slightRight" | "uturn"
+  | "roundabout" | "merge" | "exit" | "straight"
+  | "arrive" | "walk" | "transit" | "mode";
+
+/** Steps carry only an English instruction sentence (+ optional OSRM
+ *  type/modifier when a payload inlines them). Map words → maneuver.
+ *  Server vocabulary (server/v2/deps.py): "Turn/Bear/Keep left|right …",
+ *  "Make a U-turn", "At the roundabout, take the Nth exit", "Take the
+ *  ramp/exit", "Merge", "Continue …", "Head out", "You'll arrive",
+ *  transit legs "Take {line} …" / "Walk to …". */
+function maneuverOf(
+  instruction: string,
+  type?: string | null,
+  modifier?: string | null,
+): Maneuver {
+  const ty = (type ?? "").toLowerCase();
+  const mod = (modifier ?? "").toLowerCase();
+  const s = (instruction || "").toLowerCase();
+
+  if (mod.includes("uturn") || ty === "uturn" || s.includes("u-turn")) return "uturn";
+  if (ty === "arrive") return "arrive";
+  if (ty === "roundabout" || ty === "rotary" || s.includes("roundabout")) return "roundabout";
+  if (ty === "merge" || s.includes("merge")) return "merge";
+  if (ty === "metro" || ty === "bus" || ty === "tram" || ty === "train") return "transit";
+  if (ty === "walk" || ty === "transfer") return "walk";
+  if (ty === "fork") {
+    return mod.includes("left") ? "slightLeft" : mod.includes("right") ? "slightRight" : "straight";
+  }
+  if (mod) {
+    if (mod.includes("left")) return mod.startsWith("slight") ? "slightLeft" : "left";
+    if (mod.includes("right")) return mod.startsWith("slight") ? "slightRight" : "right";
+    if (mod.includes("straight")) return "straight";
+  }
+  if (s.includes("arrive") || s.includes("destination")) return "arrive";
+  if (s.includes("ramp") || s.includes("exit")) return "exit";
+  if (s.includes("left")) {
+    return s.includes("bear") || s.includes("keep") || s.includes("slight") ? "slightLeft" : "left";
+  }
+  if (s.includes("right")) {
+    return s.includes("bear") || s.includes("keep") || s.includes("slight") ? "slightRight" : "right";
+  }
+  if (s.includes("walk")) return "walk";
+  if (s.includes("metro") || s.includes("board") || s.includes("take the") || s.includes("take a")) {
+    return "transit";
+  }
+  return "straight"; // head out / continue / unknown
+}
+
+/** Big glanceable maneuver glyph — every arrow comes from the shared set
+ *  (Material Symbols turn/merge/ramp geometry), so nav directions and the
+ *  rest of the chrome speak one icon language. */
+const MANEUVER_GLYPH: Record<Exclude<Maneuver, "arrive" | "walk" | "transit" | "mode">, Glyph> = {
+  left: "turnL",
+  right: "turnR",
+  slightLeft: "slightL",
+  slightRight: "slightR",
+  uturn: "uturn",
+  roundabout: "roundabout",
+  merge: "mergeDir",
+  exit: "ramp",
+  straight: "arrowUp",
+};
+
+function ManeuverIcon({ m, mode, size = 30, onInk = false }: {
+  m: Maneuver; mode?: string; size?: number; onInk?: boolean;
+}) {
+  const fg = onInk ? V2T.bg : V2T.text;
+  if (m === "arrive") return <Icon name="pin" color={onInk ? "#E8B8A8" : V2T.pinDest} size={size - 2} filled />;
+  if (m === "walk") return <Icon name="walk" color={fg} size={size} />;
+  if (m === "transit" || m === "mode") {
+    return <Icon name={vehicleGlyph(mode ?? "")} color={fg} size={size} />;
+  }
+  return <Icon name={MANEUVER_GLYPH[m]} color={fg} size={size} />;
+}
+
+/* ------------------------------------------------------------------ */
+/* counter cell — one channel of the instrument                        */
+/* ------------------------------------------------------------------ */
+
+type BandViz = { lo: number; mid: number; hi: number; text: string };
+
+function CounterCell({
+  icon, tint, label, value, band, dim, lang,
+}: {
+  icon: Glyph; tint: string; label: string; value: string;
+  band: BandViz | null; dim?: boolean; lang: Lang;
+}) {
+  const span = band && band.hi > 0 ? band.hi : 0;
+  const pct = (v: number) => (span > 0 ? Math.min(100, Math.max(0, (v / span) * 100)) : 0);
+  return (
+    <View style={[s.cell, dim && s.cellDim]}>
+      <View style={s.cellHead}>
+        <Icon name={icon} color={tint} size={14} />
+        {/* long captions ("smoke your ride puts out") must shrink to fit,
+            not ellipsize — 'PUTS…' read broken on 1080px (forensic find) */}
+        <Text {...DYNAMIC_TYPE} style={[s.cellLbl, { fontFamily: fam(lang, "med") }]}
+          numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
+          {label}
+        </Text>
+      </View>
+      <Text {...DYNAMIC_TYPE} style={[s.cellVal, NUM, { fontFamily: famMonoText(lang, "med") }]} numberOfLines={1}>
+        {value}
+      </Text>
+      {band && span > 0 && (
+        <View style={s.bandTrack} accessible={false} importantForAccessibility="no">
+          {/* lo→hi as a slice of the band's own scale, mid tick on top */}
+          <View style={[
+            s.bandSeg,
+            { left: `${pct(band.lo)}%`, width: `${Math.max(3, pct(band.hi) - pct(band.lo))}%`, backgroundColor: tint },
+          ]} />
+          <View style={[s.bandMid, { left: `${pct(band.mid)}%`, backgroundColor: V2T.text }]} />
+        </View>
+      )}
+      {band && (
+        <Text {...DYNAMIC_TYPE} style={[s.cellBand, NUM, { fontFamily: famMonoText(lang, "reg") }]} numberOfLines={1}>
+          {band.text}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function NavChromeInner({
+  option, steps, doseUg, onExit, lang, nav, onRecenter, showCig = false,
+}: {
+  option: CompareOption; steps: Step[] | null; doseUg: number;
+  onExit: () => void; lang: Lang;
+  nav?: NavView | null; onRecenter?: (() => void) | null;
+  /** cigarette-equivalence framing — off by default (settings.show_cig) */
+  showCig?: boolean;
+}) {
+  bump("shell.NavChrome");
+  const insets = useSafeAreaInsets();
+  const min = Math.max(0, Math.round((nav?.etaS ?? option.duration_min * 60) / 60));
+  const leftM = nav?.distRemainingM ?? (option.distance_km ?? 0) * 1000;
+  const next = nav?.nextStep ?? null;
+  const step0 = steps?.[0] ?? null;
+  const transit = isTransit(option);
+  /* step0 is the raw /directions step — the engine's nextStep is already
+     localized; localize the fallback the same way so hi never flashes
+     the server's English sentence while the engine arms */
+  const banner = next?.instruction
+    ?? (step0 ? localizeStep(step0, lang) : null)
+    ?? (transit && option.stations
+      ? t("boardMetro", lang, { a: option.stations.board, b: option.stations.alight })
+          + (option.lines?.length ? `  ·  ${option.lines.join(", ")}` : "")
+      : t("followRoute", lang));
+  const maneuver: Maneuver = next
+    ? maneuverOf(next.instruction, next.type, next.modifier)
+    : step0
+      ? maneuverOf(step0.instruction, step0.type)
+      : transit ? "transit" : "mode";
+
+  const cigs = nav ? cigOf(nav.dose.mid) : cigOf(doseUg);
+  /* µg readout for the default surface (cigarette metaphor off) — the
+     same live dose, rounded whole; "µg" is the plain unit everywhere */
+  const ugMid = nav ? nav.dose.mid : doseUg;
+  const showOut = nav != null && nav.co2.hi > 0;
+  const outKg = showOut ? Math.round(Math.max(0, nav.co2.mid) * 10) / 10 : null; // kg, 1dp
+  /* small motors (bikes ~0.04 kg/km) round to "0 kg" for the whole trip
+     and the cell reads dead — under a kilo, grams move */
+  const outG = showOut && nav.co2.hi < 1;
+  const frozen = nav?.stripOk === false; // counters paused — dimmed, pill explains
+  const progress = typeof nav?.progress === "number"
+    ? Math.min(1, Math.max(0, nav.progress)) : null;
+  const mode = option.mode || option.vehicle;
+
+  /* fix-gap bookkeeping: the meta row discloses accumulated pause
+     ("· paused ~4 min") — parked/backgrounded minutes must not read
+     as riding minutes in the one line a user glances at */
+  const pausedMin = nav?.pausedS != null && nav.pausedS >= 45
+    ? Math.max(1, Math.round(nav.pausedS / 60))
+    : null;
+  /* single-line concat — a literal newline inside the template made
+     numberOfLines={1} truncate everything past it (arrive + paused were
+     silently invisible) */
+  const meta = nav
+    ? t(leftIsKm(leftM) ? "nav_left" : "nav_left_m", lang,
+        leftIsKm(leftM)
+          ? { min, km: kmNum(leftM) }
+          : { min, m: leftMNum(leftM) })
+      + ` · ${t("arriveAt", lang, { t: clock(nav.etaS, lang) })}`
+      + (pausedMin != null ? ` · ${t("navPausedMin", lang, { n: pausedMin })}` : "")
+    : `${Math.round(option.duration_min)} ${t("minUnit", lang)} · ${option.distance_km ?? 0} ${t("unitsKm", lang)} · ${t("arriveAt", lang, { t: clock(option.duration_min * 60, lang) })}`;
+
+  /* instruction swap: only the sentence/arrow change earns motion — the
+     1 Hz distance tick under it must not re-animate the card. Fade+rise
+     on `banner`/`maneuver` change, JS driver, off under reduce-motion. */
+  const reduceMotion = useReduceMotion();
+  const [swap] = useState(() => new Animated.Value(1));
+  const [swapTy] = useState(() =>
+    swap.interpolate({ inputRange: [0, 1], outputRange: [7, 0] }));
+  const lastCue = useRef<string | null>(null);
+  const cueKey = `${maneuver}|${banner}`;
+  useEffect(() => {
+    if (reduceMotion) { swap.setValue(1); return; }
+    if (lastCue.current === cueKey) return;
+    lastCue.current = cueKey;
+    swap.setValue(0);
+    jank("nav.swap");
+    Animated.timing(swap, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+  }, [cueKey, swap, reduceMotion]);
+
+  const doseBand: BandViz | null = nav != null && nav.dose.hi > 0
+    ? {
+      ...nav.dose,
+      // a band that rounds to the same integer prints as one number —
+      // "0–0 µg" reads like a formatting bug to anyone glancing at it.
+      // show_cig appends the equivalence to this sub-line — secondary,
+      // never the counter's own number
+      text: (() => {
+        const lo = Math.round(Math.max(0, nav.dose.lo)); const hi = Math.round(Math.max(0, nav.dose.hi));
+        const base = lo === hi ? `${lo} µg` : `${lo}–${hi} µg`;
+        /* under 1% of one the '≈ 0.01 cigarettes' clamp is fake
+           precision — felt words, same rule as the ledger's trace */
+        return showCig && cigs != null
+          ? `${base} · ${cigs < 0.01 ? t("cigsTrace", lang) : t("nav_cigs", lang, { n: approx(cigs) })}`
+          : base;
+      })(),
+    }
+    : null;
+  const co2Band: BandViz | null = showOut
+    ? {
+      ...nav.co2,
+      text: outG
+        ? (() => {
+          const lo = Math.round(Math.max(0, nav.co2.lo) * 1000);
+          const hi = Math.round(Math.max(0, nav.co2.hi) * 1000);
+          return t("nav_g", lang, { n: lo === hi ? `${lo}` : `${lo}–${hi}` });
+        })()
+        : nav.co2.lo.toFixed(1) === nav.co2.hi.toFixed(1)
+          ? t("nav_kg", lang, { n: nav.co2.lo.toFixed(1) })
+          : t("nav_kg", lang, { n: `${nav.co2.lo.toFixed(1)}–${nav.co2.hi.toFixed(1)}` }),
+    }
+    : null;
+
+  return (
+    <>
+      {/* next-turn card — glance: arrow, distance, then the sentence */}
+      <View style={[s.banner, { top: insets.top + 12 }]}>
+        <Animated.View style={[s.tile, { opacity: swap, transform: [{ translateY: swapTy }] }]} accessible={false}
+          accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <ManeuverIcon m={maneuver} mode={mode} onInk />
+        </Animated.View>
+        <Animated.View style={[s.bannerTxt, { opacity: swap, transform: [{ translateY: swapTy }] }]}>
+          {next && (
+            <Text {...DYNAMIC_TYPE} style={[s.dist, NUM, { fontFamily: famMonoText(lang, "semi") }]} numberOfLines={1}>
+              {distToStr(next.distM, lang)}
+            </Text>
+          )}
+          <Text {...DYNAMIC_TYPE}
+            style={[next ? s.instrNext : s.instr, { fontFamily: fam(lang, next ? "med" : "semi") }]}
+            numberOfLines={2}>
+            {banner}
+          </Text>
+        </Animated.View>
+        {onRecenter && (
+          <Pressable onPress={() => { tap(); onRecenter(); }} hitSlop={6}
+            accessibilityRole="button" accessibilityLabel={t("nav_recenter", lang)}
+            style={({ pressed }) => [s.act, pressed && s.actDown]}>
+            <Icon name="locate" color={V2T.text2} size={20} />
+          </Pressable>
+        )}
+        <Pressable onPress={() => { confirm(); onExit(); }} hitSlop={6}
+          accessibilityRole="button" accessibilityLabel={t("end", lang)}
+          style={({ pressed }) => [s.act, pressed && s.actDown]}>
+          <Icon name="close" color={V2T.text2} size={20} />
+        </Pressable>
+      </View>
+
+      {/* reroute in flight — warm dot says "working", not alarm */}
+      {nav?.offRoute && (
+        <View style={[s.pill, { top: insets.top + 92 }]}>
+          <View style={s.pillDot} />
+          <Text {...DYNAMIC_TYPE} style={[s.pillTxt, { fontFamily: fam(lang, "med"), color: V2T.text }]}>
+            {t("findingNewWay", lang)}
+          </Text>
+        </View>
+      )}
+      {/* left the dose field entirely — reroute answered the typed
+          outside code; one persistent honest pill (reuses the search
+          string: dose can't be estimated out there) */}
+      {nav?.outsideField && !nav.offRoute && (
+        <View style={[s.pill, { top: insets.top + 92 }]}>
+          <Icon name="pin" color={V2T.text3} size={13} />
+          <Text {...DYNAMIC_TYPE} style={[s.pillTxt, { fontFamily: fam(lang, "med"), marginLeft: 6 }]}>
+            {t("outsideDelhi", lang)}
+          </Text>
+        </View>
+      )}
+      {nav?.stripOk === false && !nav.offRoute && !nav.outsideField && (
+        <View style={[s.pill, { top: insets.top + 92 }]}>
+          <Text {...DYNAMIC_TYPE} style={[s.pillTxt, { fontFamily: fam(lang, "med") }]}>
+            {t("strip_unavailable", lang)}
+          </Text>
+        </View>
+      )}
+      {/* no position fixes yet — permission denied or the fix hasn't
+          landed: the pill says what the counters are actually doing
+          (ticking at the trip-start air), instead of a silently
+          standing-still ETA (lifecycle-drive) */}
+      {nav?.running && !nav.snapped && !nav.offRoute && !nav.outsideField
+        && nav.stripOk !== false && (
+        <View style={[s.pill, { top: insets.top + 92 }]}>
+          <Text {...DYNAMIC_TYPE} style={[s.pillTxt, { fontFamily: fam(lang, "med") }]}>
+            {t("navNoGps", lang)}
+          </Text>
+        </View>
+      )}
+      {/* position stream lost mid-trip — we DID see the ride once
+          (snapped set), then the fixes stopped: parked, pocketed, or
+          GNSS dead. The pill names what the counters are doing — the
+          ride's meters paused, the air count keeps going — instead of
+          silently minting parked minutes at the last driving speed
+          (nav-gap-fix; never-locked trips stay with navNoGps above) */}
+      {nav?.gapActive && nav.snapped && !nav.offRoute && !nav.outsideField
+        && nav.stripOk !== false && (
+        <View style={[s.pill, { top: insets.top + 92 }]}>
+          <Text {...DYNAMIC_TYPE} style={[s.pillTxt, { fontFamily: fam(lang, "med") }]}>
+            {t("navPaused", lang)}
+          </Text>
+        </View>
+      )}
+
+      {/* instrument cluster — the two signature counters + trip meta */}
+      <View style={[s.cluster, { bottom: insets.bottom + 12 }]}>
+        {progress != null && progress > 0 && (
+          <View style={s.progTrack} accessible={false} importantForAccessibility="no">
+            <View style={[s.progFill, { width: `${progress * 100}%` }]} />
+          </View>
+        )}
+        <View style={s.cells}>
+          <CounterCell
+            lang={lang}
+            icon="dust"
+            tint={V2T.breath1}
+            label={t("nav_breathe", lang)}
+            dim={frozen}
+            band={doseBand}
+            value={ugMid == null ? t("nav_noSignal", lang)
+              : t("doseUg", lang, { n: approx(doseUgRound(ugMid)) })} />
+          {showOut && outKg != null && (
+            <>
+              <View style={s.cellDiv} />
+              <CounterCell
+                lang={lang}
+                icon="smoke"
+                tint={V2T.out1}
+                label={t("nav_putOut", lang)}
+                dim={frozen}
+                band={co2Band}
+                value={outG
+                  ? t("nav_g", lang, { n: Math.round(Math.max(0, nav.co2.mid) * 1000) })
+                  : t("nav_kg", lang, { n: approx(outKg) })} />
+            </>
+          )}
+        </View>
+        <View style={s.metaRow}>
+          <Text {...DYNAMIC_TYPE}
+            style={[s.metaTxt, NUM, { fontFamily: famMonoText(lang, "reg") }]}
+            numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {meta}
+          </Text>
+        </View>
+      </View>
+    </>
+  );
+}
+
+export const NavChrome = React.memo(NavChromeInner);
+
+const s = StyleSheet.create({
+  banner: {
+    position: "absolute", left: 12, right: 12,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: V2T.glassDeep, borderRadius: V2Radius.card,
+    paddingVertical: 12, paddingHorizontal: 12,
+    ...V2Elev.float,
+  },
+  /* the maneuver tile goes ink — the turn arrow is glance-critical, so
+     it sits in the darkest tile on the sheet (the one place chrome may
+     go dark over the live map) */
+  tile: {
+    width: 54, height: 54, borderRadius: 17,
+    backgroundColor: V2T.text,
+    alignItems: "center", justifyContent: "center",
+  },
+  bannerTxt: { flex: 1, marginLeft: 12, marginRight: 4 },
+  dist: { fontSize: V2Type.title, color: V2T.text },
+  instr: { fontSize: V2Type.body, color: V2T.text },
+  instrNext: { fontSize: V2Type.secondary, color: V2T.text2, marginTop: 1 },
+  act: {
+    minWidth: 44, minHeight: 44, marginLeft: 2,
+    alignItems: "center", justifyContent: "center",
+  },
+  actDown: { opacity: 0.55 },
+
+  pill: {
+    position: "absolute", alignSelf: "center",
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: V2T.glassDeep, borderRadius: V2Radius.pill,
+    paddingHorizontal: 16, paddingVertical: 9,
+    ...V2Elev.card,
+  },
+  pillDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: V2T.breath1, marginRight: 8,
+  },
+  pillTxt: { fontSize: V2Type.label, color: V2T.text2 },
+
+  cluster: {
+    position: "absolute", left: 14, right: 14,
+    backgroundColor: V2T.glassDeep, borderRadius: V2Radius.card,
+    ...V2Elev.float,
+    overflow: "hidden",
+  },
+  progTrack: { height: 3, backgroundColor: V2T.glassSoft },
+  progFill: {
+    height: 3, backgroundColor: V2T.accent,   // echoes the route line colour
+    borderTopRightRadius: 2, borderBottomRightRadius: 2,
+  },
+  cells: { flexDirection: "row" },
+  cell: { flex: 1, paddingHorizontal: 14, paddingVertical: 10 },
+  cellDim: { opacity: 0.5 },
+  cellDiv: { width: 1, backgroundColor: V2T.line, marginVertical: 10 },
+  cellHead: { flexDirection: "row", alignItems: "center" },
+  cellLbl: {
+    fontSize: 11, color: V2T.text3, marginLeft: 6, flexShrink: 1,
+  },
+  cellVal: { fontSize: V2Type.body, color: V2T.text, marginTop: 4 },
+  bandTrack: {
+    height: 3, borderRadius: 2, marginTop: 7,
+    backgroundColor: V2T.surface2, overflow: "visible",
+  },
+  bandSeg: { position: "absolute", top: 0, bottom: 0, borderRadius: 2, opacity: 0.5 },
+  bandMid: {
+    position: "absolute", top: -1, width: 3, height: 5,
+    marginLeft: -1.5, borderRadius: 1.5,
+  },
+  /* the band's own sub-line needed air of its own — 5px to the value
+     and nothing below sat it against the meta hairline (audit #25) */
+  cellBand: { fontSize: V2Type.micro, color: V2T.text3, marginTop: 5, marginBottom: 7 },
+  metaRow: {
+    borderTopWidth: 1, borderTopColor: V2T.line,
+    paddingVertical: 8, paddingHorizontal: 14,
+  },
+  metaTxt: { fontSize: V2Type.label, color: V2T.text3, textAlign: "center" },
+});

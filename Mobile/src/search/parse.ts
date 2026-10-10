@@ -1,0 +1,201 @@
+// Query understanding for the search tiers — how people actually type
+// Delhi addresses: "gali no 4 ashok nagar shahdara", "a block nand nagri",
+// "bakery ke paas hanuman mandir", "h no 123 sector 15". Raw keyboard text
+// becomes a structured ask: which tokens name the place, which mark a unit
+// (gali/block/pocket/sector/phase + its letter-or-number), which are pure
+// filler ("no", "number", "wala"), and whether a near-/context phrase pins
+// the answer to another place. Used by t0.ts (offline tier) so the bundled
+// gazetteer answers the same phrasing the server tiers do.
+//
+// Honesty rule: parsing only RE-READS the query — it never invents a place.
+// What remains unmatched stays unmatched and the caller shows the honest
+// miss state.
+
+import { normalize, fold } from "./text";
+
+export type UnitSpec = {
+  struct: string;   // gali | block | pocket | sector | phase | part | khand | enclave | house | flat | plot
+  value: string;    // the letter/number: 'a', '4', 'a5', '12'
+};
+
+export type Parsed = {
+  raw: string;
+  nq: string;              // normalize(raw) — full normalized query
+  toks: string[];          // place-name tokens (fillers + units + near-part removed)
+  folds: string[];         // fold() of each place token — phonetic matching
+  units: UnitSpec[];       // extracted designators, in query order
+  kind: string | null;     // one kind word the query carries, if any ('bakery')
+  near: string[] | null;   // "X near Y" — Y's tokens (the context anchor)
+};
+
+/** words that never disambiguate a place — fillers Delhi users actually
+ * type around a name. Stripped before matching, never required of rows. */
+const FILLER = new Set([
+  "no", "num", "number", "nbr", "hno", "h", "house", "flat", "plot",
+  "kothi", "unit", "gf", "ff", "floor", "wala", "wale", "wali",
+  "in", "at", "of", "the", "a", "an", "for", "to", "from", "by",
+  "ke", "ki", "ka", "se", "me", "mein", "pe", "par", "andar",
+  "bahar", "main", "mein", "wala", "something", "type", "kuch",
+]);
+
+/** near-words that split "X near Y" — the trailing side is the anchor the
+ * user is orienting by. Mirrors _COMPOUND_STOP on the server. */
+const NEAR = new Set([
+  "near", "nearer", "paas", "pas", "nazdeek", "najdeek", "najdik",
+  "kareeb", "karib", "qareeb", "saamne", "samne", "sammne", "peeche",
+  "piche", "aage", "age", "opposite", "opp", "behind", "front",
+  "around", "close", "beside", "next", "baju", "bagal",
+]);
+
+/** unit designators — 'gali 4', 'block a', 'pocket b', 'sector 62',
+ * 'phase 2'. Mirrors _SUBPLACE_STRUCT on the server. A struct word
+ * consumes a following (or preceding) letter/number as the unit value. */
+const STRUCT = new Set([
+  "gali", "gully", "lane", "block", "pocket", "poket", "pkt",
+  "sector", "phase", "part", "khand", "enclave", "extension",
+  "khasra", "kh", "ward", "zone", "market",
+]);
+
+/** unit values look like '4', 'a', 'a5', '12b', 'iv' — letter(s),
+ * digit(s), or the common letter+digit house-tag form. */
+const UNIT_VAL = /^[a-z]?\d{1,4}[a-z]?$|^[a-z]{1,2}$|^([ivx]{1,4})$/;
+
+const isUnitValue = (t: string) => UNIT_VAL.test(t) && !FILLER.has(t) && !STRUCT.has(t);
+
+/** kind words → a corpus-category regex for the offline kind-fallback
+ * ('bakery near X' asks for A bakery — the category, honestly labelled).
+ * A compact subset of server _KIND_PHRASES keyed for single tokens. */
+export const KIND_RE: [RegExp, string][] = [
+  [/^(bakery|bakeries|bekri|confectionery|mithai|sweet|sweets|pastry)$/, "bakery|pastry|confectionery|sweets|sweets_shop|sweet|namkeen"],
+  [/^(atm)$/, "atm"],
+  [/^(bank|banks)$/, "bank|bank_or_credit_union|financial_service"],
+  [/^(hospital|aspatal|hospitals)$/, "hospital|specialty_hospital|nursing_home|university_hospital|specialized_health_care|health_care|medical_service|specialized_medical_facility|emergency_or_urgent_care_facility|emergency_department|primary_care_or_general_clinic|walk_in_clinic"],
+  [/^(clinic|dispensary|policlinic|polyclinic)$/, "clinic|dental_clinic|outpatient_care_facility|centre|healthcare|specialized_health_care|health_care|medical_service|primary_care_or_general_clinic|walk_in_clinic|pediatric_clinic|behavioral_or_mental_health_clinic|physical_medicine_and_rehabilitation|complementary_and_alternative_medicine|diagnostics_imaging_or_lab_service|specialized_medical_facility"],
+  [/^(pharmacy|chemist|medicine|medicals?)$/, "pharmacy|chemist|medical_supply|pharmacy_and_drug_store"],
+  [/^(school|schools)$/, "school|prep_school|kindergarten|educational_institution|place_of_learning|preschool|elementary_school|middle_school|high_school|education|educational_service|educational_facility|tutoring_service|academy|specialty_school"],
+  [/^(college|colleges)$/, "college|college_university|educational_institution|place_of_learning|educational_facility|academy|educational_service"],
+  [/^(university|universities)$/, "university|college_university|place_of_learning|educational_facility|academy"],
+  [/^(petrol|fuel|diesel|cng)$/, "fuel|gas_station|fueling_station|charging_station|ev_charging_station"],
+  [/^(temple|mandir|mandeer)$/, "temple|hindu_place_of_worship|jain"],
+  [/^(mosque|masjid|dargah)$/, "mosque|muslim_place_of_worship|dargah"],
+  [/^(church)$/, "church|christian_place_of_worship"],
+  [/^(gurudwara|gurdwara)$/, "gurudwara|sikh_place_of_worship"],
+  [/^(park|parks|parkk)$/, "park|garden|playground|recreation_ground|nature_reserve|dog_park|national_park"],
+  [/^(restaurant|dhaba|restaurent|resturant|hotel.*khana)$/, "restaurant|fast_food|food_court|canteen|casual_eatery|fast_food_restaurant|food_service|food_and_drink|food_truck_stand"],
+  [/^(hotel|hotels|guesthouse)$/, "hotel|guest_house|hostel|motel|resort|lodging|bed_and_breakfast|private_lodging|inn"],
+  [/^(hostel|hostels|pg)$/, "hostel|dormitory|student_accommodation|lodging|private_lodging"],
+  [/^(cafe|cafeteria)$/, "cafe|coffee|internet_cafe|coffee_shop|smoothie_juice_bar|non_alcoholic_beverage_venue"],
+  [/^(cinema|movie|multiplex|theatre|theater)$/, "cinema|theatre|movie_theater|theatre_venue|performing_arts_venue"],
+  [/^(mall|malls)$/, "shopping_mall|mall|shopping_centre|department_store|warehouse_club_store|superstore"],
+  [/^(market|mandi|bazaar|bazar|mkt)$/, "marketplace|market|greengrocer|convenience|farmers_market"],
+  [/^(shop|shops|store|stores|dukan)$/, "shop|convenience|supermarket|store|variety_store|general|retail|convenience_store|specialty_store|shopping|discount_store|second_hand_store"],
+  [/^(grocery|kirana|kiryana)$/, "supermarket|convenience|grocery|greengrocer|general|food_and_beverage_store|convenience_store|warehouse_club_store|superstore"],
+  [/^(salon|parlour|parlor|barber|nai)$/, "hairdresser|beauty|personal_or_beauty_service|personal_care_and_beauty_store"],
+  [/^(gym|gymnasium|akha?da)$/, "gym|fitness_centre|sports_centre|sport_or_fitness_facility|fitness_studio|sports_and_recreation"],
+  [/^(metro|subway)$/, "metro|subway|subway_entrance|public_transit_facility_or_service"],
+  [/^(station|railway|rail)$/, "station|train_station|rail|halt|rail_facility_or_service|public_transit_facility_or_service"],
+  [/^(bus)$/, "bus_stop|bus_station|platform|stop|public_transit_facility_or_service|travel_and_transportation"],
+  [/^(police|thana|thanna)$/, "police|policeoutpost|police_station"],
+  [/^(parking|parkings)$/, "parking|parking_space|parking_entrance"],
+  [/^(post|postoffice)$/, "post_office|post_depot|post_box"],
+  [/^(library)$/, "library|public_bookcase"],
+  [/^(stadium)$/, "stadium_arena|stadium|sports_centre|sport_or_fitness_facility|sport_court|sport_field|sports_and_recreation"],
+  [/^(bar|pub|theka|thekka)$/, "bar|pub|nightclub|lounge|alcohol|wine|alcoholic_beverage_venue|dance_club|nightlife_venue|brewery|distillery|winery"],
+  [/^(cemetery|graveyard|kabristan|smashan|shamshan)$/, "grave_yard|cemetery|crematorium"],
+  [/^(taxi|cab|autos?tand|rickshaw)$/, "taxi"],
+  [/^(vet|veterinary|pashu)$/, "veterinary|animal_or_pet_service"],
+  [/^(tailor|darzi)$/, "tailor|dressmaker"],
+  [/^(electrician|bijli)$/, "electrician|home_service"],
+  [/^(plumber)$/, "plumber|home_service"],
+  [/^(bakery.*)$/, "bakery|pastry|confectionery"],
+];
+
+export const kindRegexFor = (tok: string): string | null => {
+  for (const [re, cats] of KIND_RE) if (re.test(tok)) return cats;
+  return null;
+};
+
+/** Parse raw keyboard text into a structured ask. Order of extraction:
+ * near-split → filler-strip → unit extraction → kind detection → the
+ * residue is the anchor name. */
+export function parseQuery(raw: string): Parsed | null {
+  const nq = normalize(raw);
+  if (!nq) return null;
+  const all = nq.split(" ");
+
+  /* 1 — "X near Y": split at the LAST near-word so 'X near Y' anchors on
+     Y even when X is a full name phrase. 'the tea shop near neelam
+     chowk' → x=[tea shop] y=[neelam chowk]. A leading 'near' with
+     nothing after stays part of the name ('near nangloi' is a name
+     query, not a compound). */
+  let near: string[] | null = null;
+  let head = all;
+  for (let i = all.length - 1; i > 0; i--) {
+    if (NEAR.has(all[i]) && i < all.length - 1) {
+      const y = all.slice(i + 1).filter((t) => !FILLER.has(t) && !NEAR.has(t));
+      if (y.length) {
+        near = y;
+        head = all.slice(0, i);
+      }
+      break;
+    }
+  }
+
+  /* 2 — fillers out of the head side, EXCEPT a single-letter token
+     sitting next to a designator: 'a block' means the unit letter A,
+     'h block' means the unit letter H — 'nandanagri a block pocket
+     something' is block-A inside Nand Nagri. Only ONE-character tokens
+     earn the exemption ('h' is house-filler before 'no', a block letter
+     beside 'block'); 'an' stays for the pre-existing 'an block' form. */
+  const nextToStruct = (i: number, arr: string[]) =>
+    (i > 0 && STRUCT.has(arr[i - 1])) || (i < arr.length - 1 && STRUCT.has(arr[i + 1]));
+  const kept = head.filter((t, i) => {
+    if (NEAR.has(t)) return false;
+    if ((t.length === 1 || t === "an") && nextToStruct(i, head)) return true;
+    return !FILLER.has(t);
+  });
+
+  /* 3 — units: 'gali 4'/'gali no 4' (filler already gone → 'gali 4'),
+     'a block', '4 gali'. Consume the value token beside the struct.
+     A bare struct with no value is still a designator, never name text —
+     it leaves the token list too (only the unit ask knows it was there). */
+  const units: UnitSpec[] = [];
+  const consumed = new Set<number>();
+  for (let i = 0; i < kept.length; i++) {
+    const t = kept[i];
+    if (!STRUCT.has(t)) continue;
+    let took = false;
+    // prefer the value AFTER the struct ('gali 4'), else BEFORE ('4 gali')
+    for (const j of [i + 1, i - 1]) {
+      if (j < 0 || j >= kept.length || consumed.has(j) || STRUCT.has(kept[j])) continue;
+      // 'a'/'an'/'h' reached here only because they survived
+      // nextToStruct — a single letter IS the unit letter
+      // ('a block' = block A, 'h block' = block H)
+      if (isUnitValue(kept[j]) || kept[j].length === 1 || kept[j] === "an") {
+        units.push({ struct: t, value: kept[j] });
+        consumed.add(i);
+        consumed.add(j);
+        took = true;
+        break;
+      }
+    }
+    if (!took) consumed.add(i);   // bare struct — designator, not name text
+  }
+  const toks = kept.filter((_, i) => !consumed.has(i));
+
+  /* 4 — a lone kind word among the anchor tokens. It stays IN toks (a
+     'bakery' place name is also honest), the caller falls back to a
+     kind-scan only when name matching fails. */
+  const kind = toks.find((t) => kindRegexFor(t)) ?? null;
+
+  if (!toks.length && !units.length && !near) return null;
+  return {
+    raw,
+    nq,
+    toks,
+    folds: toks.map(fold),
+    units,
+    kind,
+    near,
+  };
+}

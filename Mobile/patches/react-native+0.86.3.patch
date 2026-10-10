@@ -1,0 +1,442 @@
+diff --git a/node_modules/react-native/ReactCommon/react/bridging/CallbackWrapper.h b/node_modules/react-native/ReactCommon/react/bridging/CallbackWrapper.h
+--- a/node_modules/react-native/ReactCommon/react/bridging/CallbackWrapper.h
++++ b/node_modules/react-native/ReactCommon/react/bridging/CallbackWrapper.h
+@@ -9,8 +9,14 @@
+ 
+ #include <jsi/jsi.h>
+ 
++#include <functional>
+ #include <memory>
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#endif
++
++#include <ReactCommon/CallInvoker.h>
+ #include <react/bridging/LongLivedObject.h>
+ 
+ namespace facebook::react {
+@@ -18,7 +24,8 @@
+ class CallInvoker;
+ 
+ // Helper for passing jsi::Function arg to other methods.
+-class CallbackWrapper : public LongLivedObject {
++class CallbackWrapper : public LongLivedObject,
++                        public std::enable_shared_from_this<CallbackWrapper> {
+  private:
+   CallbackWrapper(jsi::Function &&callback, jsi::Runtime &runtime, std::shared_ptr<CallInvoker> jsInvoker)
+       : LongLivedObject(runtime), callback_(std::move(callback)), jsInvoker_(std::move(jsInvoker))
+@@ -34,13 +41,34 @@
+   {
+     auto wrapper =
+         std::shared_ptr<CallbackWrapper>(new CallbackWrapper(std::move(callback), runtime, std::move(jsInvoker)));
+-    LongLivedObjectCollection::get(runtime).add(wrapper);
++    auto &collection = LongLivedObjectCollection::get(runtime);
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++    // coldfix: hand the collection a JS-thread invoker so off-thread
++    // releases can hop onto it (see LongLivedObject.h).
++    collection.setInvoker(wrapper->jsInvoker_);
++#endif
++    collection.add(wrapper);
+     return wrapper;
+   }
+ 
+   // Delete the enclosed jsi::Function
+   void destroy()
+   {
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++    /* coldfix lane: dropping the wrapper destructs its jsi::Function, which
++       invalidates a runtime-owned handle — a mutation that is only safe on
++       the JS thread. Callers on module queues hit this off-thread during
++       cold boot and corrupt Hermes' GC-tracked state. Defer the release to
++       the JS thread via the runtime's own CallInvoker; if no invoker or
++       shared owner exists, defer indefinitely — a leaked wrapper is
++       harmless next to a corrupted heap. */
++    auto self = weak_from_this().lock();
++    auto inv = jsInvoker_;
++    if (self && inv) {
++      inv->invokeAsync([self = std::move(self)]() { self->allowRelease(); });
++    }
++    return;
++#endif
+     allowRelease();
+   }
+ 
+diff --git a/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.cpp b/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.cpp
+--- a/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.cpp
++++ b/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.cpp
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include "LongLivedObject.h"
++#include <ReactCommon/CallInvoker.h>
+ #include <unordered_map>
+ 
+ namespace facebook::react {
+@@ -47,6 +48,12 @@
+ void LongLivedObjectCollection::clear() {
+   std::scoped_lock lock(collectionMutex_);
+   collection_.clear();
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  {
++    std::scoped_lock dlock(deferredMutex_);
++    deferred_.clear();
++  }
++#endif
+ }
+ 
+ size_t LongLivedObjectCollection::size() const {
+@@ -54,10 +61,60 @@
+   return collection_.size();
+ }
+ 
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++void LongLivedObjectCollection::setInvoker(
++    std::shared_ptr<CallInvoker> invoker) {
++  std::scoped_lock lock(invokerMutex_);
++  invoker_ = std::move(invoker);
++}
++
++std::weak_ptr<CallInvoker> LongLivedObjectCollection::invoker() const {
++  std::scoped_lock lock(invokerMutex_);
++  return invoker_;
++}
++
++void LongLivedObjectCollection::deferJsi(jsi::Function f) {
++  {
++    std::scoped_lock lock(deferredMutex_);
++    deferred_.emplace_back(std::move(f));
++  }
++  /* drain on the JS thread when an invoker is known — the lambda runs in the
++     runtime so the destructors of the queued functions are legal there.
++     Without an invoker the queue waits for clear() at teardown, which is
++     also on the JS thread. */
++  if (auto inv = invoker().lock()) {
++    inv->invokeAsync([this]() { drainDeferred(); });
++  }
++}
++
++void LongLivedObjectCollection::drainDeferred() {
++  std::vector<std::optional<jsi::Function>> pending;
++  {
++    std::scoped_lock lock(deferredMutex_);
++    pending.swap(deferred_);
++  }
++  // `pending` destructs here — on whatever thread ran this, which is the JS
++  // thread because the only caller defers through invokeAsync or clear().
++}
++#endif
++
+ // LongLivedObject
+ 
+ void LongLivedObject::allowRelease() {
+-  LongLivedObjectCollection::get(runtime_).remove(this);
++  auto &collection = LongLivedObjectCollection::get(runtime_);
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  /* coldfix: `remove` drops the collection's last strong ref — destructing
++     the object and its jsi members on the calling thread. On a module
++     queue that off-thread invalidation corrupts Hermes' GC pinned-root
++     state. Hop the removal to the JS thread through the registered
++     invoker; the collection's strong ref keeps `this` alive until then.
++     With no invoker yet, fall back to the stock inline remove. */
++  if (auto inv = collection.invoker().lock()) {
++    inv->invokeAsync([this, &collection]() { collection.remove(this); });
++    return;
++  }
++#endif
++  collection.remove(this);
+ }
+ 
+ } // namespace facebook::react
+diff --git a/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.h b/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.h
+--- a/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.h
++++ b/node_modules/react-native/ReactCommon/react/bridging/LongLivedObject.h
+@@ -10,10 +10,18 @@
+ #include <jsi/jsi.h>
+ #include <memory>
+ #include <mutex>
++#include <optional>
+ #include <unordered_set>
++#include <vector>
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#endif
++
+ namespace facebook::react {
+ 
++class CallInvoker;
++
+ /**
+  * A simple wrapper class that can be registered to a collection that keep it
+  * alive for extended period of time. This object can be removed from the
+@@ -53,9 +61,38 @@
+   void clear();
+   size_t size() const;
+ 
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  /* coldfix lane (docs/lanes/sigsegv-coldfix-report.md): any LongLivedObject
++     subclass — and any jsi::Function held by one, e.g. TurboModule's
++     Promise{resolve_, reject_} — destructs its jsi values wherever its last
++     owner drops. Off the JS thread that invalidation mutates Hermes' GC
++     pinned-root state and corrupts the heap (SIGSEGV in hades sweep on iOS
++     sim, docs/lanes/testday-ios-report.md §9). The collection therefore
++     remembers a CallInvoker the moment any creator registers one and hops
++     releases / deferred jsi destruction onto the JS thread. Simulator-only:
++     device builds keep stock behavior. */
++  void setInvoker(std::shared_ptr<CallInvoker> invoker);
++  std::weak_ptr<CallInvoker> invoker() const;
++
++  /** Move a jsi::Function off the calling thread: it is destructed later on
++   *  the JS thread (drainDeferred via the registered invoker) or at
++   *  teardown (clear). For objects that die by last-shared_ptr-drop on a
++   *  module queue — e.g. TurboModule's Promise — and so never see
++   *  allowRelease. */
++  void deferJsi(jsi::Function f);
++  void drainDeferred();
++#endif
++
+  private:
+   std::unordered_set<std::shared_ptr<LongLivedObject>> collection_;
+   mutable std::mutex collectionMutex_;
++
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  std::weak_ptr<CallInvoker> invoker_;
++  mutable std::mutex invokerMutex_;
++  std::vector<std::optional<jsi::Function>> deferred_;
++  std::mutex deferredMutex_;
++#endif
+ };
+ 
+ } // namespace facebook::react
+diff --git a/node_modules/react-native/ReactCommon/react/bridging/Promise.h b/node_modules/react-native/ReactCommon/react/bridging/Promise.h
+--- a/node_modules/react-native/ReactCommon/react/bridging/Promise.h
++++ b/node_modules/react-native/ReactCommon/react/bridging/Promise.h
+@@ -11,6 +11,10 @@
+ #include <react/bridging/Function.h>
+ #include <react/bridging/LongLivedObject.h>
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#endif
++
+ #include <mutex>
+ #include <optional>
+ 
+@@ -38,7 +42,13 @@
+             jsInvoker));
+ 
+     auto promiseHolder = std::make_shared<PromiseHolder>(rt, promise.asObject(rt));
+-    LongLivedObjectCollection::get(rt).add(promiseHolder);
++    auto &collection = LongLivedObjectCollection::get(rt);
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++    // coldfix: `~SharedState` may run on a module queue — the hop inside
++    // allowRelease needs a registered invoker (see LongLivedObject.h).
++    collection.setInvoker(jsInvoker);
++#endif
++    collection.add(promiseHolder);
+ 
+     // The shared state can retain the promise holder weakly now.
+     state_->promiseHolder = promiseHolder;
+diff --git a/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.cpp b/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.cpp
+--- a/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.cpp
++++ b/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.cpp
+@@ -7,6 +7,13 @@
+ 
+ #include "TurboModuleUtils.h"
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++#include <ReactCommon/CallInvoker.h>
++#endif
++#endif
++
+ namespace facebook::react {
+ 
+ Promise::Promise(jsi::Runtime& rt, jsi::Function resolve, jsi::Function reject)
+@@ -14,11 +21,60 @@
+       resolve_(std::move(resolve)),
+       reject_(std::move(reject)) {}
+ 
++Promise::~Promise()
++{
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  /* coldfix: `Promise` is never added to the LongLivedObjectCollection, so
++     its resolve_/reject_ jsi::Functions die wherever the last shared_ptr
++     drops — typically a module queue inside an async turbomodule call.
++     Off-thread invalidation corrupts Hermes' GC state (SIGSEGV on iOS
++     sim). Move the functions into the collection's deferred list; they're
++     destructed on the JS thread (or at teardown) instead. */
++  auto &collection = LongLivedObjectCollection::get(runtime_);
++  collection.deferJsi(std::move(resolve_));
++  collection.deferJsi(std::move(reject_));
++#endif
++}
++
++/* coldfix residual (docs/lanes/ios-residual-report.md): `resolve_.call` /
++   `reject_.call` execute on whatever module queue completes the async
++   turbomodule call. Off the JS thread that is a full runtime mutation —
++   identifier interning, IdentifierHashTable rehash, GC ops — racing the JS
++   thread's own walks (EXC_BAD_ACCESS victims in HadesGC::OldGen::search and
++   IdentifierHashTable::lookupString, lldb bt all). Hop the call onto the JS
++   thread via the collection's registered CallInvoker; the captured
++   shared_ptr keeps this Promise (and resolve_/reject_) alive until the call
++   runs. With no invoker yet, fall back to the stock inline call.
++   Simulator-only; device builds keep stock behavior. */
+ void Promise::resolve(const jsi::Value& result) {
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  auto &collection = LongLivedObjectCollection::get(runtime_);
++  if (auto inv = collection.invoker().lock()) {
++    auto resultPtr = std::make_shared<jsi::Value>(runtime_, result);
++    inv->invokeAsync([self = shared_from_this(), this, resultPtr]() {
++      resolve_.call(runtime_, *resultPtr);
++    });
++    return;
++  }
++#endif
+   resolve_.call(runtime_, result);
+ }
+ 
+ void Promise::reject(const std::string& message) {
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  auto &collection = LongLivedObjectCollection::get(runtime_);
++  if (auto inv = collection.invoker().lock()) {
++    inv->invokeAsync([self = shared_from_this(), this, message]() {
++      jsi::Object error(runtime_);
++      error.setProperty(
++          runtime_,
++          "message",
++          jsi::String::createFromUtf8(runtime_, message));
++      reject_.call(runtime_, error);
++    });
++    return;
++  }
++#endif
+   jsi::Object error(runtime_);
+   error.setProperty(
+       runtime_, "message", jsi::String::createFromUtf8(runtime_, message));
+diff --git a/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.h b/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.h
+--- a/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.h
++++ b/node_modules/react-native/ReactCommon/react/nativemodule/core/ReactCommon/TurboModuleUtils.h
+@@ -15,8 +15,10 @@
+ 
+ namespace facebook::react {
+ 
+-struct Promise : public LongLivedObject {
++struct Promise : public LongLivedObject,
++                 public std::enable_shared_from_this<Promise> {
+   Promise(jsi::Runtime &rt, jsi::Function resolve, jsi::Function reject);
++  ~Promise() override;
+ 
+   void resolve(const jsi::Value &result);
+   void reject(const std::string &message);
+diff --git a/node_modules/react-native/ReactCommon/react/runtime/hermes/HermesInstance.cpp b/node_modules/react-native/ReactCommon/react/runtime/hermes/HermesInstance.cpp
+--- a/node_modules/react-native/ReactCommon/react/runtime/hermes/HermesInstance.cpp
++++ b/node_modules/react-native/ReactCommon/react/runtime/hermes/HermesInstance.cpp
+@@ -7,6 +7,11 @@
+ 
+ #include "HermesInstance.h"
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#include <os/log.h>
++#endif
++
+ #include <hermes/inspector-modern/chrome/HermesRuntimeTargetDelegate.h>
+ #include <jsi/jsilib.h>
+ #include <jsinspector-modern/InspectorFlags.h>
+@@ -22,6 +27,10 @@
+ #include <jsi/decorator.h>
+ #endif
+ 
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++#include <jsi/threadsafe.h>
++#endif
++
+ using namespace facebook::hermes;
+ using namespace facebook::jsi;
+ 
+@@ -136,6 +145,39 @@
+                       // Default to 3GB
+                       .withMaxHeapSize(3072 << 20)
+                       .withName("RNBridgeless");
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++  /* coldfix lane (docs/lanes/sigsegv-coldfix-report.md): hermes 0.17 on
++     the iOS-26 simulator corrupts old-gen segment metadata during
++     cold-boot GC churn — the next hades sweep (OldGen::sweepNext) or
++     old-gen alloc (OldGen::search) dereferences it and SIGSEGVs, ~2 s
++     after any allocation burst inside the first ~90 s. The default
++     32 MB initial heap keeps the adaptive collection threshold hot
++     for the whole window (~30 majors in the first 7 s). A large
++     initial/min heap keeps old-gen occupancy low so no major
++     collection — hence no sweep — runs in the window at all.
++     Simulator-only: device builds keep stock GC sizing. */
++  gcConfig.withInitHeapSize(512 << 20)
++          .withMinHeapSize(256 << 20)
++          .withOccupancyTarget(0.9)
++          .withShouldReleaseUnused(::hermes::vm::kReleaseUnusedNone)
++          .withProtectMetadata(true)
++          /* sigbus-release lane (docs/lanes/sigbus-release-report.md):
++             every captured crash fires inside a young-gen scavenge
++             window — a live pointer into a reclaimed semi-space
++             segment (base+0x50 / +0x18) is dereferenced on the JS
++             thread. Allocating old-gen-only removes the semi-space
++             copies entirely, so the fault class cannot form.
++             Simulator-only; device keeps the stock generational heap.
++             Deliberately no RevertToYGAtTTI: the warm() burst lands
++             post-TTI and would re-open the window. */
++          .withAllocInYoung(false)
++          .withCallback([](::hermes::vm::GCEventKind kind, const char *details) {
++            os_log_error(
++                OS_LOG_DEFAULT, "[gcdbg] event %d %s", (int)kind,
++                details ? details : "");
++          });
++  os_log_error(OS_LOG_DEFAULT, "[coldfix] sim GC sizing applied: init=512MB min=256MB");
++#endif
+ 
+   if (allocInOldGenBeforeTTI) {
+     // For the next two arguments: avoid GC before TTI
+@@ -156,6 +198,34 @@
+     runtimeConfigBuilder.withCrashMgr(crashManager);
+   }
+ 
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR && \
++    !(defined(HERMES_ENABLE_DEBUGGER) && !defined(HERMES_V1_ENABLED))
++  /* sigbus-release lane (docs/lanes/sigbus-release-report.md): a plain
++     HermesRuntime is not thread-safe — every jsi entry point (value
++     clones, handle creation, host-object install, weak-object lock)
++     mutates GC-visible state, and the JS-thread hops only cover the
++     destructor/continuation paths. A foreign thread that still calls
++     into the runtime while the JS thread is mid-allocation/collection
++     leaves live pointers into decommitted segment pages — the
++     doGetByIdSlowPath / OldGen::search SIGBUS/SIGSEGV family that
++     detonates inside TimerCallback during early boot. ThreadSafeRuntime
++     serializes all runtime entry, so an off-thread jsi call queues
++     behind in-flight JS work instead of racing it — closing the
++     remaining off-thread-call class wholesale, at the cost of a mutex
++     per jsi call. Sim-only: device builds keep the stock runtime.
++     (jsi::Value/Pointer destructors are not virtual and bypass the
++     wrapper — those are covered separately by the DeferredJSIBox hops
++     on the Swift side.) */
++  std::unique_ptr<jsi::ThreadSafeRuntime> tsRuntime =
++      hermes::makeThreadSafeHermesRuntime(runtimeConfigBuilder.build());
++  tsRuntime->global()
++      .getPropertyAsObject(*tsRuntime, "Error")
++      .setProperty(*tsRuntime, "jsEngine", "hermes");
++  HermesRuntime& hermesRuntimeRef =
++      static_cast<HermesRuntime&>(tsRuntime->getUnsafeRuntime());
++  return std::make_unique<HermesJSRuntime>(
++      std::move(tsRuntime), hermesRuntimeRef);
++#else
+   std::unique_ptr<HermesRuntime> hermesRuntime =
+       hermes::makeHermesRuntime(runtimeConfigBuilder.build());
+ 
+@@ -179,6 +249,7 @@
+   HermesRuntime& hermesRuntimeRef = *hermesRuntime;
+   return std::make_unique<HermesJSRuntime>(
+       std::move(hermesRuntime), hermesRuntimeRef);
++#endif
+ }
+ 
+ } // namespace facebook::react
