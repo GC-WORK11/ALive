@@ -1,0 +1,123 @@
+# Prod watchdog log — freeze watch, 2026-10-07
+
+Lane: prod watchdog. Watch until ~20:00 IST (freeze cut + APK rebuild window).
+Prod: `http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com` (GET-only surface).
+Cadence: /health + /v2/why(cause_note) every ~3 min (sampler → `~/watchdog-raw.log`),
+/community + CloudWatch alarms + full surface check periodically.
+
+Fail conditions watched: `field_age_s` > ~1200 s (field generator stall = demo-killer),
+`field_stale`, HTTP != 200, cause_note empty, sha transition without verification,
+CloudWatch alarms `alive108-field-age` / `alive108-field-emitter-dead` / `alive108-target-down` → ALARM.
+
+## Entries (UTC)
+
+### 2026-10-07 10:55 — baseline
+- `/health`: `sha=698cf808`, `field_age_s=816`, `field_stale=false`, `field_refresh_in_s=84`,
+  stations 52 (waqi+dpcc ok), fires 44, engine alive_core, routing 1,070,459 edges / 903,058 priced.
+- `/v2/why` cause_note populated: "12 fires in the Punjab–Haryana belt — the wind isn't carrying it this way right now · city mean 59.4 → 46.7 µg/m³ over 5.6 h" (basis=measured).
+- `/v2/city`: full payload, cause_note embedded, typical vs now −24%.
+- `/community`: obs_total 44, contributors 24, avoided_ug_all 1278.9, top corridors populated.
+- `/v2/usage` guest: 401 (expected).
+- CloudWatch (ap-south-1): all 3 alarms `OK` — field-age, field-emitter-dead, target-down.
+- Baseline verdict: prod healthy on 698cf808 (news-layer build). Sampler started ~10:56 UTC.
+
+### 2026-10-07 11:36 — ~40 min mark, 13 samples
+- Three full field cycles observed, ~15 min cadence: peaks 914→912→911, resets to ~180 on schedule.
+- Stations dipped 52→46 between 11:14–11:24, self-recovered to 52 at 11:30 (transient feed flake, not a stall).
+- cause_note present every cycle (83–124 chars, content rotates with new field builds — currently fires-belt note).
+- CloudWatch re-check 11:36: all 3 alarms `OK`. `/community` unchanged (44 obs / 24 contributors / 0 active reports).
+- Surface spot-check 11:19: `/`, `/landing`, `/admin`, `/city` all HTTP 200; landing title + boot overlay + 79 KB inline script intact, no control chars (dead-page trap clear).
+- No sha transitions, no anomalies.
+
+### 2026-10-07 11:42 — SHA TRANSITION `698cf808 → 43913dc0`
+- Landed: landing-perf (47d7bff — webp+preload hero, dedupe boot fetches, /v2/city 60 s cache,
+  cache headers, overlay count-in) + notify-e2e/admin-login docs commits. Field cycle continued
+  through the deploy (age 730→197 on the new sha, refresh cadence intact, cause_note populated).
+- Surface sweep on 43913dc0 — all pass:
+  - `/` `/landing` `/admin` `/city` `/v2/city` all HTTP 200; landing payload 114 KB → 115.8 KB.
+  - Landing live-verified in Chrome ~11:47: boot overlay clears, live number paints
+    (35.1 µg/m³ · SATISFACTORY, cigarette-equiv line + dose row all live). Dead-page trap clear.
+  - Landing inline JS: `node --check` PARSE-OK on the real script (65,857 B; the two
+    `<script>`-inside-comment false matches are identical on old/new builds).
+  - `/admin` login card present (operator token field + sign-in). `/v2/usage` guest → 401.
+  - `/v2/why` cause_note populated: "12 fires in the Punjab–Haryana belt — the wind isn't
+    carrying it this way right now".
+
+### 2026-10-07 12:16 — ~80 min mark, 24 samples
+- 5 field refresh cycles observed since watch start (~15 min cadence, all on schedule:
+  resets at ~10:59, ~11:14, ~11:30, ~11:54, ~12:12). `field_stale` never true, max age 922 s.
+- Stations 53→54 (recovered past baseline 52). cause_note populated every sample.
+- CloudWatch 12:16: all 3 alarms `OK`. `/community` steady: 44 obs / 24 contributors / 0 active
+  reports / latest_obs_age 315 min (donation feed idle — expected pre-demo).
+- Deploy survived: field generator kept cycling through the 43913dc0 cutover, zero stall.
+
+### 2026-10-07 12:31 — SHA TRANSITION `43913dc0 → c86074ff`
+- Trigger: watchdog's own 80-min log commit — prod rebuilds on ANY base/v2 push, docs included.
+  (Mechanic noted for all lanes: every commit = a redeploy; spacing log commits ~hourly.)
+- Field cycle unbroken through cutover (920→181→100 across the transition).
+- Sweep: all routes 200 (`/` `/landing` `/admin` `/city` `/v2/city`), `/v2/usage` 401,
+  landing real script PARSE-OK (65,857 B, byte-identical to 43913dc0).
+- cause_note ROTATED (new signal, healthy): now "16 fires in the Punjab–Haryana belt — a N wind
+  at 5.9 km/h is carrying it toward Delhi · air barely mixing — ventilation 1,364 m²…"
+  (belt_fires 12→16, carrying false→true — wind shifted, smoke inbound).
+
+### 2026-10-07 13:33 — ~2h mark, 37 samples
+- 9 field refresh cycles, all on ~15 min cadence (latest 13:31, age 752→14). Max age seen 922 s.
+- CloudWatch 13:33: all 3 alarms `OK`. `/community` steady (44 obs / 24 contributors).
+- cause_note stays on the parali-carrying story (fires 16, N wind, ventilation ~1,364 m²).
+- Deploy-latency note: the c1f22da docs commit pushed 12:37 never surfaced as build_sha
+  (>55 min) while c86074ff took ~14 min — pipeline appears to batch/dedupe doc-only
+  pushes; app sha is not a reliable per-commit ticker. Watching for any later bump.
+
+### 2026-10-07 13:55 — SHA TRANSITION `c86074ff → ffddab93`
+- Landed: **landing v7** (ffddab9 — current-UI hero + chooser film-strip section),
+  privacy k≥3 gate on contributors_detail day-rows (af653e5), offline-pack map fix (54a296e),
+  plus lane docs. Real app-code deploy — full sweep run.
+- Field cycle unbroken (364→18 s across cutover, refresh on schedule at 13:55).
+- Sweep — all pass:
+  - Routes 200: `/` `/landing` `/admin` `/city` `/v2/city` `/community`; `/v2/usage` guest 401.
+  - Landing 118.6 KB (was 115.8); film-strip/chooser/webp markers present; real script
+    65,857 B byte-identical, `node --check` PARSE-OK.
+  - Chrome live-verify ~14:04: boot clears, 47.2 µg/m³ SATISFACTORY paints, dose row live,
+    "The city, kept." hourly chart + district tiles live (Outer North Delhi 104 / Rohtak 100 /
+    N West Delhi 100 / Sonipat 97), footer reads BUILD FFDDAB93.
+- CloudWatch 14:02: all 3 alarms `OK`. `/community` steady.
+
+### 2026-10-07 14:08 — SHA TRANSITION `ffddab93 → 7c68c8bc` (docs-only HEAD)
+- Sweep pass: all routes 200, `/v2/usage` 401, cause_note populated. Landing payload
+  byte-identical to ffddab93 (v7 untouched by the docs roll).
+
+### 2026-10-07 14:32 — freeze window (~20:00 IST), 11 cycles, 46 samples
+- Field refresh #11 landed on schedule 14:23 (797→22 s). `field_stale` never true all watch.
+- Stations 54, cause_note populated (parali note currently "not carrying" — wind oscillating
+  through the evening; ventilation flagged low at 467 m²/s in the note fields).
+- Latest repo state at freeze: prod `7c68c8bc`; deploy5 report pins rollback at c86074ff;
+  APK freeze re-cut in progress on another lane (docs mention it, no prod impact yet).
+- Zero stalls, zero alarms, zero broken surfaces across the whole pre-freeze window.
+
+## Watch closed — 2026-10-07 14:59 UTC (20:29 IST)
+
+**Window:** 10:56–14:59 UTC (~4 h) · **81 samples** @ ~3 min · **uptime 100%** (every probe HTTP 200).
+
+**Field generator (the demo-killer watch):** 13 refresh cycles observed, all on ~15 min
+cadence. Max `field_age_s` seen 928 s — never approached the ~1200 s stall line;
+`field_stale` never true. The field never froze.
+
+**Sha transitions seen: 4**
+| # | Time (UTC) | From → To | Contents | Sweep |
+|---|-----------|-----------|----------|-------|
+| 1 | 11:42 | 698cf808 → 43913dc0 | landing-perf (webp hero, fetch dedupe, /v2/city cache) | PASS incl. Chrome boot verify |
+| 2 | 12:31 | 43913dc0 → c86074ff | docs-only | PASS |
+| 3 | 13:55 | c86074ff → ffddab93 | **landing v7 + k≥3 privacy fix + offline-map fix** | PASS incl. Chrome boot verify (footer BUILD FFDDAB93) |
+| 4 | 14:08 | ffddab93 → 7c68c8bc | docs-only (prod pinned here through freeze) | PASS |
+
+**Alarms:** `alive108-field-age`, `alive108-field-emitter-dead`, `alive108-target-down`
+checked ~hourly — `OK` every check, zero transitions.
+
+**Anomalies:** none requiring action. One transient stations dip 52→46 (11:14–11:24)
+self-recovered; deploy-latency for doc-only pushes is batchy (noted for lanes using
+build_sha as a deploy ticker). cause_note stayed populated all watch; story rotated
+(carrying true → false) as wind shifted — feature working, not a defect.
+
+**Freeze:** prod stable on `7c68c8bc`; APK freeze re-cut landed repo-side only — no
+prod deploy since 14:08, freeze holds.
