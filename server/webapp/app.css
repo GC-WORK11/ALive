@@ -48,6 +48,9 @@ a { color: var(--accent-ink); text-decoration: none }
   border-radius: 999px; padding: 8px 13px; font-size: 12.5px; font-weight: 500;
   color: var(--ink2); box-shadow: var(--sh-card); max-width: 62vw; }
 #loc-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none }
+/* the chip only acts on home (it re-opens consent); off-home it is dead
+   and its fixed position covers sheet controls — hide it there */
+body[data-top]:not([data-top="home"]) #loc-chip { display: none; }
 #loc-chip .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 
 /* ── screen stack ── */

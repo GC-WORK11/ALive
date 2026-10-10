@@ -290,7 +290,7 @@ function renderBody() {
         A.map.fly(s.lat, s.lon, 12.2);
         const extra = `<div class="pm-env-line">${[
           s.pm25_now != null ? `now ${A.fmt.ugm3(s.pm25_now)}` : null,
-          s.cleaner_by_ug != null && s.cleaner_by_ug > 0 ? `${Math.round(s.cleaner_by_ug)} µg/m³ lighter than around you` : null,
+          s.cleaner_by_ug != null && Math.round(s.cleaner_by_ug) > 0 ? `${Math.round(s.cleaner_by_ug)} µg/m³ lighter than around you` : null,
           s.scored_on ? `scored on ${s.scored_on === 'next24h' ? 'the next 24 h' : esc(s.scored_on)}` : null,
         ].filter(Boolean).join(' · ')}</div>`;
         openEnv(s.name, s.lat, s.lon, extra);

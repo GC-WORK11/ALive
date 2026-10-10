@@ -586,7 +586,7 @@ A.screen('journey', {
           <div class="jr-body">
             <div class="jr-sim" ${isSim ? '' : 'hidden'}>preview — simulated ride · the receipt uses plan pace</div>
             <div class="jr-stats">
-              <div><div class="jr-sv">${A.fmt.km(rec.covered_km)}</div><div class="jr-sk">you covered${rec.arrived ? '' : ` of ${A.fmt.km(rec.km_plan)}`}</div></div>
+              <div><div class="jr-sv">${A.fmt.km(rec.covered_km)}</div><div class="jr-sk">${rec.arrived ? 'you covered' : `you covered · planned ${A.fmt.km(rec.km_plan)}`}</div></div>
               <div><div class="jr-sv">${fmtDur(rec.taken_s)}</div><div class="jr-sk">${isSim ? 'sim time' : 'it took'} · plan ${fmtDur(rec.eta_plan_s)}</div></div>
               <div><div class="jr-sv">${dShown == null ? '—' : '~' + Math.round(dShown)}</div><div class="jr-sk">µg · plan est.</div></div>
             </div>

@@ -136,6 +136,7 @@ function show(id, params, replace = false) {
   host.appendChild(el);
   const rec = { id, el, def };
   stack.push(rec);
+  document.body.dataset.top = id;
   const cleanup = def.mount(el, params || {});
   rec.cleanup = cleanup;
 }
@@ -145,7 +146,14 @@ function back() {
   if (cur.cleanup) cur.cleanup();
   cur.el.remove();
   const top = stack[stack.length - 1];
-  if (top) { top.el.classList.add('on'); if (top.def.show) top.def.show(); }
+  if (top) { top.el.classList.add('on'); if (top.def.show) top.def.show(); document.body.dataset.top = top.id; }
+  else {
+    /* stack empty — never strand on a bare map: route home via the hash
+       handler (or mount directly if the hash is already home) */
+    document.body.dataset.top = 'home';
+    if (location.hash !== '#/home') location.hash = '#/home';
+    else if (SCREENS.home) show('home', {});
+  }
 }
 function current() { const c = stack[stack.length - 1]; return c && c.id; }
 
