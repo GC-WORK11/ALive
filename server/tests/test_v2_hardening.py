@@ -1,0 +1,818 @@
+"""Hardening for /v2 — ranking-rule property tests over a real Delhi
+OD matrix plus edge-case fuzz on /v2/plan, /v2/strip, /v2/search.
+
+Ranking invariants (docs/plan/06 §4), asserted per response AND per
+randomized unit input to rank_options:
+  * exactly one option recommended (when any option is scored)
+  * the recommended option is within-tie: dose_lo (or mid fallback)
+    <= 1.10 × min dose among scored
+  * tag consistency: 'lightest on both' only when the recommended
+    option is also the global emission minimum; otherwise both
+    'lightest for you' and 'lightest for Delhi' appear
+  * time guard: recommended slower than 1.6× the fastest scored ETA
+    must carry a '+N min' reason
+
+Offline: FakeLoc returns distance-proportional routes, osrm_route is
+monkeypatched likewise, FIELD holds injected samples.
+Run from server/:
+    .venv/bin/python -m pytest tests/test_v2_hardening.py -v
+"""
+import math
+import os
+import random
+import re
+import sys
+import time
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+os.environ.pop("ALIVE_LOCATION_KEY", None)
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import main  # noqa: E402
+from airfield import FIELD  # noqa: E402
+from v2 import deps, store  # noqa: E402
+from v2 import plan as v2plan  # noqa: E402
+
+client = TestClient(main.app, raise_server_exceptions=False)
+
+# --- real Delhi OD pairs ------------------------------------------------------
+CP = (28.6315, 77.2167)
+PAIRS = [
+    ("CP → Noida Sec-18", (28.6315, 77.2167), (28.5708, 77.3260)),
+    ("CP → Gurugram CyberCity", (28.6315, 77.2167), (28.4950, 77.0890)),
+    ("Dwarka-21 → Rohini", (28.5523, 77.0580), (28.7041, 77.1125)),
+    ("Sarai Kale Khan → IGI T3", (28.5884, 77.2572), (28.5562, 77.1000)),
+    ("Chandni Chowk → IIT-D", (28.6506, 77.2303), (28.5449, 77.1928)),
+    ("Kashmere Gate → Faridabad", (28.6675, 77.2280), (28.4089, 77.3178)),
+    ("Same point (0 km)", (28.6139, 77.2090), (28.6139, 77.2090)),
+]
+
+
+def _hav_m(la1, lo1, la2, lo2):
+    p1, p2 = math.radians(la1), math.radians(la2)
+    dp, dl = math.radians(la2 - la1), math.radians(lo2 - lo1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * 6371000.0 * math.asin(math.sqrt(h))
+
+
+def _geom(a, b):
+    """Straight-ish LineString, [lon,lat], ~20 points along the OD."""
+    return {"type": "LineString",
+            "coordinates": [[a[1] + (b[1] - a[1]) * i / 19,
+                             a[0] + (b[0] - a[0]) * i / 19]
+                            for i in range(20)]}
+
+
+class DistFakeLoc:
+    """Amazon-shaped fake whose routes scale with real OD distance —
+    so each OD pair exercises a different ranking regime."""
+    def __init__(self, enabled=True):
+        self.enabled = enabled
+
+    async def calculate_routes(self, flat, flon, tlat, tlon,
+                               travel_mode="Car", alternatives=2,
+                               depart_at=None):
+        d = _hav_m(flat, flon, tlat, tlon)
+        if d < 100:
+            return []
+        base = max(120.0, d / 1000.0 / 28.0 * 3600.0)  # ~28 km/h Delhi
+        routes = [{"distance_m": d * 1.18, "duration_s": base,
+                   "freeflow_s": base * 0.82,
+                   "geometry": _geom((flat, flon), (tlat, tlon)),
+                   "notices": [], "source": "fake-amazon"}]
+        for i in range(min(alternatives, 2)):          # slower alternates
+            routes.append({"distance_m": d * (1.25 + 0.1 * i),
+                           "duration_s": base * (1.15 + 0.2 * i),
+                           "freeflow_s": base * 0.9,
+                           "geometry": _geom((flat, flon), (tlat, tlon)),
+                           "notices": [], "source": "fake-amazon"})
+        return routes
+
+    async def suggest(self, q, lat, lon, limit=8):
+        return []
+
+    async def get_place(self, place_id):
+        return None
+
+    async def reverse_geocode(self, lat, lon, limit=10):
+        return [{"place_id": "r1", "street": "Rajpath",
+                 "locality": "Central Secretariat",
+                 "label": "Rajpath, Central Secretariat, New Delhi",
+                 "lat": 28.6150, "lon": 77.2150, "distance_m": 40,
+                 "kind": "Street", "source": "amazon"}]
+
+
+@pytest.fixture(autouse=True)
+def wired(monkeypatch):
+    deps.set_location(DistFakeLoc())
+    FIELD._samples = [
+        (28.6315, 77.2167, "test-station", {"pm2_5": 150.0}),
+        (28.6519, 77.1907, None, {"pm2_5": 185.0}),
+        (28.5850, 77.2300, None, {"pm2_5": 120.0}),
+        (28.5708, 77.3260, None, {"pm2_5": 210.0}),
+        (28.4950, 77.0890, None, {"pm2_5": 95.0}),
+    ]
+    FIELD._fetched_at = time.time()
+
+    async def _no_refresh():
+        return None
+    monkeypatch.setattr(deps, "field_refresh", _no_refresh)
+
+    async def fake_osrm(profile, flon, flat, tlon, tlat):
+        d = _hav_m(flat, flon, tlat, tlon)
+        if d < 50:
+            return None
+        return {"distance": d * 1.15, "duration": d / 1000.0 / 25.0 * 3600.0,
+                "geometry": _geom((flat, flon), (tlat, tlon))}
+    monkeypatch.setattr(deps, "osrm_route", fake_osrm)
+
+    store.TRIPS.reset()
+    store.ROUTES._routes.clear()
+    yield
+    deps.set_location(None)
+    FIELD._samples = []
+
+
+# --- ranking helpers (mirror of plan.py internals) -----------------------------
+def _dose_key(o):
+    d = o.get("dose") or {}
+    v = d.get("lo") if d.get("lo") is not None else d.get("mid")
+    return float(v) if v is not None else float("inf")
+
+
+def _co2_mid(o):
+    e = (o.get("emissions") or {}).get("co2_kg") or {}
+    v = e.get("mid")
+    return float(v) if v is not None else float("inf")
+
+
+def _scored(options):
+    return [o for o in options
+            if _dose_key(o) != float("inf") and o.get("eta_s")]
+
+
+def assert_ranking_holds(options, ctx=""):
+    scored = _scored(options)
+    rec = [o for o in options if o.get("recommended")]
+    if not scored:
+        assert not rec, f"{ctx}: recommended an unscored option"
+        return
+    assert len(rec) == 1, f"{ctx}: {len(rec)} recommended, want exactly 1"
+    win = rec[0]
+    assert win in scored, f"{ctx}: recommended option isn't scored"
+
+    dose_min = min(_dose_key(o) for o in scored)
+    assert _dose_key(win) <= 1.10 * dose_min * (1 + 1e-9), (
+        f"{ctx}: recommended dose {_dose_key(win)} breaches the "
+        f"10% tie vs min {dose_min}")
+
+    tags = {o.get("tag") for o in options if o.get("tag")}
+    assert tags <= {"lightest on both", "lightest for you",
+                    "lightest for Delhi"}, f"{ctx}: bad tag {tags}"
+    emin = min(scored, key=_co2_mid)
+    if win.get("tag") == "lightest on both":
+        assert _co2_mid(win) == _co2_mid(emin), (
+            f"{ctx}: 'lightest on both' but co2 {_co2_mid(win)} "
+            f"!= min {_co2_mid(emin)}")
+    elif tags:
+        emis_known = _co2_mid(emin) != float("inf")
+        want = ({"lightest for you", "lightest for Delhi"} if emis_known
+                # no emission estimate anywhere → 'lightest for Delhi'
+                # would pick an arbitrary option — only the dose tag is honest
+                else {"lightest for you"})
+        assert want <= tags, f"{ctx}: split tags incomplete: {tags}"
+
+    fastest = min(o["eta_s"] for o in scored)
+    if fastest and win["eta_s"] > 1.6 * fastest:
+        m = re.search(r"\+(\d+)\s*min", win.get("reason_line") or "")
+        assert m, (f"{ctx}: recommended is {win['eta_s']/fastest:.2f}× "
+                   f"fastest without a '+N min' reason")
+        want = int(round((win["eta_s"] - fastest) / 60.0))
+        assert abs(int(m.group(1)) - want) <= 1, (
+            f"{ctx}: reason says +{m.group(1)} min, want ~+{want}")
+
+
+# --- ranking property over the real OD matrix ---------------------------------
+@pytest.mark.parametrize("name,a,b", PAIRS,
+                         ids=[p[0] for p in PAIRS])
+def test_plan_ranking_invariants_on_real_ods(name, a, b):
+    r = client.post("/v2/plan", json={
+        "from": {"lat": a[0], "lon": a[1]},
+        "to": {"lat": b[0], "lon": b[1]}, "vehicle": "car"})
+    assert r.status_code == 200
+    body = r.json()
+    if not body["options"]:
+        pytest.skip(f"{name}: no options returned")
+    assert_ranking_holds(body["options"], ctx=name)
+    # recommended is sorted first whenever one exists
+    if any(o.get("recommended") for o in body["options"]):
+        assert body["options"][0]["recommended"]
+
+
+def test_rank_options_randomized_property():
+    """200 seeded random option sets — invariants must hold for ANY
+    input the builders might produce, not just tonight's field."""
+    rng = random.Random(108)
+    for trial in range(200):
+        n = rng.randint(1, 8)
+        opts = []
+        for i in range(n):
+            dose_lo = rng.choice([None, rng.uniform(0, 400)])
+            dose_mid = rng.uniform(0, 400) if dose_lo is None else \
+                dose_lo + rng.uniform(0, 40)
+            co2 = rng.choice([None, rng.uniform(0, 5)])
+            opts.append({
+                "mode": f"m{i}", "eta_s": rng.choice([0, rng.uniform(60, 7200)]),
+                "dose": {"lo": dose_lo, "mid": dose_mid},
+                "emissions": {"co2_kg": {"mid": co2}},
+                "recommended": rng.random() < 0.3,   # stale flags must reset
+                "tag": rng.choice([None, "lightest on both"]),
+                "reason_line": "stale",
+            })
+        v2plan.rank_options(opts)
+        assert_ranking_holds(opts, ctx=f"random trial {trial}")
+
+
+def test_rank_all_none_emissions_claims_nothing():
+    """If every option's co2 is unknown, 'lightest on both' is a claim
+    the data can't support — the tag should be suppressed."""
+    opts = [
+        {"mode": "x", "eta_s": 600, "dose": {"lo": 100, "mid": 100},
+         "emissions": {"co2_kg": {"mid": None}}},
+        {"mode": "y", "eta_s": 500, "dose": {"lo": 105, "mid": 105},
+         "emissions": {"co2_kg": {"mid": None}}},
+    ]
+    out = v2plan.rank_options(opts)
+    win = out[0]
+    assert win["tag"] != "lightest on both", (
+        "claimed 'lightest on both' with no emission data at all")
+
+
+def test_rank_dose_only_options_still_recommend():
+    """Options with dose but no emissions: recommendation still lands
+    (on the dose winner) and no emission tag is invented."""
+    opts = [
+        {"mode": "hi", "eta_s": 600, "dose": {"lo": 300, "mid": 300},
+         "emissions": {"co2_kg": {}}},
+        {"mode": "lo", "eta_s": 500, "dose": {"lo": 100, "mid": 100},
+         "emissions": {"co2_kg": {}}},
+    ]
+    out = v2plan.rank_options(opts)
+    assert out[0]["mode"] == "lo" and out[0]["recommended"]
+
+
+def test_rank_no_scored_options_recommends_nothing():
+    opts = [{"mode": "a", "eta_s": 0, "dose": {"lo": None, "mid": None},
+             "emissions": {}}]
+    out = v2plan.rank_options(opts)
+    assert not any(o.get("recommended") for o in out)
+
+
+# --- /v2/plan malformed bodies ---------------------------------------------------
+def test_plan_missing_from_returns_honest_error():
+    r = client.post("/v2/plan", json={"to": {"lat": 28.5, "lon": 77.2}})
+    assert r.status_code in (200, 400, 422)
+    body = r.json()
+    assert not body.get("options"), "options for a missing origin?!"
+    assert body.get("error"), "missing 'from' produced no error field"
+
+
+def test_plan_missing_to_and_empty_body():
+    for body in ({"from": {"lat": 28.6, "lon": 77.2}}, {}, {"from": None}):
+        r = client.post("/v2/plan", json=body)
+        assert r.status_code in (200, 400, 422)
+        j = r.json()
+        assert not j.get("options")
+        assert j.get("error") is not None
+
+
+def test_plan_non_numeric_lat():
+    r = client.post("/v2/plan", json={
+        "from": {"lat": "abc", "lon": 77.2},
+        "to": {"lat": 28.5, "lon": 77.2}})
+    assert r.status_code in (200, 400, 422)
+    assert r.json().get("error") or r.json().get("detail")
+
+
+def test_plan_out_of_range_coordinates():
+    """lat=999 is float-valid but geo-garbage — a defensive server
+    either routes nothing or errors honestly; it must not 500."""
+    r = client.post("/v2/plan", json={
+        "from": {"lat": 999.0, "lon": 999.0},
+        "to": {"lat": 28.5, "lon": 77.2}})
+    assert r.status_code in (200, 400, 422)
+
+
+def test_plan_point_as_list_geojson_order():
+    """[lon,lat] shorthand must work (contract allows both)."""
+    r = client.post("/v2/plan", json={
+        "from": [77.2167, 28.6315], "to": [77.3260, 28.5708]})
+    assert r.status_code == 200
+    assert isinstance(r.json().get("options"), list)
+
+
+def test_plan_unknown_vehicle_falls_back():
+    r = client.post("/v2/plan", json={
+        "from": {"lat": 28.63, "lon": 77.21},
+        "to": {"lat": 28.57, "lon": 77.32}, "vehicle": "unicycle"})
+    assert r.status_code == 200
+    assert r.json()["vehicle"] == "car"             # modelled fallback
+    assert r.json()["vehicle_requested"] == "unicycle"  # echoed, not washed
+
+
+# --- /v2/strip edge cases ---------------------------------------------------------
+def _seed_route(age_s=0.0):
+    rid = store.ROUTES.put({"geometry": _geom(CP, (28.5708, 77.3260)),
+                            "mode": "car", "duration_s": 900,
+                            "vehicle": "car"})
+    if age_s:
+        store.ROUTES._routes[rid] = (time.time() - age_s,
+                                     store.ROUTES._routes[rid][1])
+    return rid
+
+
+def test_strip_unknown_route_id_404_honest():
+    r = client.get("/v2/strip", params={"route_id": "does-not-exist"})
+    assert r.status_code == 404
+    body = r.json()
+    assert body.get("error") and "route_id" in body.get("error", "")
+    assert body.get("detail"), "404 without the honest expiry note"
+
+
+def test_strip_expired_route_id_404():
+    """A route_id past its 1 h TTL dies with the same honest 404 —
+    no resurrected geometry."""
+    rid = _seed_route(age_s=3700)
+    r = client.get("/v2/strip", params={"route_id": rid})
+    assert r.status_code == 404
+    assert "expire" in r.json().get("detail", "").lower() or \
+        r.json().get("error")
+
+
+def test_strip_empty_and_missing_route_id():
+    assert client.get("/v2/strip").status_code == 422
+    assert client.get("/v2/strip",
+                      params={"route_id": ""}).status_code == 422
+
+
+def test_strip_live_route_samples_shape():
+    rid = _seed_route()
+    r = client.get("/v2/strip", params={"route_id": rid})
+    assert r.status_code == 200
+    body = r.json()
+    for s in body["samples"]:
+        # strip points are rounded to 5 dp — never raw-precision
+        assert s["lat"] == round(s["lat"], 5)
+        assert s["lon"] == round(s["lon"], 5)
+        if s["pm25"] is not None:
+            assert s["pm25"] >= 0
+
+
+def test_strip_route_id_sqlish_injection_is_404():
+    for evil in ("'; DROP TABLE routes--", "../etc/passwd",
+                 "%00", "x" * 500):
+        r = client.get("/v2/strip", params={"route_id": evil})
+        assert r.status_code == 404, f"{evil!r} → {r.status_code}"
+
+
+# --- /v2/search edge cases -------------------------------------------------------
+def test_search_oversized_limit_not_silent():
+    """limit > 15: honest behavior = clamp OR 4xx — never obey blindly."""
+    r = client.get("/v2/search", params={"q": "connaught", "limit": 500})
+    if r.status_code == 200:
+        assert len(r.json()["results"]) <= 15
+    else:
+        assert r.status_code == 422  # FastAPI `le=15` rejects, not clamps
+
+
+def test_search_query_length_bounds():
+    assert client.get("/v2/search", params={"q": "a"}).status_code == 200
+    assert client.get("/v2/search",
+                      params={"q": "x" * 200}).status_code == 200
+    r = client.get("/v2/search", params={"q": "x" * 201})
+    assert r.status_code == 422
+    assert client.get("/v2/search", params={"q": ""}).status_code == 422
+
+
+def test_search_unicode_and_symbols():
+    for q in ("कनॉट प्लेस", "🚇🚇🚇", "<script>alert(1)</script>",
+              "नई दिल्ली railway", "a" * 3 + "\x00" + "b"):
+        r = client.get("/v2/search", params={"q": q})
+        assert r.status_code == 200, f"q={q!r} → {r.status_code}"
+        assert isinstance(r.json()["results"], list)
+
+
+def test_search_whitespace_only_query():
+    r = client.get("/v2/search", params={"q": "   "})
+    assert r.status_code == 200
+    assert r.json()["results"] == []
+
+
+def test_search_non_numeric_bias_rejected():
+    r = client.get("/v2/search",
+                   params={"q": "cp", "lat": "abc", "lon": "def"})
+    assert r.status_code == 422
+
+
+def test_search_limit_zero_and_negative():
+    for lim in (0, -3):
+        r = client.get("/v2/search", params={"q": "cp", "limit": lim})
+        assert r.status_code in (200, 422)
+        if r.status_code == 200:
+            # limit<=0 should mean "no results", never a negative-slice leak
+            assert r.json()["results"] == [], (
+                f"limit={lim} returned {len(r.json()['results'])} results")
+
+
+# --- cross-endpoint --------------------------------------------------------------
+def test_trip_then_city_shows_aggregates_only():
+    """Donate a trip, read /v2/city: totals move, nothing per-trip
+    or per-token appears in the consumer payload."""
+    for tok in ("c1", "c2", "c3"):
+        client.post("/v2/trip", json={
+            "device_token": tok,
+            "summary": {"mode": "cycle", "distance_km": 4.0,
+                        "dose_ug": 30.0},
+            "trajectory": [[77.20 + i * 0.0009, 28.63]
+                           for i in range(50)]})
+    r = client.get("/v2/city")
+    assert r.status_code == 200
+    text = r.text
+    for tok in ("c1", "c2", "c3"):
+        assert tok not in text
+    trips = r.json()["trips"]
+    assert trips["days"], "trip aggregates missing from /v2/city"
+    day = trips["days"][time.strftime("%Y-%m-%d", time.gmtime())]
+    assert day["trips"] == 3 and day["modes"] == {"cycle": 3}
+
+
+def test_trip_mode_metro_plus_walk_survives():
+    """The planner itself emits 'metro+walk' as an option mode — a
+    donation carrying the server's own token must not have its mode
+    silently dropped by the summary regex."""
+    client.post("/v2/trip", json={
+        "device_token": "mmw1",
+        "summary": {"mode": "metro+walk", "distance_km": 9.0,
+                    "dose_ug": 38.7},
+        "trajectory": [[77.20 + i * 0.0011, 28.63]
+                       for i in range(50)]})
+    trips = client.get("/v2/city").json()["trips"]
+    day = trips["days"][time.strftime("%Y-%m-%d", time.gmtime())]
+    assert day["modes"].get("metro+walk") == 1, day["modes"]
+
+
+# --- /v2/trip plausibility floor (app-stress N2) -------------------------------
+def test_trip_phantom_donations_rejected_and_never_counted():
+    """The hostile drive's wire capture — a 0 km / 37 s "arrival" — and
+    its neighbours (sub-100 m, implied >140 km/h) must be refused at
+    ingest and never reach the community totals. A cancelled nav can
+    honestly produce a ~0 km donation; it is still not a traversal, so
+    422 is the answer (the app keeps its own ledger row regardless)."""
+    day_key = time.strftime("%Y-%m-%d", time.gmtime())
+    before = client.get("/v2/city").json()["trips"]["days"].get(day_key, {})
+    trips_before = before.get("trips", 0)
+
+    phantoms = [
+        {"mode": "auto", "distance_km": 0, "duration_s": 37},   # F1 wire proof
+        {"mode": "auto", "distance_km": 0.04, "duration_s": 60},  # under floor
+        {"mode": "auto", "distance_km": 5.0, "duration_s": 20},   # 900 km/h
+        {"mode": "auto", "distance_km": 2.0, "duration_s": 0},    # instant travel
+    ]
+    for i, summary in enumerate(phantoms):
+        r = client.post("/v2/trip", json={
+            "device_token": f"phantom-{i}",
+            "summary": summary, "trajectory": []})
+        assert r.status_code == 422, f"{summary} → {r.status_code}"
+
+    day = client.get("/v2/city").json()["trips"]["days"].get(day_key, {})
+    assert day.get("trips", 0) == trips_before, (
+        f"phantom donations reached the totals: {day}")
+
+
+def test_trip_plausible_receipt_still_lands():
+    """The floor must not eat real receipts: a slow 1.8 km / 5 min auto
+    ride (≈22 km/h) and a fast 12 km / 6 min express run (120 km/h)
+    both store."""
+    for tok, summary in (
+        ("real-auto", {"mode": "auto", "distance_km": 1.8,
+                       "duration_s": 300, "dose_ug": 1.1}),
+        ("real-express", {"mode": "metro", "distance_km": 12.0,
+                          "duration_s": 360, "dose_ug": 3.4}),
+    ):
+        r = client.post("/v2/trip", json={
+            "device_token": tok, "summary": summary,
+            "trajectory": [[77.20 + i * 0.0011, 28.63] for i in range(50)]})
+        assert r.status_code == 200 and r.json()["stored"], summary
+
+
+def test_trip_distance_only_donation_still_lands():
+    """duration_s is optional — a distance-only donation can't be
+    speed-checked but is still bounded elsewhere; it must not be
+    refused by the floor."""
+    r = client.post("/v2/trip", json={
+        "device_token": "no-duration",
+        "summary": {"mode": "walk", "distance_km": 0.8},
+        "trajectory": []})
+    assert r.status_code == 200 and r.json()["stored"]
+
+
+# --- /v2/trip geo + implied-C admission (judge-attack, server-audit) ----------
+def test_trip_outside_service_area_rejected_and_never_counted():
+    """The audits' proven poisoning path: donations minted corridor
+    cells for any in-range lat/lon on Earth. Every kept point leaves
+    the dose field's service area (NCR bbox + margin) → 422, and no
+    cells or totals accrue."""
+    day_key = time.strftime("%Y-%m-%d", time.gmtime())
+    before = client.get("/v2/city").json()["trips"]["days"].get(day_key, {})
+    trips_before = before.get("trips", 0)
+    cells_before = store.TRIPS.snapshot_cells()
+
+    foreign = [
+        # a whole Mumbai ride — every point outside the box
+        [[72.87 + i * 0.001, 19.07] for i in range(40)],
+        # Chennai hop — outside on latitude as well
+        [[80.27 + i * 0.001, 13.08] for i in range(40)],
+        # starts at CP, ends past the eastern margin
+        [[77.20 + i * 0.13, 28.63] for i in range(40)],
+        # endpoints inside NCR but the middle leaves the field —
+        # cell-poisoning shape: mints foreign cells mid-path
+        ([[77.20 + i * 0.05, 28.63] for i in range(70)]
+         + [[77.20 + (139 - i) * 0.05, 28.63] for i in range(70, 139)]),
+    ]
+    for i, traj in enumerate(foreign):
+        r = client.post("/v2/trip", json={
+            "device_token": f"foreign-{i}",
+            "summary": {"mode": "car", "distance_km": 5.0,
+                        "duration_s": 900, "dose_ug": 80.0},
+            "trajectory": traj})
+        assert r.status_code == 422, (
+            f"trajectory {i} → {r.status_code}: {r.json()}")
+
+    day = client.get("/v2/city").json()["trips"]["days"].get(day_key, {})
+    assert day.get("trips", 0) == trips_before, (
+        f"out-of-area donations reached the totals: {day}")
+    assert store.TRIPS.snapshot_cells() == cells_before, (
+        "out-of-area donation minted corridor cells")
+
+
+def test_trip_valid_ncr_traversal_still_flows():
+    """The bound must not eat real Delhi data: a CP→outskirts ride
+    inside the margin still stores and reaches the aggregates."""
+    r = client.post("/v2/trip", json={
+        "device_token": "ncr-real",
+        "summary": {"mode": "car", "distance_km": 30.0,
+                    "duration_s": 2400, "dose_ug": 150.0},
+        "trajectory": [[77.20 + i * 0.001, 28.63] for i in range(50)]})
+    assert r.status_code == 200 and r.json()["stored"]
+    assert r.json()["cells_traversed"] >= 1
+
+
+def test_trip_implausible_implied_concentration_rejected():
+    """dose_ug carried only a 50,000 magnitude cap — '5 km walked in
+    an hour inhaling 50 mg' implies ~46,000 µg/m³ ambient. The
+    corridor layer accepts <=900 as a measurement; donations past it
+    are refused, whether or not duration_s was sent (it falls back to
+    the 6 h cap — the most donor-favorable duration)."""
+    day_key = time.strftime("%Y-%m-%d", time.gmtime())
+    before = client.get("/v2/city").json()["trips"]["days"].get(day_key, {})
+    trips_before = before.get("trips", 0)
+
+    absurd = [
+        # walk 1 h, 50 mg → implied C ≈ 46k µg/m³
+        {"mode": "walk", "distance_km": 5.0, "duration_s": 3600,
+         "dose_ug": 50_000.0},
+        # metro 10 min, 5 mg → implied C ≈ 111k
+        {"mode": "metro", "distance_km": 8.0, "duration_s": 600,
+         "dose_ug": 5_000.0},
+        # no duration: at the 6 h cap 50 mg still implies ~25k
+        {"mode": "car", "distance_km": 120.0, "dose_ug": 50_000.0},
+    ]
+    for i, summary in enumerate(absurd):
+        r = client.post("/v2/trip", json={
+            "device_token": f"sniffer-{i}",
+            "summary": summary,
+            "trajectory": [[77.20 + j * 0.0011, 28.63]
+                           for j in range(50)]})
+        assert r.status_code == 422, f"{summary} → {r.status_code}"
+
+    day = client.get("/v2/city").json()["trips"]["days"].get(day_key, {})
+    assert day.get("trips", 0) == trips_before, (
+        f"absurd-dose donations reached the totals: {day}")
+
+
+def test_trip_bad_air_day_dose_still_lands():
+    """A severe-day traversal is real data: 1 h in an auto at implied
+    ~795 µg/m³ sits under the ceiling and must store."""
+    r = client.post("/v2/trip", json={
+        "device_token": "hard-day",
+        "summary": {"mode": "auto", "distance_km": 9.0,
+                    "duration_s": 3600, "dose_ug": 620.0},
+        "trajectory": [[77.20 + i * 0.0011, 28.63] for i in range(50)]})
+    assert r.status_code == 200 and r.json()["stored"]
+
+
+# --- DELETE /v2/ledger ---------------------------------------------------------
+def test_ledger_delete_requires_token():
+    """'Delete my data' takes a device token — no token, no scoped wipe,
+    and never a bulk wipe."""
+    r = client.delete("/v2/ledger")
+    assert r.status_code == 422
+    r = client.delete("/v2/ledger", params={"token": ""})
+    assert r.status_code == 422
+
+
+def test_ledger_delete_unknown_token_is_honest_zero():
+    """Deleting a token that never donated is an honest 0, not a 404
+    theatre or an invented success."""
+    r = client.delete("/v2/ledger",
+                      params={"token": "device-that-never-donated-x1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["deleted"] == 0
+    assert "corridor" in body["scope"]  # scope stated on the wire
+
+
+def test_ledger_delete_second_call_idempotent():
+    """Same token deleted twice: second call reports deleted=0 — the
+    wipe is scoped and honest, never claimed twice."""
+    tok = "idempotent-delete-probe"
+    r1 = client.delete("/v2/ledger", params={"token": tok})
+    r2 = client.delete("/v2/ledger", params={"token": tok})
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert r2.json()["deleted"] == 0
+
+
+# --- service-area guard on point-read endpoints ------------------------------
+# Found in the malformed-input sweep: /aqi?lat=51.5&lon=-0.12 (London) and
+# lat=999 both returned a Delhi edge value (field clamps to nearest cell) —
+# Delhi air presented as someone else's. Every field-backed point read now
+# refuses outside the service margin the same way routing does.
+
+@pytest.mark.parametrize("path,key", [
+    ("/aqi", "pm25"),
+    ("/today", "hours_ist"),
+    ("/escape", "best"),
+    ("/shift", "dose_ug"),
+])
+def test_point_reads_refuse_outside_service_area(path, key):
+    r = client.get(path, params={"lat": 51.5, "lon": -0.12})
+    assert r.status_code == 200
+    body = r.json()
+    assert "outside service area" in (body.get("error") or "")
+    assert body.get(key) in (None, [])
+
+
+@pytest.mark.parametrize("path", ["/aqi", "/today", "/escape", "/shift"])
+def test_point_reads_refuse_impossible_coordinates(path):
+    """lat=999 is float-valid but geo-garbage — honest refusal, not the
+    clamped field edge."""
+    r = client.get(path, params={"lat": 999.0, "lon": 77.2})
+    assert r.status_code in (200, 422)
+    body = r.json()
+    if r.status_code == 200:
+        assert body.get("error")
+
+
+def test_aqi_inside_service_area_still_serves():
+    """The guard must not tighten the real surface — an NCR point still
+    returns field data (or the honest 'field unavailable' early-boot)."""
+    r = client.get("/aqi", params={"lat": 28.6315, "lon": 77.2167})
+    assert r.status_code == 200
+    body = r.json()
+    assert "outside service area" not in (body.get("error") or "")
+
+
+def test_aqi_beyond_field_edge_marked(wired):
+    """Inside the 2° service margin but ~170 km past the seeded field's
+    extent — /aqi still answers (the service box is the gate), but the
+    served value is the nearest edge evidence extrapolated, not a local
+    read. The edge-honesty probe served the literal edge cell's pm25
+    here, confident-looking, disclosed only by a large ns_km a client
+    can ignore. beyond_field_edge is the additive marker."""
+    r = client.get("/aqi", params={"lat": 30.20, "lon": 77.21})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["beyond_field_edge"] is True
+    assert body["nearest_sample_km"] > 100     # the disclosure it replaces
+    assert body["pm25"] is not None            # response kept, just honest
+
+
+def test_aqi_inside_field_extent_not_beyond_edge(wired):
+    r = client.get("/aqi", params={"lat": 28.60, "lon": 77.20})
+    assert r.status_code == 200
+    body = r.json()
+    if body.get("pm25") is not None:           # field seeded -> served
+        assert body["beyond_field_edge"] is False
+
+
+def test_beyond_field_edge_empty_field_is_false():
+    """No serving data -> no 'past the edge' claim (the flag only ever
+    comments on a point actually being served)."""
+    from airfield import FIELD
+    FIELD._samples = []
+    FIELD._snap_cells = []
+    assert FIELD.beyond_field_edge(28.60, 77.20) is False
+
+
+def test_option_marks_geometry_truncated_at_field_edge():
+    """Hostile-audit #1: geometry ending far short of the requested
+    destination (live osrm-local clips at its NCR extract edge, ~28.95°N)
+    must NOT silently report confidence:high — the option has to say it
+    never reaches the destination. Unit-level: the fixture's OSRM routes
+    globally so only _option carries the live clip."""
+    from v2 import plan as plan_mod
+    clipped = {"type": "LineString", "coordinates": [
+        [77.21, 28.61], [77.40, 28.75], [77.1966, 28.9487]]}
+    o = plan_mod._option(
+        "car", "Car (AC)", clipped, 45.11, 4135, 3600, "osrm",
+        "car", origin=(28.61, 77.21), dest=(30.0, 79.0))
+    assert o.get("reaches_destination") is False
+    assert o.get("truncated_gap_km") > 100   # ~140km short
+    assert (o.get("dose") or {}).get("confidence") == "low"
+    assert "field edge" in (o.get("dose") or {}).get("basis", "")
+    assert "priced field" in o.get("reason_line", "")
+
+
+def test_option_full_reach_is_not_marked_truncated():
+    """Guard precision: geometry ending at the destination must NOT get
+    the marker — the 3km floor absorbs geocoder snap only."""
+    from v2 import plan as plan_mod
+    full = {"type": "LineString", "coordinates": [
+        [77.2167, 28.6315], [77.10, 28.50], [77.0266, 28.4595]]}
+    o = plan_mod._option(
+        "car", "Car (AC)", full, 31.0, 1900, 1500, "osrm",
+        "car", origin=(28.6315, 77.2167), dest=(28.4595, 77.0266))
+    assert "reaches_destination" not in o
+    assert "truncated_gap_km" not in o
+
+
+def test_truncated_option_never_recommended():
+    """A clipped route must not win the 'recommended' flag even when it
+    is the only scored option."""
+    from v2 import plan as plan_mod
+    clipped = {"type": "LineString", "coordinates": [
+        [77.21, 28.61], [77.1966, 28.9487]]}
+    o = plan_mod._option(
+        "car", "Car (AC)", clipped, 45.0, 4000, 3600, "osrm",
+        "car", origin=(28.61, 77.21), dest=(30.0, 79.0))
+    out = plan_mod.rank_options([o])
+    assert not out[0].get("recommended")
+    assert out[0].get("reason_line")  # truncation note survives the reset
+
+
+def test_option_marks_geometry_snapped_at_origin():
+    """Origin-side twin of the hostile-audit truncation: a request from
+    30°N snaps to the graph edge (~28.98°N) and the geometry BEGINS
+    ~113km from the requested origin — the option must not serve
+    coverage:1.0 + confidence:high on a segment that isn't the trip.
+    Same marker class, opposite end."""
+    from v2 import plan as plan_mod
+    snapped = {"type": "LineString", "coordinates": [
+        [77.162281, 28.976182], [77.18, 28.80], [77.21015, 28.609742]]}
+    o = plan_mod._option(
+        "car", "Car (AC)", snapped, 51.65, 3600, 3300, "osrm-local",
+        "car", origin=(30.0, 77.4), dest=(28.61, 77.21))
+    assert o.get("starts_at_origin") is False
+    assert o.get("origin_gap_km") > 100        # ~113km origin gap
+    assert "reaches_destination" not in o      # it does reach the dest
+    assert (o.get("dose") or {}).get("confidence") == "low"
+    assert "requested origin" in (o.get("dose") or {}).get("basis", "")
+    assert "starts inside the priced field" in o.get("reason_line", "")
+
+
+def test_origin_snapped_option_never_recommended():
+    """An origin-snapped option must lose scored-eligibility the same way
+    a truncated one does — even when it is the only option."""
+    from v2 import plan as plan_mod
+    snapped = {"type": "LineString", "coordinates": [
+        [77.162281, 28.976182], [77.21015, 28.609742]]}
+    o = plan_mod._option(
+        "car", "Car (AC)", snapped, 51.65, 3600, 3300, "osrm-local",
+        "car", origin=(30.0, 77.4), dest=(28.61, 77.21))
+    ranked = plan_mod.rank_options([o])
+    assert all(x.get("recommended") is not True for x in ranked)
+
+
+def test_wind_unfetched_is_unknown_not_fake_calm():
+    """A failed met grab must not serve as '0 km/h from 0°' — before the
+    first successful fetch, wind() has to say unknown. Directional-IDW
+    reads _wind directly and stays isotropic (the safe physics fallback)."""
+    from airfield import AirField
+    import time as _t
+    f = AirField()
+    w = f.wind()
+    assert w["speed_kmh"] is None and w["known"] is False
+    assert w["factor"] == 0.0                    # isotropic weighting kept
+    # a real fetch marks known + stamps age
+    f._wind = (8.6, 307.0)
+    f._wind_at = _t.time() - 30
+    w = f.wind()
+    assert w["known"] is True and w["speed_kmh"] == 8.6
+    assert w["age_s"] >= 30
+    # two+ refresh cycles of failure → last-known expires to unknown
+    f._wind_at = _t.time() - 1900
+    assert f.wind()["known"] is False
