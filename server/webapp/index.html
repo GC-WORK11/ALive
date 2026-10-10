@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Alive — Delhi's air, priced in breath</title>
+<meta name="description" content="Alive is a personal PM2.5 dosimeter for Delhi: the cleanest way from A to B, the cleanest place to stay, the best hour to be outside, and the air under any point on the map.">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="map" aria-hidden="true"></div>
+
+<!-- top chrome: wordmark + live location chip -->
+<header id="chrome">
+  <div id="mark">alive</div>
+  <button id="loc-chip" type="button" hidden></button>
+</header>
+
+<!-- screens mount here: exactly one visible at a time -->
+<main id="screens"></main>
+
+<!-- the consent layer — above everything until answered -->
+<div id="consent" hidden>
+  <div class="consent-card">
+    <div class="consent-dot"></div>
+    <h1>your location, on your device</h1>
+    <p>Alive reads the environment around the point you share — that's the whole trick.
+    Your position never leaves this browser: the server only ever sees anonymous,
+    rounded cells. No account, no tracking.</p>
+    <div class="consent-actions">
+      <button id="consent-yes" type="button" class="btn-primary">share my location</button>
+      <button id="consent-skip" type="button" class="btn-ghost">pick a place on the map instead</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="app.js"></script>
+<script src="map.js"></script>
+<script src="search.js"></script>
+<script src="home.js"></script>
+<script src="whereto.js"></script>
+<script src="journey.js"></script>
+<script src="airmap.js"></script>
+<script src="purest.js"></script>
+</body>
+</html>
