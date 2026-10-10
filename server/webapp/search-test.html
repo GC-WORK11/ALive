@@ -1,0 +1,171 @@
+<!doctype html>
+<!-- search lane dev harness — NOT linked from index.html.
+     Runs the query list through A.search plus each layer separately,
+     prints results / resolving layer / latency. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>search cascade test</title>
+<style>
+  body { font: 13px/1.45 -apple-system, system-ui, sans-serif; margin: 0;
+         background: #F7F6F5; color: #222; }
+  header { padding: 14px 18px 6px; font-size: 18px; letter-spacing: -.3px; }
+  #ctl { display: flex; gap: 8px; padding: 8px 18px; flex-wrap: wrap;
+         align-items: center; }
+  textarea { width: 420px; height: 120px; font: 12px/1.5 monospace;
+             padding: 8px; border: 1px solid #ddd; border-radius: 8px;
+             background: #fff; }
+  button { padding: 8px 14px; border: 0; border-radius: 8px;
+           background: #2A4D3B; color: #fff; cursor: pointer; }
+  label { font-size: 12px; color: #555; }
+  input[type=text] { padding: 7px 9px; border: 1px solid #ddd;
+                     border-radius: 8px; width: 130px; }
+  #out { padding: 8px 18px 40px; }
+  .q { background: #fff; border: 1px solid #e6e4e1; border-radius: 10px;
+       margin: 10px 0; padding: 10px 12px; }
+  .q .head { font-weight: 600; }
+  .q .ms { color: #777; font-size: 11px; }
+  table { border-collapse: collapse; margin-top: 6px; width: 100%; }
+  td, th { text-align: left; padding: 3px 8px 3px 0; font-size: 12px;
+           vertical-align: top; }
+  th { color: #999; font-weight: 500; font-size: 11px; }
+  .src { font-size: 10px; padding: 1px 6px; border-radius: 8px;
+         background: #eee; white-space: nowrap; }
+  .src.engine { background: #e3ecff; }
+  .src.osm { background: #e8f2e8; }
+  .src.overpass { background: #f6ead9; }
+  .src.anchor { background: #f3e4f3; }
+  .layers { margin-top: 8px; font-size: 11px; color: #666; }
+  .layers b { color: #333; font-weight: 600; }
+  .empty { color: #a33; }
+  .none { color: #888; font-style: italic; }
+</style>
+</head>
+<body>
+<header>alive — search cascade test</header>
+<div id="ctl">
+  <textarea id="qs">Pawan Bakery C block Hanuman mandir Ashok nagar shahdara
+ISKCON delhi east of kailash
+Neelanchal dham sant nagar
+Nilanchal Dham
+bace sant nagar
+atta market noida sector 27
+jagat farm market vaishali
+huda market sector 56 gurgaon
+sector 29 market faridabad
+madanpur khadar
+khajuri khas market
+sanjay lake trilokpuri
+sheetla mata mandir gurugram
+prachin shiv mandir chittaranjan park
+tiptop market kalyan puri</textarea>
+  <div>
+    <label>bias <input type="text" id="bias" value="28.6139,77.2090"></label><br>
+    <button id="go">run cascade</button>
+    <button id="layers">run per-layer audit</button>
+    <div class="ms" id="status"></div>
+  </div>
+</div>
+<div id="out"></div>
+
+<script src="app.js"></script>
+<script src="search.js"></script>
+<script>
+const out = document.getElementById('out');
+const status = document.getElementById('status');
+
+function bias() {
+  const v = document.getElementById('bias').value.trim();
+  if (!v) return null;
+  const [a, b] = v.split(',').map(Number);
+  return isFinite(a) && isFinite(b) ? { lat: a, lon: b } : null;
+}
+const srcCls = (s) =>
+  s === 'delhi index' ? 'engine' :
+  s === 'overpass' ? 'overpass' :
+  s && s.startsWith('openstreetmap') ? 'osm' : 'anchor';
+const fmtKm = (d) => d == null ? '—' :
+  d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
+
+function table(rows, n = 5) {
+  if (!rows.length) return '<div class="empty">no rows</div>';
+  return '<table><tr><th>name</th><th>sub</th><th>lat,lon</th>' +
+    '<th>dist</th><th>src</th></tr>' +
+    rows.slice(0, n).map((r) =>
+      `<tr><td>${r.name}</td><td>${r.sub || ''}</td>` +
+      `<td>${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}</td>` +
+      `<td>${fmtKm(r.dist)}</td>` +
+      `<td><span class="src ${srcCls(r.source)}">${r.source}</span></td></tr>`)
+    .join('') + '</table>';
+}
+
+async function runCascade() {
+  out.innerHTML = '';
+  const b = bias();
+  for (const q of document.getElementById('qs').value.split('\n')) {
+    const query = q.trim(); if (!query) continue;
+    const div = document.createElement('div');
+    div.className = 'q';
+    div.innerHTML = `<div class="head">${query}</div><div class="ms">…</div>`;
+    out.appendChild(div);
+    const t0 = performance.now();
+    const rows = await A.search.search(query, b);
+    const ms = Math.round(performance.now() - t0);
+    const resolving = rows.length ? rows[0].source : 'none';
+    div.innerHTML = `<div class="head">${query} ` +
+      `<span class="ms">${ms} ms · resolves via: <b>${resolving}</b></span></div>` +
+      table(rows);
+  }
+}
+
+/* per-layer truth: same query fired at each layer alone */
+async function runLayers() {
+  out.innerHTML = '';
+  const b = bias() || { lat: 28.6139, lon: 77.2090 };
+  const D = A.search._dbg;
+  for (const q of document.getElementById('qs').value.split('\n')) {
+    const query = q.trim(); if (!query) continue;
+    const div = document.createElement('div');
+    div.className = 'q';
+    div.innerHTML = `<div class="head">${query}</div>`;
+    out.appendChild(div);
+    const marks = [];
+    const layers = [
+      ['engine', () => D.engineSearch(query, b)],
+      ['photon', () => D.photonSearch(query, b)],
+      ['nominatim', () => D.nominatimSearch(query, b)],
+      ['overpass', () => {
+        const w = D.sigTokens(query).filter((t) => t.length >= 3).slice(0, 4)
+          .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const re = w.length > 1 ? `(${w.join('|')})|${w.join('\\s+')}` : (w[0] || query);
+        return D.overpassByName(re);
+      }],
+    ];
+    let html = '';
+    for (const [name, fn] of layers) {
+      const t0 = performance.now();
+      const rows = await fn();
+      const ms = Math.round(performance.now() - t0);
+      marks.push(`${name}: ${rows.length} hits ${ms}ms`);
+      if (rows.length) {
+        html += `<div class="layers"><b>${name}</b> — ` +
+          rows.slice(0, 2).map((r) => `${r.name} (${r.lat.toFixed(4)}, ${r.lon.toFixed(4)})`)
+            .join(' · ') + '</div>';
+      }
+    }
+    const t2 = performance.now();
+    const rows = await A.search.search(query, b);
+    const ms = Math.round(performance.now() - t2);
+    div.innerHTML = `<div class="head">${query} <span class="ms">cascade ${ms} ms</span></div>` +
+      `<div class="layers">${marks.join(' | ')}${D.opDead.size ? ' · dead-op: ' + [...D.opDead].map((x) => x.split('/')[2]).join(',') : ''}</div>` +
+      html + table(rows);
+  }
+  status.textContent = 'audit done';
+}
+
+document.getElementById('go').addEventListener('click', runCascade);
+document.getElementById('layers').addEventListener('click', runLayers);
+</script>
+</body>
+</html>
