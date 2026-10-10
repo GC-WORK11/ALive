@@ -1,0 +1,25 @@
+/* where-to lane — scoped additions on the shared component vocabulary */
+.wt-row { width: 100%; text-align: left; margin-bottom: 0 }
+.wt-row-label { flex: 1; font-size: 15px; font-weight: 500; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap }
+.wt-row-label.empty { color: var(--ink4); font-weight: 400 }
+.wt-swap-row { position: relative; margin: -4px 0 4px }
+.wt-swap { position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border-radius: 50%; background: var(--surface2);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+  color: var(--ink3); z-index: 2; box-shadow: var(--sh-card) }
+.wt-modes { margin-top: 10px }
+.wt-modes .mode { padding: 11px 13px }
+.wt-modes .mi { font-size: 15px }
+.wt-results { margin-top: 4px }
+.wt-search-head { position: sticky; top: -4px; z-index: 5; box-shadow: var(--sh-float) }
+.wt-drop { margin-bottom: 4px }
+.wt-drop .srow { width: 100%; border-bottom: .5px solid var(--ink10) }
+.wt-err { text-align: center; padding: 26px 18px; background: var(--surface);
+  border-radius: var(--r-card); box-shadow: var(--sh-card); margin-top: 8px }
+.wt-err-t { font-weight: 500; font-size: 15px; margin-bottom: 5px }
+.wt-partial { text-align: center; padding: 8px 0 2px }
+.opt .otag { font-size: 10px; font-weight: 500; background: var(--accent-wash);
+  color: var(--accent-ink); border-radius: 999px; padding: 3px 8px;
+  letter-spacing: .01em }
+.opt .strip i { display: block }
