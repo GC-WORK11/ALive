@@ -1817,7 +1817,13 @@ async def static_asset(asset: str):
     if not p.startswith(root + os.sep) or not os.path.isfile(p):
         from fastapi import HTTPException
         raise HTTPException(404)
-    return FileResponse(p, headers=_STATIC_CACHE)
+    hdrs = dict(_STATIC_CACHE)
+    if p.endswith(".html"):
+        # the sim lives inside the landing's iframe — the middleware's
+        # blanket X-Frame-Options DENY only fills missing headers, so an
+        # explicit SAMEORIGIN here wins and keeps clickjacking cover
+        hdrs["x-frame-options"] = "SAMEORIGIN"
+    return FileResponse(p, headers=hdrs)
 
 
 @app.get(ADMIN_MOUNT, include_in_schema=False)

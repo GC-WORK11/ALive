@@ -206,6 +206,19 @@
   }
   const city = () => cached('/v2/city', 300000);
 
+  /* hosted inside the landing — the page posts its own /v2/city payload
+     ({type:'alive-city', data}) so the preview's numbers are literally
+     the page's numbers, never a second read a minute apart. */
+  window.addEventListener('message', (e) => {
+    const d = e && e.data;
+    if (d && d.type === 'alive-city' && d.data) {
+      cache.set('/v2/city', { t: Date.now(), p: Promise.resolve(d.data) });
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('sim:city', { detail: d.data }));
+      }
+    }
+  });
+
   /* ── motion helpers ── */
   const reducedNow = () => !!mq.matches;
   function applyLast(el, frames) {
