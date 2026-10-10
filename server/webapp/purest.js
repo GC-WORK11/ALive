@@ -18,7 +18,6 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let state = null;
-let envEl = null;
 
 /* ── geometry index: name → {centroid, feature} from the two geojsons ── */
 async function areaIndex() {
@@ -108,14 +107,16 @@ function unpinAll(rows, stays) {
   (stays || []).forEach((s, i) => A.map.unpin(`pm-s-${i}`));
 }
 
-/* ── the env card: one place's air + its next 24 h ────────────────── */
+/* ── the env card: one place's air + its next 24 h ──────────────────
+   lives inside the screen element so it dies with the screen even when
+   the router removes us without calling our cleanup. */
 function envCard() {
-  if (!envEl) {
-    envEl = document.createElement('div');
-    envEl.className = 'pm-env';
-    document.body.appendChild(envEl);
+  if (!state.envEl) {
+    state.envEl = document.createElement('div');
+    state.envEl.className = 'pm-env';
+    state.el.appendChild(state.envEl);
   }
-  return envEl;
+  return state.envEl;
 }
 
 async function openEnv(name, lat, lon, extra) {
@@ -253,7 +254,7 @@ function renderBody() {
   chip.type = 'button';
   chip.className = 'searchbar pm-anchor';
   chip.innerHTML = `<span class="sdot a"></span>
-    <span class="pm-anchor-label">near ${esc(state.anchor.label || 'central delhi')}</span>
+    <span class="pm-anchor-label">near ${esc((state.anchor.label || 'central delhi').replace(/^near\s+/i, ''))}</span>
     <span class="pm-anchor-edit">change</span>`;
   chip.addEventListener('click', openPicker);
   body.appendChild(chip);
@@ -422,11 +423,13 @@ A.screen('purest', {
     const chrome = A.sheetChrome(el, 'purest places');
     el.classList.add('pm-host');
     state = {
+      el,
       body: chrome.body,
       anchor: A.store.get(ANCHOR_KEY, null) || A.geo.pos || { ...A.DELHI, label: 'central delhi' },
       armed: false,
       rows: null, stays: null, idx: new Map(),
       fieldAgeS: null, rankedOn: null, staysNote: null,
+      envEl: null, stayPinCount: 0,
     };
     renderBody();
     loadAreas();
@@ -438,7 +441,7 @@ A.screen('purest', {
     }
 
     const onTap = (e) => {
-      if (A.current() !== 'purest') return;
+      if (A.current() !== 'purest' || !state) return;
       if (state.armed) {
         state.armed = false;
         const p = e.detail;
@@ -468,14 +471,26 @@ A.screen('purest', {
     A.map.ready((m) => { if (m.getLayer(AREA_FILL)) m.on('click', AREA_FILL, onAreaClick); });
     A.map.setFieldVisible(false);
 
-    return () => {
+    /* teardown must survive BOTH router paths: back() calls our cleanup,
+       but show(replace) only drops the 'on' class and removes the element
+       — so a class observer catches that case too. */
+    let torn = false;
+    const teardown = () => {
+      if (torn) return;
+      torn = true;
       document.removeEventListener('alive:maptap', onTap);
+      mo.disconnect();
       A.map.ready((m) => { if (m.getLayer(AREA_FILL)) m.off('click', AREA_FILL, onAreaClick); });
       setAreasVisible(false);
       unpinAll(state && state.rows, state && state.stays);
-      if (envEl) envEl.hidden = true;
+      if (state.envEl) state.envEl.hidden = true;
       state = null;
     };
+    const mo = new MutationObserver(() => {
+      if (!el.classList.contains('on')) teardown();
+    });
+    mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+    return teardown;
   },
 });
 })();

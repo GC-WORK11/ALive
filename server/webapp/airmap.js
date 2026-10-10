@@ -12,7 +12,7 @@ const GRID_URL = '/grid?cells=40&param=pm2_5';   // 40 is the server's hard cap
 const PICK_KEY = 'airmap.place';
 
 let state = null;
-let readEl = null, tapMarker = null;
+let tapMarker = null;
 
 const BAND_HEX = ['#6E93AE', '#C7A34F', '#CF8A50', '#C05F3A', '#A83D30', '#6E2D28'];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -92,14 +92,16 @@ function fieldAge(j) {
   return (stale ? 'field stale · ' : 'field ') + A.fmt.ago(ep);
 }
 
-/* ── tap readout: /aqi point read + all its honesty ──────────────── */
+/* ── tap readout: /aqi point read + all its honesty ────────────────
+   the card lives inside the screen element — it dies with the screen
+   even when the router removes us without calling our cleanup. */
 function readCard() {
-  if (!readEl) {
-    readEl = document.createElement('div');
-    readEl.className = 'am-read';
-    document.body.appendChild(readEl);
+  if (!state.readEl) {
+    state.readEl = document.createElement('div');
+    state.readEl.className = 'am-read';
+    state.el.appendChild(state.readEl);
   }
-  return readEl;
+  return state.readEl;
 }
 
 async function tapRead(lat, lon) {
@@ -298,27 +300,30 @@ A.screen('airmap', {
     const chrome = A.sheetChrome(el, 'air around me');
     el.classList.add('am-host');
     state = {
+      el,
       body: chrome.body,
       place: A.store.get(PICK_KEY, null) || A.geo.pos || { ...A.DELHI, label: 'central delhi' },
       armed: false,
       fieldMeta: null,
+      readEl: null,
     };
     renderMain();
 
     mountField().then((meta) => {
+      if (!state) { setFieldVisible(false); return; }
       state.fieldMeta = meta;
       if (!meta) A.toast('the live field didn’t load — tap reads still work');
     });
     A.map.fly(A.DELHI.lat, A.DELHI.lon, 10.4);
 
     const onTap = (e) => {
-      if (A.current() !== 'airmap') return;
+      if (A.current() !== 'airmap' || !state) return;
       if (state.armed) {
         state.armed = false;
         const p = e.detail;
         state.place = { lat: p.lat, lon: p.lon, label: 'dropped pin' };
         A.search.reverse(p.lat, p.lon).then((n) => {
-          if (n && state.place && state.place.label === 'dropped pin') {
+          if (n && state && state.place && state.place.label === 'dropped pin') {
             state.place.label = n;
             const lbl = state.body.querySelector('.am-place-label');
             if (lbl) lbl.textContent = `planning to go out · ${n}`;
@@ -332,13 +337,25 @@ A.screen('airmap', {
     };
     document.addEventListener('alive:maptap', onTap);
 
-    return () => {
+    /* teardown must survive BOTH router paths: back() calls our cleanup,
+       but show(replace) only drops the 'on' class and removes the element
+       — so a class observer catches that case too. */
+    let torn = false;
+    const teardown = () => {
+      if (torn) return;
+      torn = true;
       document.removeEventListener('alive:maptap', onTap);
+      mo.disconnect();
       setFieldVisible(false);
-      if (readEl) readEl.hidden = true;
+      if (state.readEl) state.readEl.hidden = true;
       if (tapMarker) { tapMarker.remove(); tapMarker = null; }
       state = null;
     };
+    const mo = new MutationObserver(() => {
+      if (!el.classList.contains('on')) teardown();
+    });
+    mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+    return teardown;
   },
 });
 })();
