@@ -24,7 +24,10 @@ const SEARCH_BUDGET_MS = 9500;
 
 const STOP = new Set(['near', 'next', 'to', 'at', 'the', 'of', 'in', 'on',
   'opp', 'opposite', 'behind', 'by', 'beside', 'and', 'or', 'a', 'an',
-  'delhi', 'new', 'dilli', 'ncr', 'india', 'pin', 'code']);
+  'delhi', 'new', 'dilli', 'ncr', 'india', 'pin', 'code',
+  /* 'c block'-style address structure — carries no place signal and
+     floods the lead gate with every apartment block in the locality */
+  'block', 'pocket', 'flat', 'house', 'no']);
 
 /* tokens that commonly END a delhi locality name */
 const ANCHOR_TAIL = new Set(['nagar', 'vihar', 'pur', 'pura', 'puri', 'abad',
@@ -329,6 +332,10 @@ function anchorCandidates(qToks) {
     if (!arr.length || arr.length >= qToks.length) return;
     if (arr.includes(qToks[0])) return;
     if (arr.length === 1 && GENERIC_TAIL.has(arr[0])) return;
+    /* must carry a distinguishing token — a candidate made of only
+       kind/structural words ('dham', 'mandir road') anchors to whatever
+       place anywhere shares the word and drags its neighborhood in */
+    if (!arr.some((t) => !KIND_ALIAS[t] && !GENERIC_TAIL.has(t))) return;
     const s = arr.join(' ');
     if (s && !seen.has(s)) { seen.add(s); out.push(s); }
   };
@@ -362,7 +369,15 @@ async function resolveAnchor(cand, bias) {
   const fit = dedupe([...eng, ...ph, ...nm])
     .map((r) => ({ r, fit: anchorFit(r, aToks) }))
     .filter((x) => x.fit >= 0.66)
-    .sort((a, b) => b.fit - a.fit || (a.r.dist ?? 9e9) - (b.r.dist ?? 9e9));
+    /* pure-name rows first: the locality literally called 'Vaishali'
+       beats 'Vaishali Motors' — its extra word means it's a place
+       inside Vaishali, not Vaishali itself */
+    .map((x) => ({
+      ...x,
+      pure: norm(x.r.name).split(' ').every((t) => aToks.includes(t)) ? 1 : 0,
+    }))
+    .sort((a, b) => b.fit - a.fit || b.pure - a.pure ||
+      (a.r.dist ?? 9e9) - (b.r.dist ?? 9e9));
   if (!fit.length) return [];
   const maxFit = fit[0].fit;
   return fit.filter((x) => x.fit >= maxFit - 0.01).map((x) => x.r);
@@ -540,7 +555,13 @@ async function search(q, bias) {
       if (!voted.has(cl)) { cl.votes++; voted.add(cl); }
     }
   });
-  clusters.sort((a, b) => b.votes - a.votes || a.first - b.first ||
+  const candLen = (i) => liveCands[i].split(' ').length;
+  clusters.sort((a, b) => b.votes - a.votes ||
+    /* purer locality candidates first: 'sant nagar' anchors before
+       kind+place phrases like 'dham sant nagar', so the locality
+       itself — not whatever faraway thing shares the kind-word —
+       defines the neighborhood */
+    candLen(a.first) - candLen(b.first) || a.first - b.first ||
     (a.rows[0].r.dist ?? 9e9) - (b.rows[0].r.dist ?? 9e9));
   for (const cl of clusters.slice(0, 4)) {
     const best = cl.rows[0];
