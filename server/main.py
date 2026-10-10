@@ -1806,6 +1806,14 @@ async def landing_page():
 
 
 @app.get("/app", include_in_schema=False)
+async def webapp_index_slash():
+    """Redirect /app -> /app/ so the page's relative asset URLs
+    (app.js, app.css, …) resolve under /app/ — without the trailing
+    slash they resolve to root and 404."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/app/")
+
+
 @app.get("/app/", include_in_schema=False)
 async def webapp_index():
     """The consumer web app — consent → live air card → where-to →
