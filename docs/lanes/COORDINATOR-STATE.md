@@ -42,3 +42,8 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Rival fleet: still no pushes to origin (only main exists remotely).
 
 - 17:26: journey lane landed (nav+receipt verified); airpurest launched; search still working.
+- 17:40: airpurest done+terminated (airmap field/readout/playtime + purest districts/stays). Its bug reports FIXED by coordinator in 2d849eb (map.js /grid cells=44→40 + j.cells→j.features + cell_epoch; app.js replace now calls cleanup).
+- Rival coordinator 9160aa61 + 5 children: CANNOT touch main (GC-WORK11 403 on their creds, git-only net_policy, can't reach API). Harmless. Govinda killed the spawning automation + asked us to coordinate; messaged it (403 on writes — one-way). Nothing to revert.
+- BUG (integration): airmap tap-readout card leaks onto whereto screen (shared map pins/cards survive screen switch). Fix = whereto mount clears airmap's tap pin/card or airmap cleanup removes its overlay — check airmap.js teardown on hide.
+- BUG (search): Pawan Bakery Shahdara still wrong after 0d99cab — delhi_index Pawan Plaza rows short-circuit the cascade; anchor decomposition not reached. Nudged search lane w/ live repro.
+- admin lane ffb3fedb RUNNING.
