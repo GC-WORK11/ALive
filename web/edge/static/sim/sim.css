@@ -1,0 +1,136 @@
+/* Alive live preview — shell styles (sim-core). Contract: /tmp/sim-contract.md
+   Tokens mirror Mobile/src/theme.ts (V2T / V2Type / V2Radius / V2Elev).
+   Screen CSS is injected per screen via SIM.css(id, text) and prefixed by id. */
+
+@font-face{font-family:"Satoshi";src:url(fonts/satoshi-light.woff2) format("woff2");font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:"Satoshi";src:url(fonts/satoshi-regular.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Satoshi";src:url(fonts/satoshi-medium.woff2) format("woff2");font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:"Satoshi";src:url(fonts/satoshi-bold.woff2) format("woff2");font-weight:700;font-style:normal;font-display:swap}
+
+:root{
+  /* paper / ink (V2T) */
+  --paper:#FAFAF7; --surface:#FFFFFF; --surface2:#F3F2EC; --surface3:#EBE9E1;
+  --line:#ECE9E2; --hair:#E3E0D7; --ink10:rgba(22,24,29,.10);
+  --scrim:rgba(10,14,22,.42); --scrim-deep:rgba(10,14,22,.58);
+  --ink:#16181D; --ink2:#4A4E57; --ink3:#6E7278; --ink4:#A6ACB8;
+  /* the one non-data accent: forest */
+  --accent:#35614B; --accent-ink:#2A4D3B; --accent-wash:#EFEDE7; --accent-tint:#E5E2DA;
+  /* CPCB pm2.5 bands — the ONLY hues that mean air */
+  --b0:#6E93AE; --b1:#C7A34F; --b2:#CF8A50; --b3:#C05F3A; --b4:#A83D30; --b5:#6E2D28;
+  /* glass panes over a map */
+  --glass:rgba(255,255,255,.91); --glass-faint:rgba(255,255,255,.86); --glass-line:rgba(22,24,29,.06);
+  /* type: one voice (Satoshi), mono only for the small preview label */
+  --font:"Satoshi",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+  /* radii (V2Radius) */
+  --r-row:13px; --r-card:20px; --r-sheet:24px;
+  /* elevation (V2Elev, warm-ink shadow) */
+  --sh-card:0 6px 18px rgba(59,52,35,.07);
+  --sh-float:0 8px 22px rgba(59,52,35,.12);
+  --sh-sheet:0 -6px 30px rgba(59,52,35,.12);
+  /* motion */
+  --ease:cubic-bezier(.32,.72,0,1);
+  --settle:cubic-bezier(.2,.9,.3,1);
+  /* safe areas the shell reserves (status bar / home indicator) */
+  --sim-top:44px; --sim-bot:28px;
+}
+/* top-level on a phone: the real status bar + home indicator exist */
+html:not(.sim-chrome){--sim-top:env(safe-area-inset-top,0px);--sim-bot:env(safe-area-inset-bottom,0px)}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--paper);overscroll-behavior:none}
+body{position:fixed;inset:0;font-family:var(--font);font-size:15px;line-height:1.35;color:var(--ink);
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit;-webkit-tap-highlight-color:transparent}
+button:focus{outline:none}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input{font:inherit;color:inherit}
+/* the device is non-selectable like an app, but fields must stay editable (iOS Safari) */
+input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+/* ── the device ─────────────────────────────────────────────────────── */
+.sim{position:fixed;inset:0;overflow:hidden;background:var(--paper);isolation:isolate;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+/* opened directly on a wide desktop window: a phone-shaped column */
+html.sim-desk,html.sim-desk body{background:#E7E4DC}
+html.sim-desk .sim{position:absolute;inset:0;margin:auto;width:min(430px,100%);height:min(932px,100%);
+  border-radius:44px;box-shadow:0 0 0 1px rgba(22,24,29,.08),0 30px 80px rgba(59,52,35,.18)}
+
+.sim-stack{position:absolute;inset:0;overflow:hidden}
+.sim.is-nav .sim-stack{pointer-events:none}
+.sim-screen{position:absolute;inset:0;overflow:hidden;background:var(--paper);touch-action:pan-y;
+  box-shadow:-1px 0 0 rgba(22,24,29,.04),-14px 0 34px rgba(22,24,29,.10);contain:layout paint}
+.sim-screen.is-covered{visibility:hidden}
+.sim-root{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;touch-action:pan-y;padding:var(--sim-top) 0 var(--sim-bot);scrollbar-width:none}
+.sim-root::-webkit-scrollbar{display:none}
+.sim-root.sim-bleed{padding:0}
+.sim-dim{position:absolute;inset:0;background:rgba(10,14,22,.13);opacity:0;pointer-events:none}
+
+/* ── status bar + home indicator ────────────────────────────────────── */
+.sim-status{position:absolute;left:0;right:0;top:0;height:44px;display:flex;align-items:center;z-index:30;
+  pointer-events:none;color:var(--ink);transition:color .25s}
+.sim-status::before{content:"";position:absolute;inset:0;background:rgba(250,250,247,.84);
+  -webkit-backdrop-filter:saturate(1.6) blur(14px);backdrop-filter:saturate(1.6) blur(14px);
+  box-shadow:0 .5px 0 var(--ink10);opacity:0;transition:opacity .22s}
+.sim-status.is-scrolled::before{opacity:1}
+.sim-status.is-light{color:#fff}
+.sim-status.is-light::before{opacity:0}
+.sim-sb-ear{position:relative;flex:1 1 0;display:flex;justify-content:center;align-items:center;padding-top:3px}
+.sim-sb-isl{flex:0 0 118px}
+.sim-sb-time{font:700 15.5px/1 var(--font);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.sim-sb-r{gap:5px}
+.sim-sb-r svg{display:block;flex:none}
+.sim-homeind{position:absolute;left:50%;bottom:8px;width:134px;height:5px;margin-left:-67px;border-radius:3px;
+  background:var(--ink);opacity:.92;z-index:40;pointer-events:none;transition:background .25s}
+.sim-homeind.is-light{background:#fff}
+html:not(.sim-chrome) .sim-status,html:not(.sim-chrome) .sim-homeind{display:none}
+.sim-probe{position:absolute;left:0;top:0;width:var(--sim-bot);height:var(--sim-top);visibility:hidden;pointer-events:none}
+
+/* ── sheets ──────────────────────────────────────────────────────────── */
+.sim-layer{position:absolute;inset:0;z-index:20;pointer-events:none}
+.sim-sheetwrap{position:absolute;inset:0;pointer-events:auto}
+.sim-sheetwrap.is-closing{pointer-events:none}
+.sim-scrim{position:absolute;inset:0;background:var(--scrim);opacity:0}
+.sim-sheet{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.94);border-radius:var(--r-sheet) var(--r-sheet) 0 0;
+  -webkit-backdrop-filter:blur(16px) saturate(1.35);backdrop-filter:blur(16px) saturate(1.35);
+  box-shadow:var(--sh-sheet),0 0 0 .5px var(--ink10);overflow:hidden;transform:translate3d(0,110%,0)}
+.sim-sheet-body{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;touch-action:none;scrollbar-width:none}
+.sim-sheet-body::-webkit-scrollbar{display:none}
+.sim-sheet.is-full .sim-sheet-body{touch-action:pan-y}
+.sim-sheet-head{position:absolute;left:0;right:56px;top:0;height:30px;touch-action:none;z-index:2;cursor:grab}
+.sim-grab{position:absolute;left:50%;top:6px;width:36px;height:5px;margin-left:-18px;border-radius:3px;background:rgba(22,24,29,.16);z-index:3;pointer-events:none}
+.sim-sheet-x{position:absolute;top:8px;right:10px;width:40px;height:40px;border-radius:50%;background:var(--surface2);
+  color:var(--ink2);display:flex;align-items:center;justify-content:center;z-index:4}
+.sim-sheet-x svg{display:block}
+.sim-root.sim-in-sheet{position:relative;inset:auto;overflow:visible;min-height:100%;padding:20px 0 calc(var(--sim-bot) + 16px);background:transparent}
+
+/* ── toast ───────────────────────────────────────────────────────────── */
+.sim-toast{position:absolute;left:50%;bottom:calc(var(--sim-bot) + 22px);z-index:50;max-width:86%;
+  padding:11px 17px;border-radius:999px;background:rgba(22,24,29,.94);color:#fff;font:500 14px/1.25 var(--font);
+  text-align:center;pointer-events:none;opacity:0;transform:translate3d(-50%,14px,0) scale(.98);
+  transition:opacity .2s ease,transform .32s var(--ease);box-shadow:0 10px 30px rgba(22,24,29,.22)}
+.sim-toast.is-on{opacity:1;transform:translate3d(-50%,0,0) scale(1)}
+
+/* ── press feedback ──────────────────────────────────────────────────── */
+.sim-pressable{transition:scale .46s var(--settle),background-color .25s ease;cursor:pointer}
+.sim-pressable.is-down{scale:.97;transition-duration:.13s,.08s;transition-timing-function:cubic-bezier(.3,.7,.4,1),ease}
+.sim-pressable.sim-hl{scale:none}
+.sim-pressable.sim-hl.is-down{scale:none;background-color:var(--surface2)}
+
+/* ── shared primitives (opt-in) ─────────────────────────────────────── */
+.sim-back{width:40px;height:40px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--surface);color:var(--ink);box-shadow:0 0 0 .5px var(--ink10),var(--sh-card);flex:none}
+.sim-back.is-glass{background:var(--glass-faint);box-shadow:0 0 0 .5px var(--ink10),var(--sh-float);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.sim-back svg{display:block}
+.sim-mono{font-family:var(--mono);font-size:10.5px;letter-spacing:.01em;color:var(--ink3)}
+.sim-num{font-variant-numeric:tabular-nums}
+.sim-fail{padding:120px 28px;color:var(--ink3);font:400 15px/1.5 var(--font);text-align:center}
+
+@media (prefers-reduced-motion:reduce){
+  .sim-pressable,.sim-pressable.is-down{transition:none}
+  .sim-toast{transition:opacity .01s}
+}
