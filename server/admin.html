@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Alive · engine room</title>
+<meta name="description" content="The engine room — an operator's ledger of Delhi's air system, every number measured live off this server.">
+<meta property="og:title" content="Alive · engine room">
+<meta property="og:description" content="An operator's ledger of Delhi's air system — measured live, aggregate-only, no person ever shown.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%23f4f1ea%27/%3E%3Crect x=%273%27 y=%273%27 width=%2710%27 height=%2710%27 fill=%27%234a7a5e%27/%3E%3C/svg%3E">
+<style>
+  /* v13 register — cognition.com × devin.ai (docs/design/web-register.md):
+     warm paper, hairlines, margin indices, serif prose, quiet small type.
+     no cards, no capsules, no navbar — a section is whitespace + a 1px
+     rule + content. band colour only where it means air. */
+  :root{
+    /* the page's tokens */
+    --paper:#f7f6f5; --surf:#fff;
+    --rInk:#000; --rInk2:rgba(25,25,25,.56); --rInk3:rgba(25,25,25,.44);
+    --rInk4:rgba(25,25,25,.30);
+    --rLine:rgba(0,0,0,.12); --rLine2:rgba(0,0,0,.18);
+    --acc:#3a6844; --accInk:#2b4e32; --accWash:#eaf0e4; --link:#20f;
+    --blk:#111210;
+    /* muted CPCB band — the same ramp the landing wears */
+    --b0:#7aab59; --b1:#c8b25a; --b2:#d58c4a;
+    --b3:#b85442; --b4:#8f3c49; --b5:#6e3c54;
+    /* the gate's tokens — the gate markup/css is byte-identical to the
+       r5 console's, so these names keep its exact values */
+    --surface:#FFFFFF;
+    --ink:#16181D; --ink2:#4A5161; --ink3:#65707F; --ink4:#A6ACB8;
+    --hair:#DCDAD0; --brick:#A34446;
+    --serif:Georgia,"Times New Roman","New York",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display",
+           "Helvetica Neue",Helvetica,Inter,"Segoe UI",Roboto,system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,"Cascadia Mono",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{background:var(--paper);-webkit-text-size-adjust:100%}
+  body{background:var(--paper);color:var(--rInk);font-family:var(--sans);
+       font-variant-numeric:tabular-nums;min-height:100vh;
+       -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  ::selection{background:#dfe7da}
+  a{color:inherit;text-decoration:none}
+  a:hover{text-decoration:underline;text-underline-offset:3px}
+
+  /* ==================== the gate — cognition register ====================
+     the engine room fails closed: no live session, no board.
+     no card, no pill, no shadow — warm paper, one measure, hairlines.
+     the token goes to the server once (POST to the mount's login
+     endpoint — or the /in/ link mints the cookie server-side without
+     this page ever seeing it) and never touches JS again — the session
+     is an HttpOnly cookie, so this page stores no secret a script
+     could steal */
+  #gate{position:fixed;inset:0;z-index:60;background:var(--paper);
+        display:flex;flex-direction:column;padding:0}
+  #gate[hidden]{display:none}
+  .gate-top{display:flex;align-items:baseline;padding:20px 22px 0}
+  .gate-top .wm{font-weight:700;font-size:16px;letter-spacing:-.02em;
+    color:#16181d;display:inline-flex;align-items:center}
+  .gate-top .wm .wdot{width:5px;height:5px;margin-left:5px;
+    background:var(--acc)}
+  .gate-top .gside{margin-left:auto;font-family:var(--mono);
+    font-size:10px;color:var(--ink4)}
+  /* the gate body — quiet column, left-aligned, cognition register */
+  .gate-card{margin:auto;width:min(380px,100%);background:none;
+             border:0;border-radius:0;padding:20px;box-shadow:none}
+  .gate-kick{font-family:var(--mono);font-size:10px;letter-spacing:.01em;
+             color:var(--ink4)}
+  .gate-line{font-family:var(--serif);font-size:15px;line-height:1.65;
+             color:var(--ink2);margin-top:14px;font-weight:400}
+  #gateform{display:flex;gap:14px;margin-top:28px;align-items:flex-end}
+  #gatetok{flex:1;min-width:0;font-family:var(--mono);font-size:13px;
+           letter-spacing:.01em;padding:9px 0;color:var(--ink);
+           border:0;border-bottom:1px solid var(--ink);
+           border-radius:0;background:none}
+  #gatetok:focus{outline:none;border-bottom:1.5px solid var(--ink);
+                 box-shadow:none}
+  #gatetok::placeholder{color:var(--ink4)}
+  .gatebtn{height:30px;padding:0 14px;border-radius:2px;font-size:13px;
+           font-weight:500;letter-spacing:0;
+           border:1px solid var(--ink);background:var(--ink);
+           color:#FBFBFA;flex:none}
+  .gatebtn:hover{background:#2A2D33;border-color:#2A2D33;color:#FBFBFA}
+  .gatebtn:disabled{opacity:.55;cursor:default}
+  .gate-err{min-height:19px;margin-top:14px;font-family:var(--mono);
+            font-size:10px;letter-spacing:.01em;color:var(--brick)}
+  .gate-foot{margin-top:30px;padding-top:16px;border-top:1px solid var(--hair);
+             font-family:var(--mono);font-size:10px;letter-spacing:.01em;
+             color:var(--ink4);line-height:2}
+  .gate-foot a{color:var(--ink);text-decoration:none;font-weight:500;
+               border-bottom:0;text-decoration:underline;
+               text-underline-offset:3px}
+  .tokbtn{font-family:inherit;font-size:inherit;letter-spacing:.01em;
+      padding:5px 15px;cursor:pointer;font-weight:500;
+      border:1px solid var(--ink);border-radius:2px;
+      color:#FBFBFA;background:var(--ink)}
+  .tokbtn:hover{background:#2A2D33;border-color:#2A2D33}
+  /* ===================== end gate ===================== */
+
+  /* ---------- the rail — tiny mark + text links, no navbar ---------- */
+  .top{padding:20px 22px 0;position:relative;z-index:5}
+  .top-in{display:flex;align-items:baseline;gap:26px;flex-wrap:wrap}
+  .wm{font-family:var(--sans);font-weight:600;font-size:15px;
+      letter-spacing:-.01em;color:#16181d}
+  .top nav{display:flex;gap:18px;align-items:baseline}
+  .top nav a{font-size:13px;color:rgba(22,24,29,.62)}
+  .top nav a:hover{color:#16181d}
+  #toplive{margin-left:auto;font-family:var(--mono);font-size:10px;
+           color:var(--rInk3);line-height:1.9}
+  #toplive b{color:#16181d;font-weight:500}
+  #tokbtn{margin-left:14px}
+  @media(max-width:640px){
+    .top{padding:14px 16px 0}
+    .top-in{gap:14px}
+    .top nav{gap:14px}
+    #toplive{flex-basis:100%;margin-left:0}
+    #tokbtn{margin-left:0}
+    /* a phone can't afford a nowrap right column — let the value
+       wrap onto its own line instead of clipping off the edge */
+    .dr{grid-template-columns:1fr;row-gap:2px}
+    .dr .dv{text-align:left;white-space:normal}
+    .lr{grid-template-columns:18px 1fr}
+    .lr>:last-child{grid-column:2;text-align:left;white-space:normal}}
+  @media(min-width:1024px){
+    .top{position:fixed;top:0;left:0;bottom:auto;right:auto;z-index:6;
+      width:216px;padding:26px 0 0 26px;background:none}
+    .top-in{flex-direction:column;align-items:flex-start;gap:22px}
+    .top nav{flex-direction:column;gap:9px;align-items:flex-start}
+    .top nav a{font-size:13.5px}
+    .top nav a.cur{color:#16181d;border-left:2px solid var(--acc);
+      padding-left:7px;margin-left:-9px}
+    #toplive{margin-left:0}
+    #tokbtn{margin-left:0}
+    .stack{margin-left:216px}}
+
+  /* ---------- one measure, hairlines, margin indices ---------- */
+  .stack{display:flex;flex-direction:column;counter-reset:sec}
+  .stack>section{border-top:1px solid var(--rLine)}
+  .stack>section:first-child{border-top:0}
+  .col{max-width:1180px;margin:0 auto;
+    padding:clamp(40px,7vw,96px) 20px clamp(40px,7vw,96px)}
+  .stack>section:not(.open):not(.noidx) .col{position:relative;
+    padding-left:clamp(0px,12vw,200px);counter-increment:sec}
+  .stack>section:not(.open):not(.noidx) .col::before{
+    content:counter(sec,decimal-leading-zero);
+    position:absolute;left:clamp(10px,3vw,40px);top:clamp(40px,7vw,96px);
+    font-family:var(--mono);font-size:10px;color:var(--rInk3)}
+  @media(max-width:860px){
+    .stack>section:not(.open):not(.noidx) .col{padding-left:20px}
+    .stack>section:not(.open):not(.noidx) .col::before{position:static;
+      display:block;margin-bottom:26px}}
+  @media(min-width:1024px){
+    .stack>section:not(.open):not(.noidx) .col{padding-left:58px;
+      max-width:960px;margin:0}
+    .stack>section:not(.open):not(.noidx) .col::before{left:14px}
+    .stack>section.open .col,.stack>section.noidx .col{max-width:960px;margin:0}}
+
+  /* ---------- shared type — small, quiet, serif prose voice ---------- */
+  .lbl2{font-family:var(--mono);font-size:10px;color:var(--rInk3);
+    margin-bottom:18px;display:flex;align-items:center;line-height:1.8}
+  .lbl2 .livedot{margin-right:8px}
+  .livedot{display:inline-block;width:6px;height:6px;border-radius:1.5px;
+    background:var(--bhex,var(--rLine2));flex:none;
+    transition:background .6s ease}
+  .lead{font-family:var(--serif);font-weight:400;
+    font-size:clamp(21px,2.5vw,30px);line-height:1.28;
+    letter-spacing:-.008em;color:var(--rInk);max-width:34ch;margin:0}
+  .prose{font-family:var(--serif);font-size:15px;line-height:1.68;
+    color:var(--rInk2);max-width:56ch;margin-top:16px}
+  .prose b{color:var(--rInk);font-weight:700}
+  .sub3{font-family:var(--serif);font-size:13.5px;line-height:1.65;
+    color:var(--rInk3);max-width:56ch;margin-top:26px}
+  .sub3 b{color:var(--rInk2);font-weight:700}
+
+  /* ---------- the live numeral — unboxed plain text ---------- */
+  .hnum{margin-top:26px;position:relative}
+  .hnum-row{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap}
+  .hnum-v{font-weight:500;font-size:clamp(56px,8vw,96px);line-height:1;
+    letter-spacing:-.03em;color:var(--hink,var(--rInk));
+    font-variant-numeric:tabular-nums;transition:color .8s ease}
+  .hnum-v.na{color:var(--rInk4);font-size:clamp(30px,4.5vw,44px)}
+  .hnum .u{font-size:14px;color:var(--rInk2);font-weight:400}
+  .bandw{display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--mono);font-size:10px;color:var(--rInk2)}
+  .bsq{display:inline-block;width:8px;height:8px;border-radius:2px;
+    background:var(--bhex,var(--rLine2));flex:none;transition:background .6s ease}
+  .hnum-s{display:block;font-family:var(--mono);font-size:10px;
+    color:var(--rInk3);margin-top:14px;line-height:1.9}
+  .hnum-s b{color:var(--rInk);font-weight:500}
+  .felt{font-family:var(--serif);font-size:16px;line-height:1.55;
+    color:var(--rInk2);max-width:38ch;margin-top:14px}
+  .felt b{font-weight:700;white-space:nowrap;color:var(--rInk)}
+
+  /* ---------- data lines — label / value rows on 1px rules ---------- */
+  .dl{margin-top:26px;border-top:1px solid var(--rLine)}
+  .dr{display:grid;grid-template-columns:minmax(120px,1fr) auto;
+    align-items:baseline;gap:8px 18px;padding:11px 0;
+    border-bottom:1px solid var(--rLine)}
+  .dr .dk{font-family:var(--mono);font-size:10px;color:var(--rInk3);
+    line-height:1.7}
+  .dr .dv{font-family:var(--sans);font-size:15px;font-weight:500;
+    color:var(--rInk);text-align:right;white-space:nowrap}
+  .dr .dv i{font-style:normal;color:var(--rInk3);font-weight:400}
+  .dr .ds{grid-column:1/-1;font-family:var(--serif);font-size:13px;
+    color:var(--rInk3);line-height:1.6}
+  .dr.stale .dv{color:var(--brick)}
+  /* the leaderboard — ruled rows for routes and feeds */
+  .lr{display:grid;grid-template-columns:24px 1fr auto;align-items:baseline;
+    gap:14px;padding:9px 0;border-bottom:1px solid var(--rLine)}
+  .lr .li{font-family:var(--mono);font-size:10px;color:var(--rInk4)}
+  .lr .ln{font-family:var(--mono);font-size:12px;color:var(--rInk);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lr .ln i{font-style:normal;color:var(--rInk3)}
+  .lr .lv{font-family:var(--sans);font-size:14px;font-weight:500;
+    color:var(--rInk);text-align:right;white-space:nowrap}
+  .lr .lv i{font-style:normal;color:var(--rInk3);font-weight:400;
+    font-size:11px}
+  .lr.bad .lv{color:var(--brick)}
+
+  /* ---------- sparkline — a real series only, ink line ---------- */
+  .spark{margin-top:34px}
+  .spark svg{display:block;width:100%;height:auto}
+  .spark .cap{display:flex;justify-content:space-between;gap:14px;
+    margin-top:8px;font-family:var(--mono);font-size:10px;
+    color:var(--rInk3);line-height:1.7}
+  .spark .cap b{color:var(--rInk);font-weight:500}
+  .spark .curve{stroke-dasharray:1;stroke-dashoffset:0}
+  .spark.dr .curve{animation:spd 1.1s cubic-bezier(.3,.7,.2,1) both}
+  @keyframes spd{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+  @media(prefers-reduced-motion:reduce){
+    .spark .curve{animation:none!important}}
+
+  /* ---------- alarm line — the one loud-ish sentence ---------- */
+  .alarmline{margin-top:26px;font-family:var(--serif);font-size:16px;
+    line-height:1.55;color:var(--rInk2);max-width:56ch}
+  .alarmline b{color:var(--rInk);font-weight:700}
+  .alarmline.quiet b{color:var(--accInk)}
+  .alarmline.hot b{color:var(--brick)}
+
+  .statusline{margin-top:26px;font-family:var(--mono);font-size:10px;
+    color:var(--rInk3);line-height:2.1;border-top:1px solid var(--rLine);
+    padding-top:14px}
+  .statusline>span+span::before{content:"·";margin:0 12px;color:var(--rInk4)}
+  .statusline b{color:var(--rInk);font-weight:500}
+  .statusline .ok{color:var(--accInk)}
+  .statusline .err{color:var(--brick)}
+
+  /* ---------- footer — hairline + the one ghost object ---------- */
+  .foot{position:relative;overflow:hidden}
+  .foot .cols{display:flex;justify-content:space-between;gap:20px;
+    flex-wrap:wrap;font-family:var(--mono);font-size:10px;
+    color:var(--rInk3);line-height:2}
+  .foot .cols b{color:var(--rInk);font-weight:500}
+  .foot nav{display:flex;gap:16px}
+  .foot nav a{color:var(--rInk2)}
+  .ghost{font-family:var(--sans);font-weight:700;font-size:clamp(72px,14vw,180px);
+    letter-spacing:-.05em;color:rgba(22,24,29,.05);line-height:.8;
+    margin:40px -6px -14px;user-select:none;pointer-events:none}
+</style>
+</head>
+<body>
+
+<!-- the gate — shown the moment the session probe says no live cookie;
+     markup byte-identical to the r5 console's (the form, the input and
+     the POST contract never changed) -->
+<div id="gate" hidden>
+  <div class="gate-top"><a class="wm" href="/">Alive<i class="wdot"></i></a>
+    <span class="gside">the engine room</span></div>
+  <div class="gate-card" role="dialog" aria-label="operator sign in">
+    <div class="gate-kick">operator only</div>
+    <p class="gate-line">the engine room shows the machine itself — feeds,
+      models, counters. it opens for the operator and nobody else.</p>
+    <form id="gateform" autocomplete="off">
+      <input id="gatetok" type="password" placeholder="operator token"
+             autocomplete="current-password" aria-label="operator token">
+      <button class="tokbtn gatebtn" id="gatebtn" type="submit">sign in</button>
+    </form>
+    <div class="gate-err" id="gateerr" aria-live="polite"></div>
+    <div class="gate-foot">sessions last ~8 h · sign-in is rate-limited ·
+      your operator link opens straight in ·
+      not the operator? <a href="/city">delhi's air, the public view →</a></div>
+  </div>
+</div>
+
+<header class="top"><div class="top-in">
+  <a class="wm" href="/">alive</a>
+  <nav>
+    <a class="cur" href="#" onclick="return false">engine room</a>
+    <a href="/city">the field</a>
+    <a href="/">delhi</a>
+    <a href="/community">community</a>
+  </nav>
+  <button class="tokbtn" id="tokbtn" type="button">operator sign in</button>
+  <span id="toplive"></span>
+</div></header>
+
+<main class="stack">
+  <noscript>
+    <section class="open noidx"><div class="col">
+      <p class="prose">this console is javascript-only — every figure on
+      it is a live render off the server's own endpoints.</p>
+    </div></section>
+  </noscript>
+
+  <!-- opening — what this page is and why a dash means something -->
+  <section class="open noidx"><div class="col" style="padding-top:clamp(30px,5vw,60px)">
+    <div class="lbl2"><i class="livedot" id="liveDot"></i>the engine room · operator only</div>
+    <h1 class="lead">Delhi's air system,<br>measured.</h1>
+    <p class="prose">every figure below is computed live off this server —
+      the feeds that feed it, the requests it answers, the phones that
+      share back. counters reset on deploy and say so; a reading the
+      machine doesn't have stays a dash, because a guess would be worse.</p>
+    <div class="statusline" id="stamp"><span>connecting…</span></div>
+  </div></section>
+
+  <!-- 01 live air — the honesty row: the number, its band, its age -->
+  <section><div class="col">
+    <div class="lbl2"><i class="livedot" id="airDot"></i>live air — the honesty row</div>
+    <div class="hnum">
+      <div class="hnum-row">
+        <b class="hnum-v na" id="pm">—</b><span class="u">µg/m³ · pm2.5, mean over the live map</span>
+        <span class="bandw" id="pmBW" hidden><i class="bsq" id="pmB"></i><span id="pmW"></span></span>
+      </div>
+      <i class="hnum-s" id="pmS">reading the field…</i>
+    </div>
+    <p class="felt" id="felt"></p>
+    <div class="dl" id="airRows"></div>
+    <div class="spark" id="fcWrap" hidden>
+      <svg id="fcSvg" viewBox="0 0 560 52" preserveAspectRatio="none" role="img"
+        aria-label="the next twelve hours of pm2.5, live-anchored forecast"></svg>
+      <div class="cap"><span id="fcL">the next twelve hours</span><span id="fcR"></span></div>
+    </div>
+  </div></section>
+
+  <!-- 02 coverage — what the map is made of, and how sure it is -->
+  <section><div class="col">
+    <div class="lbl2">coverage — what the map is made of</div>
+    <div class="dl" id="covRows"></div>
+    <p class="sub3" id="covNote"></p>
+  </div></section>
+
+  <!-- 03 usage — who knocks on the door, counted since boot -->
+  <section><div class="col">
+    <div class="lbl2">usage — who knocks on the door</div>
+    <p class="prose" id="bootLine">…</p>
+    <div class="dl" id="reqRows"></div>
+    <div class="dl" id="routeRows" style="margin-top:0"></div>
+    <div class="spark" id="trWrap" hidden>
+      <svg id="trSvg" viewBox="0 0 560 52" preserveAspectRatio="none" role="img"
+        aria-label="journeys shared per utc hour, last twenty-four"></svg>
+      <div class="cap"><span id="trL">journeys shared per hour, utc — the last 24</span><span id="trR"></span></div>
+    </div>
+    <div class="dl" id="useRows"></div>
+    <p class="sub3" id="useNote"></p>
+  </div></section>
+
+  <!-- 04 health — alarms, errors, and the machine's own state -->
+  <section><div class="col">
+    <div class="lbl2">health — when it hurts</div>
+    <p class="alarmline quiet" id="alarm">reading the machine's nerves…</p>
+    <div class="dl" id="srcRows"></div>
+    <div class="dl" id="errRows"></div>
+    <div class="dl" id="sysRows"></div>
+  </div></section>
+
+  <footer class="noidx"><div class="col foot">
+    <div class="cols">
+      <span>alive engine room · refreshes itself every 30 s ·
+        <b>groups of 3+ phones only, never a person</b></span>
+      <nav><a href="/city">/city ↗</a><a href="/v2/city">/v2/city ↗</a>
+        <a href="/health">/health ↗</a></nav>
+    </div>
+    <div class="ghost" aria-hidden="true">alive</div>
+  </div></footer>
+</main>
+
+<script>
+const NF=new Intl.NumberFormat('en-IN');
+const $=id=>document.getElementById(id);
+/* the console's whole surface hangs under one un-guessable mount
+   (server/admin_mount.py) — every authed path below is relative to the
+   path this page was itself served at, so the file never hardcodes the
+   mount and rotates with it for free */
+const M=location.pathname.replace(/\/+$/,'');
+const fmt=n=>n==null?'—':NF.format(Math.round(n));
+const fmt1=n=>n==null?'—':NF.format(Math.round(n*10)/10);
+const ago=s=>s==null?'—':s<60?`${Math.round(s)}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`;
+const timeIST=d=>d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',
+  hour:'2-digit',minute:'2-digit',second:'2-digit'})+' IST';
+const hmIST=ts=>new Date(ts*1000).toLocaleTimeString('en-IN',
+  {timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}).toLowerCase()+' ist';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* muted CPCB ramp — the same six the landing wears; colour appears only
+   where it means air (the numeral's dot, the forecast fill) */
+const BAND=[[122,171,89],[200,178,90],[213,140,74],[184,84,66],[143,60,73],[110,60,84]];
+const BAND_INK=[[67,94,49],[110,98,50],[117,77,41],[101,46,36],[79,33,40],[61,33,46]];
+const BAND_NAME=['good','satisfactory','moderate','poor','very poor','severe'];
+/* CPCB 24-hr pm2.5 breaks — same table as districts._CPCB_PM25 */
+const bandIdx=v=>v==null?null:v<=30?0:v<=60?1:v<=90?2:v<=120?3:v<=250?4:5;
+const bandCss=i=>`rgb(${BAND[i].join(',')})`;
+const bandInkCss=i=>`rgb(${BAND_INK[i].join(',')})`;
+
+/* auth model: the login POST mints an HttpOnly SameSite=Strict
+   cookie signed server-side — the token itself never lives in JS, so a
+   page-context script cannot steal it (the sessionStorage Bearer this
+   replaces could). AUT tracks 'is the session live' for short-circuiting
+   gated fetches; the session probe in tick() is what flips it. */
+let AUT=false;
+async function checkSession(){
+  try{
+    const r=await fetch(M+'/session',{credentials:'same-origin',
+      signal:AbortSignal.timeout(8000)});
+    if(!r.ok)return AUT;
+    return !!(await r.json()).authenticated;
+  }catch(e){return AUT}
+}
+function showGate(note){
+  const g=$('gate');if(!g)return;
+  g.hidden=false;
+  if(note!=null)$('gateerr').textContent=note;
+  tokBtnRefresh();
+  setTimeout(()=>{const t=$('gatetok');if(t)t.focus()},80);
+}
+function hideGate(){
+  const g=$('gate');if(g)g.hidden=true;
+  $('gateerr').textContent='';tokBtnRefresh();
+}
+async function getJSON(u){
+  /* a stalled feed must land in its honest-empty state, not pin the
+     Promise.allSettled forever — every call carries a 15s deadline */
+  const r=await fetch(u,{credentials:'same-origin',
+    signal:AbortSignal.timeout(15000)});
+  if(r.status===401||r.status===403){
+    /* the cookie died mid-view (8h expiry or a token rotation) — flip
+       the board to its locked render and put the gate back up */
+    if(AUT){AUT=false;showGate('session ended — sign in again')}
+    throw new Error(u+' '+r.status+' — sign-in required');
+  }
+  if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
+
+let LAST_OK=null;   /* last successful refresh — the honest 'as of' time */
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---- row builders — every line is label + value + an honest note ---- */
+const row=(k,v,sub,stale)=>
+  `<div class="dr${stale?' stale':''}"><span class="dk">${k}</span>`+
+  `<b class="dv">${v}</b>${sub?`<i class="ds">${sub}</i>`:''}</div>`;
+const lrow=(i,name,val,stale)=>
+  `<div class="lr${stale?' bad':''}"><span class="li">${i}</span>`+
+  `<span class="ln">${name}</span><b class="lv">${val}</b></div>`;
+const DIR8=['n','ne','e','se','s','sw','w','nw'];
+const compass=d=>d==null?null:DIR8[Math.round(d/45)%8];
+
+/* one ink sparkline — real series only; nothing draws for absent data */
+function spark(svgId,vs,{fill=null,dot=null}={}){
+  const el=$(svgId);if(!el||!vs||vs.length<2)return false;
+  const lo=Math.min(...vs),hi=Math.max(...vs);
+  const W=560,H=52,pad=4,base=H-8;
+  const sx=i=>pad+i*(W-2*pad)/(vs.length-1);
+  const sy=v=>hi>lo?5+(hi-v)/(hi-lo)*(base-10):base/2;
+  const pts=vs.map((v,i)=>sx(i).toFixed(1)+','+sy(v).toFixed(1)).join(' ');
+  el.innerHTML=
+    `<line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="var(--rLine2)" stroke-width="1"/>`+
+    (fill?`<polygon points="${pad},${base} ${pts} ${sx(vs.length-1).toFixed(1)},${base}" fill="${fill}"/>`:'')+
+    `<polyline class="curve" pathLength="1" points="${pts}" fill="none" stroke="var(--rInk)" stroke-width="1.2"`+
+    ` stroke-linejoin="round" stroke-linecap="round"/>`+
+    (dot?`<circle cx="${sx(0).toFixed(1)}" cy="${sy(vs[0]).toFixed(1)}" r="2.7" fill="${dot}" stroke="var(--rInk)" stroke-width="1"/>`:'');
+  const wrap=el.closest('.spark');if(wrap)wrap.hidden=false;
+  return true;
+}
+const sparkDraw=(wrapId)=>{const w=$(wrapId);
+  if(w&&!RM){w.classList.remove('dr');void w.offsetWidth;w.classList.add('dr')}};
+
+/* ============================== renders ============================== */
+
+function renderAir(city,status){
+  const stats=(city&&city.pm25_stats)||{};
+  /* merge the two field snapshots — api/status's field is authoritative
+     for serving/age/stale, but the native engine reports the station
+     blend only on /v2/city's embedded field (stations_status/src) */
+  const f={...((city&&city.field)||{}),...((status&&status.field)||{})};
+  const mean=stats.mean;
+  const bi=bandIdx(mean);
+  const pmEl=$('pm');
+  if(mean==null){pmEl.textContent='no reading';pmEl.classList.add('na')}
+  else{pmEl.textContent=fmt1(mean);pmEl.classList.remove('na')}
+  document.documentElement.style.setProperty('--hink',
+    bi==null?'var(--rInk)':bandInkCss(bi));
+  if(bi==null){$('pmBW').hidden=true;$('airDot').style.background='var(--rLine2)'}
+  else{
+    $('pmB').style.background=bandCss(bi);
+    $('pmW').textContent=BAND_NAME[bi];
+    $('pmBW').hidden=false;
+    $('airDot').style.background=bandCss(bi);
+  }
+  /* the honesty line under the number — age + where it came from */
+  const age=f.age_s??city?.freshness?.field_age_s;
+  const st=f.stale??(city?.freshness?.label==='stale');
+  $('pmS').innerHTML=(age==null?`the field reports no age — reading straight off what it serves`
+    :`the data is <b>${ago(age)} old</b>${st?` — <b style="color:var(--brick)">stale, past the ${Math.round((f.stale_after_s||2700)/60)}-minute alarm</b>`:''}`);
+  /* felt line — the day's breath in cigarettes, the codebase's own
+     figure; hidden when the field can't answer honestly. a near-zero
+     bound must not collapse to a bare 0 — keep two decimals below 0.1 */
+  const cig=city&&city.breath&&city.breath.cigarettes;
+  const cl=v=>v!=null&&Math.abs(v)>0&&Math.abs(v)<0.1?(+v).toFixed(2):fmt1(v);
+  $('felt').innerHTML=cig
+    ?`a day outside in this air ≈ <b>${cl(cig.lo)}–${cl(cig.hi)} cigarettes</b> — berkeley earth's 316 µg rule, on the live map's own band`
+    :'';
+  /* the honesty rows */
+  const w=f.wind||city?.wind||{};
+  const typ=city&&city.typical;
+  const rows=[];
+  const sstat=f.stations_status||{};
+  const feeds=Object.keys(sstat).length
+    ?Object.entries(sstat).map(([k,v])=>`${k} ${v==='ok'?'✓':'✗'}`).join(' · ')
+    :(f.stations_src||null);
+  rows.push(row('stations reporting',
+    f.station_readings!=null?`<b>${fmt(f.station_readings)}</b>`:'—',
+    feeds?`the live blend right now: ${esc(feeds)}`:'which feeds are in the blend — the feed reports nothing'));
+  rows.push(row('serving',
+    f.serving==='live'?'the live field'
+    :f.serving==='snapshot'?'the last built snapshot'
+    :f.serving==='none'?'nothing — the field is empty':'—',
+    f.serving==='snapshot'
+      ?`serving a saved snapshot${f.snapshot_age_s!=null?` · built ${ago(f.snapshot_age_s)} ago`:''} — the live builder is down`
+      :null,
+    f.serving==='none'));
+  rows.push(row('wind',
+    w.speed_kmh!=null?`${Math.round(w.speed_kmh)} km/h <i>from ${compass(w.from_deg)||'—'}</i>`:'—',
+    w.speed_kmh!=null?'where the smoke drifts from':'the met feed carries no wind right now'));
+  rows.push(row('vs a typical day',
+    typ&&typ.vs_now_pct!=null
+      ?`${typ.vs_now_pct>0?'+':''}${fmt1(typ.vs_now_pct)}%`
+      :'—',
+    typ&&typ.median!=null
+      ?`a typical ${new Date().toLocaleString('en',{month:'long'})} hour like this reads ${fmt1(typ.median)} µg/m³ — ten years of openaq, median`
+      :'the decade-climatology band has no answer for this hour'));
+  $('airRows').innerHTML=rows.join('');
+  /* the next twelve hours — the same live-anchored forecast /v2/city
+     already ships; absent horizon = no line, never a flat fake */
+  const hrs=(city&&city.next_hours||[]).map(h=>h&&h.pm25).filter(v=>v!=null);
+  if(hrs.length>=4){
+    const c=bi==null?BAND[2]:BAND[bi];
+    spark('fcSvg',hrs,{fill:`rgba(${c[0]},${c[1]},${c[2]},.13)`,
+      dot:`rgb(${c[0]},${c[1]},${c[2]})`});
+    const lo=Math.min(...hrs),hi=Math.max(...hrs);
+    $('fcL').innerHTML=`the next ${hrs.length} hours — live forecast · <b>${fmt1(lo)}–${fmt1(hi)} µg/m³</b>`;
+    $('fcR').textContent='anchored to the live map';
+    sparkDraw('fcWrap');
+  }else{$('fcWrap').hidden=true}
+}
+
+function renderCoverage(status,city){
+  const f={...((city&&city.field)||{}),...((status&&status.field)||{})};
+  const arch=(status&&status.archive)||{};
+  const fc=(status&&status.forecast)||{};
+  const rt=(status&&status.routing)||{loaded:false};
+  const rows=[];
+  /* instruments + model — the field's own count, verbatim feeds */
+  const sstat=f.stations_status||{};
+  rows.push(row('stations into the blend',
+    f.station_readings!=null?fmt(f.station_readings):'—',
+    f.stations_src?`feeding right now: ${esc(f.stations_src)}`:null));
+  for(const[feed,st]of Object.entries(sstat)){
+    const sw=String(st).toLowerCase();
+    rows.push(row(`&nbsp;&nbsp;${esc(feed)}`,esc(st),null,
+      !sw.startsWith('ok')&&!sw.startsWith('skipped')));
+  }
+  rows.push(row('model grid',f.samples!=null?`${fmt(f.samples)} samples`:'—',
+    f.source?`source ${esc(f.source)}`:null));
+  /* plain words for the estimator — the mechanic's name stays in
+     brackets for whoever wants it, never as the headline */
+  rows.push(row('between the stations',
+    f.kriging==='on'?'smoothed by the full spatial model'
+    :f.kriging==='idw'?'simple distance-averaging':'—',
+    f.kriging==='on'?'ordinary kriging under the hood'
+    :f.kriging==='idw'?'the cheaper guess — cells get answers but no honest certainty band':null,
+    f.kriging==='idw'));
+  rows.push(row('how sure each cell is',
+    f.sigma_coverage==='per-query'?'every query gets an honest certainty band'
+    :f.sigma_coverage==='full'?'every served cell carries a certainty band'
+    :(f.sigma_coverage||'').startsWith('partial:')?`a certainty band on ${esc(f.sigma_coverage.slice(8))} of the cells`
+    :f.sigma_coverage==='none'?'no certainty band — the field answers without one':'—',
+    null,f.sigma_coverage==='none'));
+  const cov=f.coverage||{};
+  rows.push(row('the served field',cov.cells!=null?`${fmt(cov.cells)} cells`:'—',
+    cov.bbox?`from ${fmt1(cov.bbox[1])}°n to ${fmt1(cov.bbox[3])}°n`+(cov.out_beyond_km?` · outside it, ${cov.out_beyond_km} km of slack then no answer`:' · outside it, no answer'):null));
+  /* the archive — the hourly recording of this same field */
+  if(arch.enabled===false){
+    rows.push(row('the archive','off','the hourly recorder is disabled on this task'))
+  }else if(arch.snapshots_total!=null){
+    const t=arch.today||{};
+    rows.push(row('the archive',
+      `${fmt(arch.snapshots_total)} snapshot${arch.snapshots_total===1?'':'s'}`,
+      `recorded since ${esc((arch.since_ist||'').slice(0,10)||'—')} · today ${fmt(t.hours_recorded)} of ${fmt(t.hours_elapsed)} hours on disk`+
+      (t.gaps&&t.gaps.length?` · missing ${t.gaps.length} hour${t.gaps.length>1?'s':''}`:'')));
+  }else if(arch.error){
+    rows.push(row('the archive','—',`can't be counted right now — ${esc(arch.error)}`,true));
+  }
+  /* the horizon + the route engine — both only counted when loaded */
+  if(fc.hours!=null)rows.push(row('the forecast',
+    `${fmt(fc.hours)} hours ahead`,fc.age_s!=null?`refreshed ${ago(fc.age_s)} ago`:null));
+  if(rt.loaded)rows.push(row('the route engine',
+    rt.edges_priced!=null&&rt.edges!=null
+      ?`${fmt(rt.edges_priced)} of ${fmt(rt.edges)} streets priced`:'loaded',
+    `least-smoke paths priced off the live map`+(rt.reweight_age_s!=null?` · repriced ${ago(rt.reweight_age_s)} ago`:'')));
+  $('covRows').innerHTML=rows.join('');
+  $('covNote').innerHTML=`a cell the field can't honestly answer is never
+    smoothed into fiction — the page says how each number is estimated.
+    the archive is delhi's air as recorded history, one snapshot an hour.`;
+}
+
+function renderUsage(usage,timing,api){
+  const trips=(usage&&usage.trips)||{};
+  const dev=(usage&&usage.devices)||{};
+  const dose=(usage&&usage.dose)||{};
+  const fb=(usage&&usage.feedback)||{};
+  const corr=(usage&&usage.corridors)||{};
+  const req=(timing&&timing.requests)||{};
+  /* the boot caption — counters live in-process, a deploy zeroes them;
+     the page says so instead of implying a longer history */
+  const up=(api&&api.uptime_s);
+  $('bootLine').innerHTML=(up!=null
+    ?`counted since boot <b>${hmIST(Date.now()/1000-up)}</b> — the server's own stopwatch, in-process. <b>every counter resets on deploy.</b>`
+    :`the server's own stopwatch — in-process counts since boot. <b>every counter resets on deploy.</b>`);
+  /* requests — the registry's real histograms, busiest first.
+     /health usually tops this board — uptime monitoring pings it
+     constantly; it's real traffic, just not people, and the note says so */
+  const routes=(timing&&timing.routes)||[];
+  const inflight=timing&&timing.gauges&&timing.gauges.alive_requests_in_flight;
+  const rrows=[];
+  const healthN=(routes.find(r=>r.path==='/health')||{}).n;
+  const totalN=req.total!=null?req.total:routes.reduce((a,r)=>a+(r.n||0),0);
+  rrows.push(row('requests served',fmt(totalN),
+    (inflight?`${fmt(inflight)} in flight right now · `:'')+
+    (healthN&&totalN?`/health alone is ${fmt(healthN)} — uptime monitors pinging, real but not people`:'')));
+  $('reqRows').innerHTML=rrows.join('');
+  const shortPath=p=>p&&p.startsWith(M)?p.slice(M.length)||'/':p;
+  const top=routes.filter(r=>r.n>0).slice(0,8);
+  $('routeRows').innerHTML=top.map((r,i)=>lrow(
+    String(i+1).padStart(2,'0'),
+    esc(shortPath(r.path)),
+    `${fmt(r.n)} <i>· ≈${r.mean_ms!=null?fmt(r.mean_ms):'—'}ms each</i>`)).join('')||
+    lrow('01','—','nothing has knocked yet');
+  /* journeys sparkline — donations per hour over the rolling 24h, the
+     ledger's own buckets (more of the story than today-only) */
+  const jph=(trips.per_hour&&trips.per_hour.length>=2?trips.per_hour:null)
+    ||(api&&api.journeys_per_hour);
+  if(jph&&jph.length>=2){
+    spark('trSvg',jph,{});
+    const tot=jph.reduce((a,b)=>a+(b||0),0);
+    $('trR').innerHTML=`<b>${fmt(tot)}</b> ${tot===1?'journey':'journeys'} in the window`;
+    sparkDraw('trWrap');
+  }else{$('trWrap').hidden=true}
+  const urows=[];
+  urows.push(row('devices seen',
+    dev.total!=null?`<b>${fmt(dev.total)}</b> all-time`:'—',
+    dev.seen_24h!=null||dev.seen_7d!=null
+      ?`${dev.seen_24h!=null?fmt(dev.seen_24h)+' in 24h':''}${dev.seen_24h!=null&&dev.seen_7d!=null?' · ':''}${dev.seen_7d!=null?fmt(dev.seen_7d)+' in 7d':''} — devices that shared; true installs are unknowable by design`
+      :usage&&usage.devices_basis?esc(usage.devices_basis):null));
+  const live=api&&api.live_users;
+  urows.push(row('active right now',
+    live!=null?fmt(live):'—',
+    'phones that shared inside the last half hour'));
+  /* the last 24h answers 'who touched it today' better than the
+     day-boundary counter — a fresh IST/UTC day reads zero by definition */
+  const l24=trips.last_24h;
+  const today=trips.today;
+  urows.push(row('the last 24 hours',
+    l24&&l24.trips!=null?`<b>${fmt(l24.trips)}</b> <i>journeys</i>`:'none',
+    l24&&l24.trips!=null
+      ?`${fmt1(l24.km)} km · ${fmt1(l24.dose_ug)} µg · ${fmt(l24.devices)} phones${today&&today.trips!=null?` · ${fmt(today.trips)} of them since the day turned`:''}`
+      :'the window counter exists — it just hasn\'t heard a trip yet'));
+  urows.push(row('every donation ever',
+    trips.total!=null?`<b>${fmt(trips.total)}</b> <i>journeys</i>`:'—',
+    trips.total!=null?`${fmt1(trips.km)} km · ${fmt1(trips.dose_ug)} µg · ${fmt1(trips.co2_kg_mid)} kg co₂${trips.latest_donation_age_min!=null?` · last one ${ago(trips.latest_donation_age_min*60)} ago`:''}`:null));
+  urows.push(row('a journey, averaged',
+    dose.mean_ug_per_trip!=null?`${fmt1(dose.mean_ug_per_trip)} µg`:'—',
+    dose.median_ug_per_trip!=null?`median ${fmt1(dose.median_ug_per_trip)} µg over the ${fmt(dose.median_n)} ledgered trips`:'the median waits on the device ledger'));
+  urows.push(row('streets that qualify',
+    corr.publishable!=null?`${fmt(corr.publishable)} <i>of ${fmt(corr.tracked)}</i>`:'—',
+    `a street cell publishes only when ≥${corr.k_min||3} distinct phones crossed it in ${corr.window_h||72}h — the rest are counted, never shown`));
+  const rv=fb.reviews,hz=fb.hazard_reports;
+  urows.push(row('what riders told us',
+    rv&&rv.count!=null?`<b>${fmt(rv.count)}</b> <i>reviews</i>`:'—',
+    `${rv&&rv.avg!=null?`avg ${fmt1(rv.avg)} ★ · `:''}${hz&&hz.active!=null?fmt(hz.active)+' hazard flags live':''}`||null));
+  /* riders by day — the closest honest answer to 'who used it': trips +
+     distinct phones per day, the ledger's own rollup (thin day-slices
+     are already withheld server-side under the 3-phone rule) */
+  const MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const days=(api&&api.contributors)||[];
+  if(days.length){
+    urows.push(`<div class="dr"><span class="dk">riders by day</span>`+
+      `<b class="dv"><i>journeys · phones</i></b></div>`);
+    days.slice(0,5).forEach(d=>{
+      const[y,m,dd]=String(d.day||'').split('-').map(Number);
+      urows.push(lrow('',
+        `${MON[m-1]||''} ${dd||''}`,
+        `${fmt(d.trips)} <i>· ${fmt(d.contributors)} phones</i>`));
+    });
+  }
+  /* the busiest shared street cells — only names that cleared the
+     ≥3-phones-in-72h privacy bar exist here at all */
+  const topC=(api&&api.community&&api.community.top_corridors)||[];
+  if(topC.length){
+    urows.push(`<div class="dr"><span class="dk">busiest shared streets</span>`+
+      `<b class="dv"><i>crossings · phones</i></b></div>`);
+    topC.slice(0,3).forEach(c=>urows.push(lrow('',
+      esc(c.name||'unnamed cell'),
+      `${fmt(c.samples)} <i>· ${fmt(c.devices)} phones</i>`)));
+  }
+  $('useRows').innerHTML=urows.join('');
+  const supp=api&&api.contributors_suppressed;
+  $('useNote').innerHTML=`aggregate-only by construction — nothing here
+    can collapse to one person${supp&&supp.day_rows?`; <b>${fmt(supp.day_rows)}</b> day-slice${supp.day_rows>1?'s':''} withheld under the 3-phone rule`:''}.`;
+}
+
+function renderHealth(status,sources,timing,health){
+  const f={...((health&&health.field)||{}),...((status&&status.field)||{})};
+  const src=(sources&&sources.sources)||{};
+  const hs=(health&&health.sources)||{};
+  const disk=(status&&status.disk)||{};
+  const led=(status&&status.ledger)||{};
+  const alarms=[];
+  /* every alarm names itself — the count is real conditions, not vibes */
+  if(f.serving==='none')alarms.push('the field serves nothing');
+  if(f.stale===true)alarms.push(`the map itself is ${ago(f.age_s)} old — past the ${Math.round((f.stale_after_s||2700)/60)}-minute rule`);
+  /* each feed's verdict word is computed once here — the alarm line and
+     the rows below both read it, so they can never disagree */
+  const feedWord={};
+  for(const[n,s]of Object.entries(src)){
+    const st=String(s.status||'').toLowerCase();
+    const word=s.enabled===false?'off'
+      :s.stale===true?'stale'
+      :s.up===false?'down'
+      :st.startsWith('unavailable')||st.startsWith('down')||st.startsWith('error')||st.startsWith('fail')?'down'
+      :st.startsWith('skipped')?'off'
+      :s.status?s.status
+      :s.up===true?'listening'
+      :'unknown';
+    feedWord[n]=word;
+    if(s&&s.stale===true)
+      alarms.push(`${n} is stale${s.age_s!=null?` — ${ago(s.age_s)} old`:''}`);
+    else if(word==='down')
+      alarms.push(`${n} isn't answering${s&&s.age_s!=null?` — last heard ${ago(s.age_s)} ago`:''}`);
+  }
+  if(disk.low===true)alarms.push(`disk only ${fmt1(disk.free_pct)}% free`);
+  if(led.error)alarms.push(`the ledger: ${led.error}`);
+  const lw=(f.load_warnings||[]).length;
+  if(lw)alarms.push(`${lw} load warning${lw>1?'s':''} from the model`);
+  const al=$('alarm');
+  if(alarms.length){
+    al.className='alarmline hot';
+    al.innerHTML=`<b>${alarms.length} thing${alarms.length>1?'s':''} hurting:</b> ${esc(alarms.join(' · '))}`;
+  }else{
+    al.className='alarmline quiet';
+    al.innerHTML=`<b>all quiet.</b> nothing is past its alarm rule — every feed inside its own cadence.`;
+  }
+  /* the feeds — each carries its own verdict, stale beats up.
+     the native engine often reports detail but no status/age; the
+     public /health rollup fills stations/fires/location words */
+  const clean=d=>String(d||'')
+    .replace(/\s*—\s*secrets?\b.*$/i,'')      /* config notes, not analytics */
+    .replace(/\s*\([^)]*\)\s*/g,' ')          /* env-var parentheticals */
+    .replace(/\s{2,}/g,' ').trim();
+  const srows=[];
+  for(const[name,s]of Object.entries(src)){
+    const word=feedWord[name]||'listening';
+    const bad=s.stale===true||s.up===false||word==='down';
+    const age=s.age_s!=null?` · ${ago(s.age_s)} ago`:'';
+    /* per-feed texture from /health where the engine is terse */
+    let what=clean(s.status||s.detail||'');
+    if(name==='stations'&&hs.stations){
+      const feeds=hs.stations.feeds||{};
+      const parts=Object.entries(feeds).map(([k,v])=>`${k} ${v==='ok'?'✓':'✗'}`);
+      what=`${fmt(hs.stations.count)} monitors in the blend`+(parts.length?` — ${parts.join(' · ')}`:'');
+    }else if(name==='fires'&&hs.fires&&hs.fires.fires!=null){
+      what=`${fmt(hs.fires.fires)} fires on the map`+(hs.fires.belt_fires!=null?` · ${fmt(hs.fires.belt_fires)} in the belt`:'');
+    }
+    srows.push(lrow('',`<b>${esc(name)}</b> — ${esc(what)}`,
+      `${esc(word)}<i>${age}</i>`,bad));
+  }
+  $('srcRows').innerHTML=srows.join('');
+  /* errors — the request logger's own counters, per route, since boot.
+     status classes get plain words; route labels get translations for
+     the two every prod box sees: path-scans ('unmatched') and wrong
+     sign-in links */
+  const errs=(timing&&timing.errors)||[];
+  const bs=(timing&&timing.requests&&timing.requests.by_status)||{};
+  const errows=[];
+  errows.push(row('errors since boot',
+    `turned away ${fmt(bs['4xx']||0)} · server errors ${fmt(bs['5xx']||0)}`,
+    errs.length?null:'no route has thrown or refused since boot',
+    (bs['5xx']||0)>0));
+  const name4route=p=>{
+    const q=p&&p.startsWith(M)?p.slice(M.length)||'/':p;
+    if(q==='unmatched')return 'paths that don\'t exist (scanners, mostly)';
+    if(q==='/in/{secret}')return 'wrong sign-in links';
+    if(q==='/')return '/ (the front page)';
+    return q||'?';
+  };
+  errs.slice(0,5).forEach((e,i)=>errows.push(
+    lrow(String(i+1).padStart(2,'0'),esc(name4route(e.route)),
+      `${fmt(e.n)} <i>${e.class==='5xx'?'server error':'turned away'}</i>`,e.class==='5xx')));
+  $('errRows').innerHTML=errows.join('');
+  /* the machine's own vitals */
+  const sysrows=[];
+  sysrows.push(row('disk',disk.free_pct!=null?`${fmt1(disk.free_pct)}% free`:'—',
+    disk.path?esc(disk.path):null,disk.low===true));
+  sysrows.push(row('the ledger',
+    led.backend?esc(led.backend):'—',
+    led.devices_tracked!=null?`${fmt(led.devices_tracked)} device tokens tracked`:null,
+    !!led.error));
+  sysrows.push(row('build',
+    status&&status.build_sha?`<i>${esc(status.build_sha)}</i>`:'—',
+    `${status&&status.version?esc(status.version):''}${status&&status.uptime_s!=null?` · up ${ago(status.uptime_s)}`:''}`||null));
+  $('sysRows').innerHTML=sysrows.join('');
+}
+
+/* ============================== the tick ============================== */
+async function tick(){
+  /* each feed settles on its own — one failing endpoint must not blank
+     the rest; a section renders only when its payload lands.
+     token check happens BEFORE any authed fetch — an unauthenticated
+     load fires zero 401s: /v2/city still serves (it's the public page's
+     own feed), gated slots reject instantly. */
+  const urls=[M+'/api/status',M+'/api/sources',M+'/api/timing',
+    M+'/api/usage',M+'/api','/v2/city',
+    /* the auth probe — not gated, always fetched; it is how sign-out /
+       expiry in another tab (or a token rotation) re-locks this board */
+    M+'/session',
+    /* the public health rollup — per-feed counts the terse native
+       /api/sources doesn't carry (station feeds, fire tallies) */
+    '/health'];
+  const gated=!AUT;
+  const isGatedPath=u=>u.startsWith(M+'/api');
+  const res=await Promise.allSettled(urls.map(u=>
+    (gated&&isGatedPath(u))
+      ?Promise.reject(new Error(u+' — token required'))
+      :getJSON(u)));
+  const sess=res[6].status==='fulfilled'?res[6].value:null;
+  if(sess&&sess.authenticated===false&&AUT){
+    AUT=false;showGate('session ended — sign in again');
+  }
+  const data=res.slice(0,6),health=res[7].status==='fulfilled'?res[7].value:null;
+  if(data.every(r=>r.status==='rejected')){
+    /* keep the last good render on screen — flag its age, never blank it */
+    $('liveDot').style.background='var(--brick)';
+    $('stamp').innerHTML=
+      `<span class="err">the server isn't answering — ${esc((data[0].reason&&data[0].reason.message)||'all feeds failed')}</span>`+
+      (LAST_OK?`<span>showing last good data from <b>${timeIST(LAST_OK)}</b></span>`:'');
+    return;
+  }
+  LAST_OK=new Date();
+  $('liveDot').style.background='';
+  const val=i=>data[i].status==='fulfilled'?data[i].value:null;
+  const status=val(0),sources=val(1),timing=val(2),usage=val(3),api=val(4),city=val(5);
+  try{renderAir(city,status)}catch(e){}
+  try{renderCoverage(status,city)}catch(e){}
+  try{renderUsage(usage,timing,api)}catch(e){}
+  try{renderHealth(status,sources,timing,health)}catch(e){}
+  /* the stamp line — when this paint happened and what it cost */
+  $('stamp').innerHTML=
+    `<span>updated <b>${timeIST(LAST_OK)}</b></span>`+
+    `<span>refreshes itself every 30 s</span>`+
+    (status&&status.build_sha?`<span>build <b>${esc(status.build_sha)}</b></span>`:'');
+  $('toplive').innerHTML=`updated <b>${timeIST(LAST_OK)}</b>`;
+}
+
+function clock(){}
+
+/* sign-in is a real form on the gate screen now — the token crosses the
+   wire once, the session lives in an HttpOnly cookie, and this button
+   alternates between 'open the gate' and 'end the session' */
+function tokBtnRefresh(){$('tokbtn').textContent=
+  AUT?'sign out':'operator sign in'}
+$('tokbtn').addEventListener('click',()=>{
+  if(AUT){
+    fetch(M+'/logout',{method:'POST',credentials:'same-origin'})
+      .finally(()=>{AUT=false;showGate();tick()});
+    return}
+  showGate('')});
+$('gateform').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('gatebtn'),err=$('gateerr'),tok=$('gatetok').value;
+  if(!tok){err.textContent='enter the operator token';return}
+  btn.disabled=true;err.textContent='signing in…';
+  try{
+    const r=await fetch(M+'/login',{method:'POST',
+      credentials:'same-origin',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({token:tok}),
+      signal:AbortSignal.timeout(10000)});
+    if(r.ok){
+      AUT=true;$('gatetok').value='';hideGate();tick();return}
+    const d=await r.json().catch(()=>({}));
+    err.textContent=r.status===401?'wrong token — try again'
+      :r.status===429?`too many tries — wait ~${d.retry_after_s||30}s`
+      :r.status===503?'admin auth is not configured on this server'
+      :`sign-in failed (${r.status})`;
+  }catch(x){err.textContent='server unreachable — try again'}
+  finally{btn.disabled=false}
+});
+tokBtnRefresh();
+/* first paint decides the gate: probe the session cookie before the
+   first tick so an unauthenticated load lands on the sign-in card, not
+   a board of locked tiles. The probe is one tiny fetch — the auth
+   check is this, inlined into first paint; there is no splash.
+   tokBtnRefresh re-runs when the probe lands: the /in/ link always
+   starts a signed-in first paint, and a stale 'operator sign in' on a
+   live session was the old reload bug it exposes. */
+(async()=>{AUT=await checkSession();tokBtnRefresh();
+  if(!AUT)showGate('');
+  tick();setInterval(tick,30000)})();
+</script>
+</body>
+</html>
