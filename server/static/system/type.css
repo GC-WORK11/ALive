@@ -1,0 +1,200 @@
+/* ============================================================================
+   type.css — editorial type scale
+   Display serif for headlines, grotesk/mono micro for labels, muted-ink
+   prose. House rules baked in:
+     · labels are LOWERCASE mono — never tracked-out all-caps
+     · no thin (<400) weights, no stretched/condensed faces
+   Load after paper.css (consumes --fg, --fg-mute, --accent, --measure…).
+   ============================================================================ */
+
+:root {
+  /* ---- families ----------------------------------------------------------
+     Serif: Iowan Old Style (iOS/macOS) → Palatino Linotype (Windows) →
+     Palatino → Georgia → generic. All book-weight, oldstyle-flavored
+     faces — no stretched or display-cut variants.                          */
+  --font-serif: "Iowan Old Style", "Palatino Linotype", "Palatino",
+                Georgia, ui-serif, serif;
+
+  /* Mono: the UI mono of whatever platform we're on. Used small, lowercase,
+     lightly letterspaced — kickers, labels, stats, meta.                    */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+               "Cascadia Mono", "Liberation Mono", Consolas, monospace;
+
+  /* Grotesk: system sans, reserved for UI chrome the serif/mono can't carry
+     (form controls, dense nav). Optional — most pages need only two.       */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* ---- scale --------------------------------------------------------------
+     Fluid sizes: 7vw hero tops out at 5.5rem (~88px) around 1250px;
+     section head at 3.2rem. Small sizes are fixed px — micro type should
+     not swell on big screens.                                              */
+  --fs-hero:    clamp(2.4rem, 7vw, 5.5rem);     /* display--hero            */
+  --fs-section: clamp(1.8rem, 4.5vw, 3.2rem);   /* display                  */
+  --fs-card:    clamp(1.3rem, 2.4vw, 1.9rem);   /* display--sm              */
+  --fs-lede:    clamp(1.05rem, 1.4vw, 1.25rem); /* ~17–20px                 */
+  --fs-body:    clamp(.9375rem, .88rem + .25vw, 1rem); /* ~15–16px          */
+  --fs-kicker:  .6875rem;                        /* 11px                   */
+  --fs-label:   .75rem;                          /* 12px                   */
+
+  --ls-display: -.022em;   /* serif tightens as it grows                    */
+  --ls-micro:   .09em;     /* lowercase mono breathes; still not "tracked"  */
+  --ls-label:   .06em;
+}
+
+/* ---- base --------------------------------------------------------------- */
+
+.paper, .shady {
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---- display — serif headlines --------------------------------------------
+   Regular weight only. Serif headlines here are confident, not loud:
+   tight leading, slight negative tracking, ink color.                      */
+
+.display, .display--hero, .display--sm {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-style: normal;
+  color: var(--fg);
+  letter-spacing: var(--ls-display);
+  text-wrap: balance;             /* avoid orphan words on 2-line heads    */
+  hanging-punctuation: first;     /* lets an opening quote hang outside    */
+}
+
+.display--hero {
+  font-size: var(--fs-hero);
+  line-height: 1.04;
+  letter-spacing: -.028em;        /* tighter at 88px                        */
+}
+
+.display {
+  font-size: var(--fs-section);
+  line-height: 1.1;
+}
+
+.display--sm {
+  font-size: var(--fs-card);
+  line-height: 1.18;
+}
+
+/* Italic serif for a single emphasized phrase inside a headline —
+   the one expressive move the system allows.                               */
+.display em, .display--hero em, .display--sm em {
+  font-style: italic;
+  letter-spacing: -.01em;
+}
+
+/* ---- micro — lowercase mono ------------------------------------------------
+   Kickers, labels, stats, meta. Deliberately lowercase: the informality is
+   the brand. Letterspacing is modest (.06–.09em) — enough to distinguish
+   micro type, never the wide tracked-caps look.                            */
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: var(--fs-kicker);   /* 11px */
+  line-height: 1.45;
+  letter-spacing: var(--ls-micro);
+  color: var(--fg-mute);
+}
+
+/* section index marker — <span class="kicker"><i>01</i> air quality</span> */
+.kicker i, .kicker .idx {
+  font-style: normal;
+  color: var(--accent);
+  margin-right: .75em;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);    /* 12px */
+  line-height: 1.5;
+  letter-spacing: var(--ls-label);
+  color: var(--fg-mute);
+}
+
+/* stat — a mono figure line: <div class="stat">aqi 312 · pm2.5 89µg</div>
+   Tabular numerals keep columns of stats aligned.                          */
+.stat {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-soft);
+}
+
+.stat b, .stat strong {
+  font-weight: 400;              /* mono stays book-weight; emphasis = hue */
+  color: var(--accent);
+}
+
+/* meta — smallest quiet line: timestamps, sources, footnotes               */
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-kicker);
+  line-height: 1.5;
+  letter-spacing: .04em;
+  color: var(--fg-faint);
+}
+
+/* ---- prose ---------------------------------------------------------------
+   Muted ink, ~15–16px, 1.55 leading, capped measure. Paragraph spacing is
+   a soft 1em — no first-line indents on the web.                           */
+
+.prose {
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--fg-mute);
+  max-width: var(--measure);
+}
+
+.prose p + p { margin-top: 1em; }
+
+.prose strong, .prose b {
+  font-weight: 400;
+  color: var(--fg);             /* emphasis = ink darkness, not weight     */
+}
+
+.prose em, .prose i { font-style: italic; }
+
+/* lede — the intro paragraph: larger, still serif, soft-ink rather than
+   muted so it sits between headline and body.                              */
+.lede {
+  font-family: var(--font-serif);
+  font-size: var(--fs-lede);
+  line-height: 1.5;
+  color: var(--fg-soft);
+  max-width: calc(var(--measure) * 1.1);
+  text-wrap: pretty;
+}
+
+/* ---- links -----------------------------------------------------------------
+   Ink-colored underline at a hairline's weight; hover and focus lean on
+   the forest accent — one of its few sanctioned appearances.               */
+
+.prose a, .alink {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: .18em;
+}
+
+.prose a:hover, .alink:hover {
+  color: var(--accent-deep);
+  text-decoration-color: var(--accent-line);
+}
+
+/* ---- micro overrides inside .shady ----------------------------------------
+   Nothing to override — every class above consumes the semantic tokens,
+   which .shady re-maps. Listed here so it stays true if you fork the
+   tokens: mono micro gets a hair brighter on dark for legibility.          */
+
+.shady .kicker, .shady .label { letter-spacing: .08em; }

@@ -1,0 +1,9 @@
+<!-- Minimal eye: almond outline in two arcs, iris and pupil rings -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path data-draw="" d="M 420 340
+    C 490 252 710 252 780 340
+    C 710 428 490 428 420 340
+    Z"/>
+  <circle data-draw="" cx="600" cy="340" r="58"/>
+  <circle data-draw="" cx="600" cy="340" r="16" stroke-width="1.5"/>
+</svg>

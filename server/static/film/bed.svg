@@ -1,0 +1,20 @@
+<!-- Stay/sleep: a bed traced in one continuous line — headboard, frame, legs, footboard, pillow bump -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path data-draw="" d="M 296 302
+    L 296 448
+    L 370 448
+    L 370 482 L 384 482 L 384 448
+    L 690 448
+    L 690 482 L 704 482 L 704 448
+    L 896 448
+    L 896 372
+    Q 888 352 880 372
+    L 880 424
+    L 436 424
+    C 428 398 412 388 388 388
+    C 362 388 344 398 336 424
+    L 310 424
+    L 310 302
+    Q 303 290 296 302
+    Z"/>
+</svg>

@@ -1,0 +1,260 @@
+/* ============================================================================
+   paper.css — surface tokens & texture
+   Warm cream paper, thin ink hairlines, one forest accent, and a dark
+   "shady" section with a blurred-glass panel. System stacks only; no deps.
+   Load order: paper.css → type.css → motion.css
+   ============================================================================ */
+
+:root {
+  /* ---- paper — warm cream scale -----------------------------------------
+     Warm, slightly flaxen off-white. Not yellow (hue stays ~40, saturation
+     low), not gray (values lifted toward ivory).                              */
+  --paper:        #f5f1ea;  /* base cream — the default page surface        */
+  --paper-raise:  #faf7f1;  /* lifted cards, hover states                   */
+  --paper-sunk:   #efe9df;  /* recessed wells, code blocks, inset panels    */
+  --paper-edge:   #e7e0d2;  /* deepest paper tint — footer wells, dividers  */
+
+  /* ---- ink ---------------------------------------------------------------
+     Near-black with a warm brown bias. --ink-mute keeps ≥4.7:1 on --paper
+     for body prose; --ink-faint is for captions/meta only (large or
+     non-essential text, ~3.4:1).                                            */
+  --ink:          #1a1814;  /* headlines, primary text                      */
+  --ink-soft:     #3e392f;  /* sub-heads, ledes, strong emphasis            */
+  --ink-mute:     #5f584c;  /* body prose, secondary text                   */
+  --ink-faint:    #877f6f;  /* captions, meta, disabled                     */
+
+  /* ---- hairlines ----------------------------------------------------------
+     Thin ink rules, always rgba so they sit into the paper rather than on
+     it. Default ≈14% ink; soft ≈8% (baseline grid, table rules);
+     strong ≈30% (frames that must read at a glance).                         */
+  --hairline:        rgba(26, 24, 20, .14);
+  --hairline-soft:   rgba(26, 24, 20, .08);
+  --hairline-strong: rgba(26, 24, 20, .30);
+
+  /* ---- forest accent ------------------------------------------------------
+     The only hue. Sparing: links on hover, a single kicker glyph, a live
+     dot, focus rings. Never fills big areas; use --forest-tint for that.
+     #3d5a3f ≈ 7:1 on --paper.                                             */
+  --forest:       #3d5a3f;
+  --forest-deep:  #2c4430;  /* pressed/hover on accent text                 */
+  --forest-tint:  rgba(61, 90, 63, .09);   /* wash for tags, ::selection    */
+  --forest-line:  rgba(61, 90, 63, .35);   /* accent hairline, e.g. active  */
+
+  /* ---- shady — dark section ------------------------------------------------
+     "Shady black": warm off-black, not pure #000. Applied via the `.shady`
+     scope class which re-maps the semantic tokens below.                    */
+  --shade:            #0d0c0a;  /* shady black base                         */
+  --shade-raise:      #171511;  /* raised dark surface, card on shade       */
+  --shade-sunk:       #080706;  /* deepest well                             */
+  --ink-on-dark:      #ece7dc;  /* primary text on shade (warm ivory)       */
+  --mute-on-dark:     #a89f8e;  /* secondary on shade (~8:1)                */
+  --faint-on-dark:    #6f685c;  /* captions on shade                        */
+  --hairline-dark:        rgba(236, 231, 221, .16);
+  --hairline-dark-soft:   rgba(236, 231, 221, .08);
+  --hairline-dark-strong: rgba(236, 231, 221, .34);
+  --forest-on-dark:   #93b18e;  /* accent lifted for contrast on shade      */
+  --forest-tint-dark: rgba(147, 177, 142, .14);
+  --veil:             rgba(13, 12, 10, .85);   /* blur panel over shade     */
+  --veil-paper:       rgba(245, 241, 234, .82);/* blur panel over cream     */
+
+  /* ---- semantic aliases ----------------------------------------------------
+     Components should consume these; `.shady` re-maps them so the same
+     markup re-themes inside a dark section.                                 */
+  --bg:        var(--paper);
+  --bg-raise:  var(--paper-raise);
+  --bg-sunk:   var(--paper-sunk);
+  --fg:        var(--ink);
+  --fg-soft:   var(--ink-soft);
+  --fg-mute:   var(--ink-mute);
+  --fg-faint:  var(--ink-faint);
+  --rule:        var(--hairline);
+  --rule-soft:   var(--hairline-soft);
+  --rule-strong: var(--hairline-strong);
+  --accent:      var(--forest);
+  --accent-deep: var(--forest-deep);
+  --accent-tint: var(--forest-tint);
+  --accent-line: var(--forest-line);
+
+  /* ---- layout rhythm --------------------------------------------------------
+     Baseline grid is 24px (1.5rem). Body prose at 15–16px × 1.55 lands on
+     it roughly every other line — close enough for a text site; the grid
+     option is a debug/alignment aid, not a straitjacket.                    */
+  --baseline: 1.5rem;
+  --gutter:   clamp(1.25rem, 4vw, 3rem);   /* page edge padding             */
+  --wrap:     76rem;                        /* max content width           */
+  --measure:  38rem;                        /* max prose line length       */
+  --s-xs: .5rem;  --s-sm: 1rem;  --s-md: 2rem;
+  --s-lg: clamp(3rem, 7vw, 5rem);
+  --s-xl: clamp(5rem, 12vw, 9rem);          /* section padding-block       */
+  --r: 6px;                                 /* the only radius — subtle    */
+  --shadow: 0 18px 40px -18px rgba(26, 24, 20, .22);
+
+  /* ---- textures ----------------------------------------------------------- */
+
+  /* Paper grain — inline SVG feTurbulence tile, desaturated to monochrome
+     so it reads as paper fiber, not colored noise. The tile renders at ~50%
+     alpha; the .grain overlay shows it at ~7% → ~3.5% effective opacity.
+     Pair with mix-blend-mode:multiply on paper, screen on shade.           */
+  --grain-uri: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.55'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)'/%3E%3C/svg%3E");
+
+  color-scheme: light;
+}
+
+/* Breakpoint ladder (mobile-first): 320 base · 390 phone · 768 tablet ·
+   1024 desktop · 1440 wide. Only --gutter/.wrap respond; components should
+   use clamp() and container queries instead of hard MQ steps.              */
+@media (min-width: 768px)  { :root { --gutter: clamp(2rem, 5vw, 4rem); } }
+@media (min-width: 1440px) { :root { --wrap: 82rem; } }
+
+/* ---- surfaces ---------------------------------------------------------- */
+
+.paper {
+  background-color: var(--paper);
+  color: var(--fg);
+}
+
+/* Grain overlay — add <div class="grain" aria-hidden="true"></div> as the
+   last child of <body>, or class it onto a positioned section for local
+   texture. Fixed + pointer-events:none so it sits over everything like a
+   printed page. multiply makes the white end of the noise disappear into
+   cream and only the dark fibers show.                                     */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 200;             /* above content, below modals — adjust per app */
+  pointer-events: none;
+  background-image: var(--grain-uri);
+  background-size: 300px 300px;
+  opacity: .07;             /* × tile's .5 alpha ≈ 3.5% effective           */
+  mix-blend-mode: multiply;
+}
+
+/* Faint baseline grid — opt-in via .grid-lines on <body> or a section.
+   One 1px rule every --baseline, in the softest hairline.                  */
+.grid-lines {
+  background-image: linear-gradient(
+    to bottom,
+    var(--rule-soft) 0,
+    var(--rule-soft) 1px,
+    transparent 1px
+  );
+  background-size: 100% var(--baseline);
+}
+
+/* ---- hairlines ------------------------------------------------------------
+   Every rule is 1px of translucent ink. `.rule` styles a <hr> or an empty
+   div; the border utilities add rules to real boxes.                        */
+
+.rule, hr.rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;                /* spacing belongs to layout, not the rule     */
+}
+
+.rule--b { border-bottom: 1px solid var(--rule); }
+.rule--t { border-top:    1px solid var(--rule); }
+.rule--y { border-top:    1px solid var(--rule);
+           border-bottom: 1px solid var(--rule); }
+.rule--x { border-left:   1px solid var(--rule);
+           border-right:  1px solid var(--rule); }
+
+/* Vertical hairline — inline divider between items (nav, meta rows).
+   Use on an empty <span class="rule-v" aria-hidden="true"></span>.         */
+.rule-v {
+  display: inline-block;
+  align-self: stretch;
+  width: 1px;
+  min-height: 1em;
+  background: var(--rule);
+}
+
+.frame { border: 1px solid var(--rule); }
+
+.rule--soft   { --rule: var(--rule-soft); }
+.rule--strong { --rule: var(--rule-strong); }
+/* Modifiers re-point the --rule alias, so they compose with every rule
+   utility above and with descendants that consume var(--rule).            */
+
+/* ---- layout helpers used by the README recipes -------------------------- */
+
+.wrap {
+  width: 100%;
+  max-width: var(--wrap);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.section { padding-block: var(--s-xl); }
+
+.stack    > * + * { margin-top: var(--s-md); }   /* vertical rhythm */
+.stack-sm > * + * { margin-top: var(--s-sm); }
+
+/* ---- shady — dark section scope -------------------------------------------
+   Re-maps the semantic tokens so any component using var(--fg)/var(--rule)
+   etc. darkens automatically. Grain inside .shady screens instead of
+   multiplying (light fibers on black paper).                               */
+
+.shady {
+  --bg:        var(--shade);
+  --bg-raise:  var(--shade-raise);
+  --bg-sunk:   var(--shade-sunk);
+  --fg:        var(--ink-on-dark);
+  --fg-soft:   var(--ink-on-dark);
+  --fg-mute:   var(--mute-on-dark);
+  --fg-faint:  var(--faint-on-dark);
+  --rule:        var(--hairline-dark);
+  --rule-soft:   var(--hairline-dark-soft);
+  --rule-strong: var(--hairline-dark-strong);
+  --accent:      var(--forest-on-dark);
+  --accent-deep: var(--forest-on-dark);
+  --accent-tint: var(--forest-tint-dark);
+  --accent-line: rgba(147, 177, 142, .4);
+  --shadow: 0 18px 44px -18px rgba(0, 0, 0, .7);
+
+  background-color: var(--shade);
+  color: var(--fg);
+  color-scheme: dark;
+}
+
+.shady .grain,
+.grain--dark {
+  mix-blend-mode: screen;
+  opacity: .06;
+}
+
+/* ---- blur backdrop --------------------------------------------------------
+   "Shady glass": 24px blur + saturation boost over --shade at .85 alpha.
+   Use .blur on panels floating over imagery or the dark section's content.
+   .blur--paper is the cream counterpart for navs/overlays on the light
+   side. Without backdrop-filter the alpha rises so text stays legible.    */
+
+.blur {
+  background-color: var(--veil);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
+  color: var(--ink-on-dark);
+}
+
+.blur--paper {
+  background-color: var(--veil-paper);
+  color: var(--ink);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .blur        { background-color: rgba(13, 12, 10, .94); }
+  .blur--paper { background-color: rgba(245, 241, 234, .95); }
+}
+
+/* ---- focus & selection ----------------------------------------------------
+   Hairline focus ring — a thin ink offset line, never a glow.              */
+
+::selection {
+  background: var(--accent-tint);
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
