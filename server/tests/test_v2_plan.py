@@ -1,0 +1,965 @@
+"""Offline tests for /v2/plan production paths: ranking edge cases,
+vehicle/vehicle_profile parsing, unified emissions, geometry+steps,
+and the transit_v2 → station-model metro degradation ladder.
+
+No network: deps.osrm_route is monkeypatched, the Amazon client is a
+local fake, transit_v2.plan_transit is stubbed per test.
+"""
+import os
+import sys
+import time
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.pop("ALIVE_LOCATION_KEY", None)
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import main  # noqa: E402
+from airfield import FIELD  # noqa: E402
+from v2 import deps, store  # noqa: E402
+from v2 import plan as v2plan  # noqa: E402
+import transit  # noqa: E402
+import transit_v2  # noqa: E402
+import emissions  # noqa: E402
+
+client = TestClient(main.app)
+
+LINE = {"type": "LineString",
+        "coordinates": [[77.2090, 28.6139], [77.2150, 28.6300],
+                        [77.1990, 28.6450]]}
+CP = (28.6315, 77.2167)
+KB = (28.6519, 77.1907)
+
+OSRM_ROUTE = {
+    "distance": 6200.0, "duration": 780.0, "geometry": LINE,
+    "legs": [{"steps": [
+        {"maneuver": {"type": "depart", "modifier": "north",
+                      "location": [77.2090, 28.6139]},
+         "name": "Rajpath", "distance": 3000.0, "duration": 400.0},
+        {"maneuver": {"type": "turn", "modifier": "left",
+                      "location": [77.2150, 28.6300]},
+         "name": "KG Marg", "distance": 3200.0, "duration": 380.0},
+        {"maneuver": {"type": "arrive", "location": [77.1990, 28.6450]},
+         "name": "", "distance": 0.0, "duration": 0.0},
+    ]}],
+}
+
+
+async def fake_osrm(profile, flon, flat, tlon, tlat):
+    rt = dict(OSRM_ROUTE)
+    rt["steps"] = deps.osrm_steps(rt)
+    return rt
+
+
+class DisabledLoc:
+    enabled = False
+
+
+@pytest.fixture(autouse=True)
+def wired(monkeypatch):
+    deps.set_location(DisabledLoc())
+    FIELD._samples = [
+        (28.6315, 77.2167, "test-station", {"pm2_5": 150.0}),
+        (28.6519, 77.1907, None, {"pm2_5": 185.0}),
+        (28.5850, 77.2300, None, {"pm2_5": 120.0}),
+        (28.7000, 77.2000, None, {"pm2_5": 210.0}),
+    ]
+    FIELD._fetched_at = time.time()
+    monkeypatch.setattr(deps, "field_refresh", _noop)
+    monkeypatch.setattr(deps, "osrm_route", fake_osrm)
+    monkeypatch.setattr(transit_v2, "plan_transit",
+                        lambda *a, **k: [])
+    store.ROUTES._routes.clear()
+    yield
+    deps.set_location(None)
+    FIELD._samples = []
+
+
+async def _noop():
+    return None
+
+
+def _post(body):
+    r = client.post("/v2/plan", json=body)
+    assert r.status_code == 200
+    return r.json()
+
+
+# --- ranking edge cases (pure) -------------------------------------------------
+def _o(mode, dose_lo, co2_mid, eta_s):
+    return {"mode": mode, "eta_s": eta_s,
+            "dose": {"lo": dose_lo, "mid": dose_lo},
+            "emissions": {"co2_kg": {"mid": co2_mid}}}
+
+
+def test_rank_tie_boundary_10pct_is_inclusive():
+    # dose_lo exactly at 1.10x the minimum is still tied — the spec's
+    # 'within our own error' band is inclusive, not strict.
+    opts = [_o("car", 100.0, 2.0, 600), _o("metro", 110.0, 0.5, 700)]
+    out = v2plan.rank_options(opts)
+    assert out[0]["mode"] == "metro"          # inside the tie → emission decides
+    assert out[0]["recommended"] is True
+
+
+def test_rank_tie_boundary_just_outside():
+    opts = [_o("car", 100.0, 0.5, 600), _o("metro", 110.5, 0.1, 700)]
+    out = v2plan.rank_options(opts)
+    assert out[0]["mode"] == "car"            # 110.5 > 110 → not tied
+    assert out[0]["recommended"] is True
+
+
+def test_rank_time_guard_emits_plus_minutes():
+    opts = [_o("car", 400.0, 3.0, 300), _o("metro", 90.0, 0.2, 481)]
+    out = v2plan.rank_options(opts)
+    assert out[0]["mode"] == "metro"
+    assert "+3 min" in out[0]["reason_line"]   # 481-300 = 181 s ≈ 3 min
+
+
+def test_rank_time_guard_boundary_not_flagged():
+    # exactly 1.6x the fastest ETA is allowed silently ('>' is strict)
+    opts = [_o("car", 400.0, 3.0, 300), _o("metro", 90.0, 0.2, 480)]
+    out = v2plan.rank_options(opts)
+    assert out[0]["mode"] == "metro"
+    assert "min vs fastest" not in out[0]["reason_line"]
+
+
+def test_rank_recommended_is_unique():
+    opts = [_o("car", 100.0, 1.0, 600), _o("car_open", 102.0, 1.1, 600),
+            _o("auto", 130.0, 0.4, 800), _o("metro", 95.0, 0.3, 700),
+            _o("walk", 600.0, 0.0, 3600)]
+    out = v2plan.rank_options(opts)
+    rec = [o for o in out if o["recommended"]]
+    assert len(rec) == 1
+    assert out[0] is rec[0]
+
+
+def test_rank_metro_vs_car_tie_metro_wins():
+    # the realistic case: car and metro dose within error → Delhi's
+    # tiebreak picks the rail option — which is also the global
+    # emission min, so the spec tags it 'lightest on both' and leaves
+    # the dose winner untagged (the you/Delhi pair is only for splits)
+    opts = [_o("car", 100.0, 1.8, 900), _o("metro", 104.0, 0.3, 1200)]
+    out = v2plan.rank_options(opts)
+    assert out[0]["mode"] == "metro"
+    assert out[0]["recommended"] is True
+    assert out[0]["tag"] == "lightest on both"
+    car = [o for o in out if o["mode"] == "car"][0]
+    assert car["tag"] is None
+
+
+def test_rank_split_tags_when_dose_and_emission_winners_differ():
+    # dose winner isn't the emission winner → the spec's two tags split
+    opts = [_o("car", 100.0, 2.0, 600),      # strict dose min, heavy
+            _o("metro", 105.0, 0.3, 700),    # tied dose, lightest exhaust
+            _o("walk", 500.0, 0.0, 3600)]    # global emin, heavy dose
+    out = v2plan.rank_options(opts)
+    by = {o["mode"]: o for o in out}
+    assert by["metro"]["recommended"] is True   # min emission inside tie
+    assert by["car"]["tag"] == "lightest for you"
+    assert by["walk"]["tag"] == "lightest for Delhi"
+
+
+def test_rank_no_scored_options_passes_through():
+    opts = [{"mode": "x", "eta_s": 0, "dose": {"lo": None, "mid": None},
+             "emissions": {"co2_kg": {"mid": None}}}]
+    out = v2plan.rank_options(opts)
+    assert out[0].get("recommended") in (None, False)
+
+
+def test_rank_engine_row_keys_on_priced_objective():
+    # engine row's raster band reads heavier than a router row's, but
+    # its engine_dose_ug — the exact criterion the path minimized — is
+    # lower → the engine row must win sort AND take the leaf chip
+    eng = _o("car", 120.0, 2.0, 600); eng["engine_dose_ug"] = 90.0
+    rtr = _o("car_open", 110.0, 0.5, 700)
+    out = v2plan.rank_options([rtr, eng])
+    assert out[0] is eng
+    assert eng["safest_path"] is True
+
+
+def test_rank_engine_dose_maps_into_lo_space():
+    # the priced dose is mid-scale; ranking maps it by the row's own
+    # band ratio so keys stay commensurate — ed=55 on a 4:5 band row
+    # keys at 44, beating a 50-lo router row but losing to 40
+    eng = {"mode": "car", "eta_s": 600,
+           "dose": {"lo": 80.0, "mid": 100.0},
+           "emissions": {"co2_kg": {"mid": 2.0}},
+           "engine_dose_ug": 55.0}
+    lo_rtr = _o("walk", 40.0, 0.0, 700)
+    hi_rtr = _o("auto", 50.0, 1.0, 650)
+    out = v2plan.rank_options([hi_rtr, lo_rtr, eng])
+    assert out[0] is lo_rtr        # 40 < 44
+    assert out[1] is eng           # 44 < 50
+
+
+def test_rank_zero_lo_band_does_not_degenerate_to_co2():
+    # audit find: on long trips every raster band's lo clips to 0 →
+    # every key collapsed to 0.0 → the emission tiebreak picked cycle
+    # (zero exhaust, 117µg) as 'lightest' over a 7µg car. With lo=0
+    # uninformative, engine rows must rank on their priced dose.
+    car = {"mode": "car", "eta_s": 3600,
+           "dose": {"lo": 0.0, "mid": 30.0},
+           "emissions": {"co2_kg": {"mid": 4.0}},
+           "engine_dose_ug": 7.0}
+    cyc = {"mode": "cycling", "eta_s": 7200,
+           "dose": {"lo": 0.0, "mid": 120.0},
+           "emissions": {"co2_kg": {"mid": 0.0}},
+           "engine_dose_ug": 117.5}
+    out = v2plan.rank_options([cyc, car])
+    assert out[0] is car                      # 7µg < 117.5µg — real order
+    assert out[0]["recommended"] is True
+    assert cyc["recommended"] is False
+
+
+def test_rank_mixed_zero_and_real_lo_keeps_pessimism():
+    # a row whose band is informative (lo>0) still ranks pessimistically;
+    # the zero-lo row falls back to mid — different scale, honest order:
+    # metro lo=2 beats car mid=7.
+    car = {"mode": "car", "eta_s": 3600,
+           "dose": {"lo": 0.0, "mid": 7.0},
+           "emissions": {"co2_kg": {"mid": 4.0}}}
+    metro = {"mode": "metro", "eta_s": 3800,
+             "dose": {"lo": 2.0, "mid": 9.0},
+             "emissions": {"co2_kg": {"mid": 0.5}}}
+    out = v2plan.rank_options([car, metro])
+    assert out[0] is metro
+
+
+def test_rank_engine_row_without_band_keys_on_priced_dose():
+    # band missing entirely → the raw priced dose still ranks: engine
+    # row takes the dose flag even though it holds no raster lo/mid
+    eng = {"mode": "car", "eta_s": 600,
+           "dose": {"lo": None, "mid": None},
+           "emissions": {"co2_kg": {"mid": 2.0}},
+           "engine_dose_ug": 55.0}
+    rtr = _o("walk", 60.0, 1.0, 700)
+    v2plan.rank_options([rtr, eng])
+    assert v2plan._dose_key(eng) == 55.0
+    assert eng["safest_path"] is True
+
+
+# --- vehicle / vehicle_profile parsing ------------------------------------------
+def test_vehicle_questionnaire_values_all_parse():
+    for v in ("car", "auto", "bike", "bus", "metro", "walk", "cycle"):
+        canon, profile = v2plan._parse_vehicle({"vehicle": v})
+        assert canon == v
+    assert v2plan._parse_vehicle({"vehicle": "scooter"})[0] == "bike"
+    assert v2plan._parse_vehicle({"vehicle": "cab"})[0] == "car"
+    assert v2plan._parse_vehicle({"vehicle": "bicycle"})[0] == "cycle"
+
+
+def test_vehicle_unknown_value_defaults_no_error():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]},
+                  "vehicle": "hoverboard"})
+    assert body["vehicle"] == "car"        # fleet-prior default, never 4xx
+    assert body["options"]
+
+
+def test_vehicle_profile_parsing_and_applied_to_matching_option():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]},
+                  "vehicle": "car",
+                  "vehicle_profile": {"class": "car", "fuel": "diesel",
+                                      "year": 2015}})
+    assert body["vehicle_profile"]["fuel"] == "diesel"
+    assert body["vehicle_profile"]["year_bucket"] == "2010_2016"
+    by_mode = {o["mode"]: o for o in body["options"]}
+    car_label = (by_mode["car"]["emissions"].get("label") or "").lower()
+    assert "diesel" in car_label                       # declared vehicle used
+    bus_label = (by_mode["bus"]["emissions"].get("label") or "").lower()
+    assert "diesel" not in bus_label                   # profile stays on-car
+
+
+def test_vehicle_profile_year_bucket_passthrough_and_bad_values():
+    canon, p = v2plan._parse_vehicle({
+        "vehicle": "auto",
+        "vehicle_profile": {"fuel": "cng", "year_bucket": "2020_plus"}})
+    assert canon == "auto" and p["year_bucket"] == "2020_plus"
+    canon, p = v2plan._parse_vehicle({
+        "vehicle": "car",
+        "vehicle_profile": {"fuel": "unobtainium", "year": "soon"}})
+    assert "fuel" not in p and "year_bucket" not in p   # → fleet prior axes
+
+
+def test_option_vehicle_profile_only_on_family_match():
+    prof = {"class": "car", "fuel": "diesel"}
+    assert v2plan._option_vehicle("car", prof)["fuel"] == "diesel"
+    assert v2plan._option_vehicle("car_open", prof)["fuel"] == "diesel"
+    assert "fuel" not in v2plan._option_vehicle("bus", prof)
+    assert v2plan._option_vehicle("bus", prof) == {"class": "bus"}
+    cab = {"class": "cab", "fuel": "cng"}
+    assert v2plan._option_vehicle("car", cab)["class"] == "cab"  # taxi uplift
+
+
+# --- unified emissions + geometry/steps -----------------------------------------
+def test_plan_emissions_come_from_emissions_module():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    for o in body["options"]:
+        em = o["emissions"]
+        assert em.get("engine") == "server/emissions.py"
+        assert "fallback" not in (em.get("basis") or "")
+        assert {"lo", "mid", "hi"} <= set(em["co2_kg"])
+        # a real engine band, not a fake point value
+        assert em["co2_kg"]["hi"] >= em["co2_kg"]["mid"] >= \
+            em["co2_kg"]["lo"] >= 0
+
+
+def test_option_emissions_match_trip_emissions_directly():
+    # same inputs through the plan helper and the engine must agree —
+    # the unified path is the point of this lane.
+    via_plan = v2plan._emission_band("car", 6.2, 780.0, 640.0,
+                                     {"class": "car"})
+    direct = emissions.trip_emissions(mode="car", distance_km=6.2,
+                                      duration_s=780.0, freeflow_s=640.0,
+                                      vehicle={"class": "car"})
+    assert via_plan["co2_kg"] == direct["co2_kg"]
+    assert via_plan["pm25_g"] == direct["pm25_g"]
+
+
+def test_every_option_carries_geometry_and_steps():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert body["options"]
+    for o in body["options"]:
+        assert o["geometry"]["type"] == "LineString"
+        assert o["route_geojson"] == o["geometry"]
+        assert o["steps"], f"{o['mode']} has no turn list"
+        for s in o["steps"]:
+            assert s["instruction"] and s["distance_m"] is not None
+            assert s["lat"] is not None and s["lon"] is not None
+    # the upstream-router car must carry real turn-by-turn — the engine
+    # option may rank above it (lower dose is the point) with honest
+    # endpoint steps, so select by source, not position
+    road = [o for o in body["options"]
+            if o["mode"] == "car" and o["steps_source"] == "osrm"][0]
+    assert any("Turn" in s["instruction"] or "Continue" in s["instruction"]
+               for s in road["steps"])
+
+
+def test_osrm_steps_normalizer():
+    steps = deps.osrm_steps(OSRM_ROUTE)
+    assert steps[0]["type"] == "depart"
+    assert steps[0]["lat"] == pytest.approx(28.6139)
+    assert steps[-1]["instruction"] == "You'll arrive"
+    assert steps[1]["instruction"] == "Turn left onto KG Marg"
+
+
+# --- transit (metro) degradation ladder -----------------------------------------
+def _fake_journey():
+    return [{
+        "mode": "metro", "duration_s": 1500, "walk_m": 400,
+        "transfers": 1, "lines": ["Yellow", "Blue"],
+        "depart_at": "2026-10-05T08:01:00+05:30",
+        "arrive_at": "2026-10-05T08:26:00+05:30",
+        "duration_model": "gtfs", "source": "gtfs connection scan",
+        "legs": [
+            {"type": "walk",
+             "from": {"name": "Start", "lat": CP[0], "lon": CP[1]},
+             "to": {"name": "Rajiv Chowk", "lat": 28.6327, "lon": 77.2195},
+             "distance_m": 300, "duration_s": 216,
+             "geometry": {"type": "LineString", "coordinates": [
+                 [CP[1], CP[0]], [77.2195, 28.6327]]}},
+            {"type": "metro", "line": "Yellow",
+             "from": {"name": "Rajiv Chowk", "lat": 28.6327,
+                      "lon": 77.2195},
+             "to": {"name": "Central Secretariat", "lat": 28.6159,
+                    "lon": 77.2123},
+             "stops": 1, "duration_s": 180, "wait_s": 240,
+             "distance_m": 1900,
+             "geometry": {"type": "LineString", "coordinates": [
+                 [77.2195, 28.6327], [77.2123, 28.6159]]}},
+            {"type": "metro", "line": "Blue",
+             "from": {"name": "Central Secretariat", "lat": 28.6159,
+                      "lon": 77.2123},
+             "to": {"name": "Karol Bagh", "lat": 28.6440,
+                    "lon": 77.1885},
+             "stops": 3, "duration_s": 420, "wait_s": 180,
+             "distance_m": 4200,
+             "geometry": {"type": "LineString", "coordinates": [
+                 [77.2123, 28.6159], [77.1885, 28.6440]]}},
+            {"type": "walk",
+             "from": {"name": "Karol Bagh", "lat": 28.6440,
+                      "lon": 77.1885},
+             "to": {"name": "Destination", "lat": KB[0], "lon": KB[1]},
+             "distance_m": 100, "duration_s": 72,
+             "geometry": {"type": "LineString", "coordinates": [
+                 [77.1885, 28.6440], [KB[1], KB[0]]]}},
+        ],
+    }]
+
+
+def test_metro_via_transit_v2_real_legs(monkeypatch):
+    monkeypatch.setattr(transit_v2, "plan_transit",
+                        lambda *a, **k: _fake_journey())
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    metro = [o for o in body["options"] if o["mode"] == "metro"]
+    assert len(metro) == 1
+    o = metro[0]
+    assert o["eta_model"] == "gtfs"
+    assert o["stations"]["board"] == "Rajiv Chowk"
+    assert o["stations"]["alight"] == "Karol Bagh"
+    assert o["lines"] == ["Yellow", "Blue"]
+    # steps: walk → Yellow → Blue → walk, real station names
+    ins = " | ".join(s["instruction"] for s in o["steps"])
+    assert "Rajiv Chowk" in ins and "Yellow" in ins and "Blue" in ins
+    assert o["steps"][-1]["type"] == "arrive"
+    # merged geometry is one LineString
+    assert o["geometry"]["type"] == "LineString"
+    assert len(o["geometry"]["coordinates"]) >= 4
+    # combined leg dose carries the same fields a road row does —
+    # avg_conc is the distance-weighted mean over legs, peak the max
+    assert isinstance(o["dose"]["mid"], (int, float))
+    assert isinstance(o["dose"]["avg_conc_ugm3"], (int, float))
+    assert o["dose"]["avg_conc_ugm3"] > 0
+    assert o["dose"]["peak_conc"] >= o["dose"]["avg_conc_ugm3"]
+    # emissions: per-pax-km metro band on the ride distance, not the
+    # whole door-to-door geometry
+    assert o["emissions"]["engine"] == "server/emissions.py"
+    assert o["emissions"]["co2_kg"]["hi"] > 0
+
+
+def test_metro_fallback_station_model_when_no_gtfs(monkeypatch):
+    # plan_transit empty (no feed cached) → transit.py station model,
+    # honestly labelled, lower confidence — not a fabricated timetable.
+    monkeypatch.setattr(transit_v2, "plan_transit",
+                        lambda *a, **k: [])
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    metro = [o for o in body["options"] if o["mode"] == "metro"]
+    assert len(metro) == 1
+    o = metro[0]
+    assert o["eta_model"] == "estimated"
+    assert o.get("approximate") is True
+    assert "approx" in o["label"].lower()
+    assert o["dose"]["confidence"] == "low"
+    assert o["steps"], "synthetic option must still carry a turn list"
+
+
+def test_no_metro_option_when_not_credible(monkeypatch):
+    monkeypatch.setattr(transit_v2, "plan_transit",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(transit, "metro_option",
+                        lambda *a, **k: None)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert not any(o["mode"].startswith("metro") for o in body["options"])
+
+
+# --- dose engine seam -------------------------------------------------------------
+def test_integrate_dose_used_when_present(monkeypatch):
+    calls = []
+
+    def fake_integrate_dose(coords, field, me, ve):
+        calls.append((len(coords), me, ve))
+        return {"lo": 30.0, "mid": 42.0, "hi": 55.0}
+
+    monkeypatch.setattr(v2plan, "_integrate_dose", fake_integrate_dose)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert calls, "integrate_dose should be invoked for road options"
+    car = [o for o in body["options"] if o["mode"] == "car"][0]
+    assert car["dose"]["mid"] == 42.0
+    assert car["dose"]["basis"] == "alive_core_ref.integrate_dose"
+
+
+def test_integrate_dose_falls_back_on_error(monkeypatch):
+    def boom(*a):
+        raise RuntimeError("not ready")
+    monkeypatch.setattr(v2plan, "_integrate_dose", boom)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    car = [o for o in body["options"] if o["mode"] == "car"][0]
+    assert car["dose"]["mid"] is not None    # exposure.dose took over
+
+
+# --- service-area gate (the ECS wedge regression guard) -------------------------
+def test_plan_rejects_out_of_area_before_any_fetch(monkeypatch):
+    """SF→Delhi: the request that wedged the ECS task on E2E — public
+    OSRM returns a 9,983 km / 94k-vertex 'route' and the dose loop over
+    it starved the event loop past every health check. Must fail fast
+    with a structured error without a single upstream call."""
+    calls = []
+    async def spy(*a, **k):
+        calls.append(a)
+        return None
+    monkeypatch.setattr(deps, "osrm_route", spy)
+    monkeypatch.setattr(deps, "field_refresh", spy)
+    body = _post({"from": {"lat": 37.79, "lon": -122.41},
+                  "to": {"lat": CP[0], "lon": CP[1]}, "vehicle": "auto"})
+    assert body["options"] == []
+    assert "outside service area" in body["error"]
+    assert not calls, "out-of-area OD must never reach an upstream call"
+
+
+def test_plan_edge_of_area_still_serves(monkeypatch):
+    """Jaipur-side OD inside the 2° margin: gate must not over-reject."""
+    calls = []
+    async def spy(*a, **k):
+        calls.append(a)
+        return None
+    monkeypatch.setattr(deps, "osrm_route", spy)
+    body = _post({"from": {"lat": 26.90, "lon": 75.80},   # Jaipur
+                  "to": {"lat": CP[0], "lon": CP[1]}, "vehicle": "auto"})
+    assert "outside service area" not in (body.get("error") or "")
+    assert calls, "in-area OD should reach the router"
+
+
+# --- one dose surface per response ----------------------------------------------
+class _FakeFV:
+    def __init__(self, tag):
+        self.tag = tag
+    def value(self, lat, lon, pollutant="pm2_5"):
+        return ("v", self.tag)
+    def sigma(self, lat, lon):
+        return ("s", self.tag)
+
+
+def test_dose_surface_priced_raster_wins(monkeypatch):
+    """When the engine priced edges this epoch, every row — engine,
+    motor, transit — doses on that raster so the compare sheet ranks
+    like-for-like (regression: 'least-smoke rd' losing to an OSRM row
+    it beat because the arms priced on different estimators)."""
+    fv = _FakeFV("eng")
+    sig = lambda la, lo: ("sig", "eng")
+    monkeypatch.setattr(v2plan, "_ENG_PACK", (fv, sig))
+    F = object.__new__(FIELD.__class__)   # no _snap_fv
+    dval, dsig = v2plan._dose_surface(F)
+    assert dval == fv.value and dsig is sig
+
+
+def test_dose_surface_snapshot_when_unpriced(monkeypatch):
+    """Before any reprice, all rows share the field's own snapshot
+    cells — the raster /grid paints — never krige-here-raster-there."""
+    monkeypatch.setattr(v2plan, "_ENG_PACK", None)
+    F = object.__new__(FIELD.__class__)
+    F._snap_fv = _FakeFV("snap")
+    dval, dsig = v2plan._dose_surface(F)
+    assert dval == F._snap_fv.value and dsig == F._snap_fv.sigma
+
+
+def test_dose_surface_none_means_live_estimator(monkeypatch):
+    """No raster at all → (None, None) → callers use F.value/F.sigma —
+    still one estimator for the whole response."""
+    monkeypatch.setattr(v2plan, "_ENG_PACK", None)
+    F = object.__new__(FIELD.__class__)
+    F._snap_fv = None
+    assert v2plan._dose_surface(F) == (None, None)
+
+
+# --- engine-first paint ---------------------------------------------------------
+def test_plan_fast_returns_engine_rows_only_without_router(monkeypatch):
+    """fast:true is the engine-first paint: no public-router or GTFS call,
+    only least-inhalation rows, flagged partial so the client swaps in
+    the full set when it lands."""
+    calls = []
+    async def spy(*a, **k):
+        calls.append(a)
+        return None
+    monkeypatch.setattr(deps, "osrm_route", spy)
+    monkeypatch.setattr(deps, "field_refresh", spy)
+    row = {"mode": "car", "label": "Car (AC) · least-smoke rd",
+           "distance_km": 5.0, "duration_min": 14.0, "dose_ug": 9.0,
+           "engine_dose_ug": 9.0, "geometry": None}
+    seen = {}
+    def eng(*a, **k):
+        seen.update(k)
+        return [dict(row)]
+    monkeypatch.setattr(v2plan, "_engine_options", eng)
+    monkeypatch.setattr(v2plan, "_transit_options",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("transit ran")))
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510},
+                  "vehicle": "car", "fast": True})
+    assert body["partial"] is True
+    assert [o["mode"] for o in body["options"]] == ["car"]
+    assert seen.get("alts") is False, "fast paint buys primaries only"
+    assert not [c for c in calls if c and c[0] is not None and len(c) > 1], \
+        "fast path must not wait on the public router"
+
+
+def test_plan_fast_engine_down_is_typed_not_hung(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("graph missing")
+    async def nop(*a, **k):
+        return None
+    monkeypatch.setattr(deps, "field_refresh", nop)
+    monkeypatch.setattr(v2plan, "_engine_options", boom)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510}, "fast": True})
+    assert body["options"] == [] and body["error"] == "engine unavailable"
+
+
+def test_plan_full_engine_down_is_flagged_degraded(monkeypatch):
+    """The full plan used to swallow a dead engine arm silently: router
+    rows shipped, engine rows absent, no flag — indistinguishable from
+    a normal plan that simply found no engine rows. Now `degraded`
+    names the arms that failed so clients/audits can tell."""
+    def boom(*a, **k):
+        raise RuntimeError("graph missing")
+    async def nop(*a, **k):
+        return None
+    monkeypatch.setattr(deps, "field_refresh", nop)
+    monkeypatch.setattr(v2plan, "_engine_options", boom)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510}})
+    assert "engine" in body.get("degraded", [])
+    # the surviving arms still ship — degraded ≠ dead
+    assert body["options"], "router/transit rows should still be served"
+    assert not any(o.get("steps_source") == "endpoints"
+                   for o in body["options"]), \
+        "failed engine arm must not fabricate engine rows"
+
+
+def test_transit_option_attaches_per_leg_dose():
+    """Every transit leg must carry the dose the row sums — per-leg
+    mid/lo/hi + avg_conc_ugm3 for the client's leg-by-leg view."""
+    journey = {
+        "mode": "metro", "duration_s": 960.0,
+        "legs": [
+            {"type": "walk", "duration_s": 300.0, "distance_m": 400,
+             "geometry": {"type": "LineString", "coordinates":
+                          [[77.2167, 28.6315], [77.2180, 28.6290]]},
+             "from": {"name": "cp"}, "to": {"name": "stn"}},
+            {"type": "metro", "duration_s": 600.0, "distance_m": 3000,
+             "wait_s": 60.0,
+             "geometry": {"type": "LineString", "coordinates":
+                          [[77.2180, 28.6290], [77.2510, 28.5494]]},
+             "from": {"name": "stn"}, "to": {"name": "stn2"}},
+        ],
+        "lines": ["Yellow"], "walk_m": 400, "transfers": 0,
+    }
+    opt = v2plan._transit_option(journey, "car", None,
+                                 (28.6315, 77.2167), (28.5494, 77.2510))
+    walk, metro = opt["legs"][0]["dose"], opt["legs"][1]["dose"]
+    for legd in (walk, metro):
+        assert legd["mid"] > 0 and legd["avg_conc_ugm3"] is not None
+    assert walk["microenv"] == "walking" and metro["microenv"] == "metro"
+    # walk breathes at walking VE — its per-leg conc×VE must exceed metro's
+    assert walk["mid"] > 0
+
+
+# --- router-row mode speed caps (honest implied speeds) -------------------------
+def test_mode_cap_clamps_bike_above_50():
+    # dist 6.2 km at implied 62 km/h car freeflow → bike×0.9 implies
+    # 55.8 km/h — over the engine graph's own 50 km/h ceiling → clamp.
+    out = v2plan._mode_cap_duration_s("bike", 6.2, 400.0)
+    assert abs(out - 6.2 / 50.0 * 3600.0) < 0.01
+
+
+def test_mode_cap_keeps_under_cap():
+    assert v2plan._mode_cap_duration_s("bike", 6.2, 600.0) == 600.0
+
+
+def test_mode_cap_uncapped_modes_untouched():
+    assert v2plan._mode_cap_duration_s("car", 6.2, 100.0) == 100.0
+    assert v2plan._mode_cap_duration_s("bus", 6.2, 100.0) == 100.0
+
+
+def test_plan_osrm_bike_row_capped_at_50(monkeypatch):
+    """A fast-freeflow OSRM route must not show a bike row implying
+    >50 km/h — the same ceiling the priced engine applies."""
+    async def fast_osrm(profile, flon, flat, tlon, tlat):
+        rt = dict(OSRM_ROUTE)
+        rt["distance"] = 6200.0
+        rt["duration"] = 360.0   # car implied ≈62 km/h
+        rt["steps"] = deps.osrm_steps(rt)
+        return rt
+    async def nop(*a, **k):
+        return None
+    monkeypatch.setattr(deps, "field_refresh", nop)
+    monkeypatch.setattr(deps, "osrm_route", fast_osrm)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510}})
+    bike = next(o for o in body["options"]
+                if o["mode"] == "bike" and o["steps_source"] == "osrm")
+    expect = 6.2 / 50.0 * 3600.0
+    assert abs(bike["eta_s"] - expect) < 1.0
+    # freeflow_s capped identically — eta−ff must not fabricate idle
+    assert bike["freeflow_s"] == bike["eta_s"]
+
+
+def test_plan_empty_engine_arm_is_flagged_degraded(monkeypatch):
+    """An arm that returns [] cleanly while siblings produce rows is
+    degraded too — the router arms swallow backend failures into []
+    internally, so empty-on-a-routable-OD means the arm produced
+    nothing, and a silently partial sheet reads as complete. Seen live:
+    degraded:["transit"] while engine rows were absent unflagged."""
+    def empty_eng(*a, **k):
+        return []
+    monkeypatch.setattr(v2plan, "_engine_options", empty_eng)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510}})
+    assert "engine" in body.get("degraded", [])
+    assert body["options"], "router rows still ship"
+    # producing arms are NOT flagged — degraded names the empty ones
+    assert "motor" not in body["degraded"]
+    assert "slow" not in body["degraded"]
+    # transit returned [] here too but honest-empty is not degradation —
+    # no GTFS path on an OD is geography, not a dead arm
+    assert "transit" not in body["degraded"]
+
+
+def test_plan_fast_empty_engine_is_flagged_degraded(monkeypatch):
+    """fast:true runs only the engine arm — its clean-empty is the
+    whole answer missing."""
+    def empty_eng(*a, **k):
+        return []
+    monkeypatch.setattr(v2plan, "_engine_options", empty_eng)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510}, "fast": True})
+    assert "engine" in body.get("degraded", [])
+
+
+def test_plan_full_healthy_has_no_degraded(monkeypatch):
+    def eng(*a, **k):
+        return [{"mode": "car", "label": "Car (AC) · least-smoke rd",
+                 "distance_km": 5.0, "duration_min": 14.0,
+                 "dose_ug": 9.0, "engine_dose_ug": 9.0,
+                 "geometry": None}]
+    async def nop(*a, **k):
+        return None
+    monkeypatch.setattr(deps, "field_refresh", nop)
+    monkeypatch.setattr(v2plan, "_engine_options", eng)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": 28.5494, "lon": 77.2510}})
+    assert "degraded" not in body
+
+
+# --- shared engine solves (fast+full dedupe) ------------------------------------
+def test_solve_join_memoizes_same_key():
+    """Two calls for the same (OD, epoch) key run the solve once — the
+    fast paint's primaries are the full arm's primaries, not a second
+    A* sweep on the same vCPU."""
+    v2plan._ENG_SOLVE.clear()
+    ran = []
+
+    def compute():
+        ran.append(1)
+        return {"car": {"distance_m": 1}}
+
+    key = ("prim", 28.6315, 77.2167, 28.5479, 77.2511, 1.0)
+    a = v2plan._solve_join(key, compute)
+    b = v2plan._solve_join(key, compute)
+    assert a == b == {"car": {"distance_m": 1}}
+    assert len(ran) == 1, "second same-key call re-ran the solve"
+
+
+def test_solve_join_concurrent_callers_share_one_run():
+    """An in-flight solve is joined, not duplicated: a second caller
+    parks on the owner's result instead of stacking CPU."""
+    import threading as _t
+    v2plan._ENG_SOLVE.clear()
+    ran = []
+
+    def compute():
+        ran.append(1)
+        time.sleep(0.15)
+        return {"bike": {"distance_m": 2}}
+
+    key = ("prim", 28.6, 77.2, 28.5, 77.3, 2.0)
+    res = []
+    t = _t.Thread(
+        target=lambda: res.append(v2plan._solve_join(key, compute)))
+    t.start()
+    got = v2plan._solve_join(key, compute)
+    t.join()
+    assert got == {"bike": {"distance_m": 2}}
+    assert res == [{"bike": {"distance_m": 2}}]
+    assert len(ran) == 1, "concurrent same-key callers ran 2 solves"
+
+
+def test_solve_join_epoch_key_separates_repricings():
+    """A reprice (new _ENG_T in the key) must NOT memo-hit the old
+    pricing — stale smoke paths would be fake precision."""
+    v2plan._ENG_SOLVE.clear()
+    ran = []
+
+    def compute():
+        ran.append(1)
+        return {"car": {"distance_m": len(ran)}}
+
+    k1 = ("prim", 28.6, 77.2, 28.5, 77.3, 100.0)
+    k2 = ("prim", 28.6, 77.2, 28.5, 77.3, 200.0)
+    v2plan._solve_join(k1, compute)
+    v2plan._solve_join(k2, compute)
+    assert len(ran) == 2, "post-reprice key hit the stale memo"
+
+
+# --- depart_at parse honesty (edge-honesty P2) -------------------------------
+# A garbage depart_at used to echo verbatim while the GTFS arm silently
+# fell back to the (approx.) station model — nothing on the response said
+# the time was never understood. depart_at_parsed is the additive marker;
+# option-level approximate:true labelling is unchanged.
+
+
+def test_depart_at_unparseable_flagged_on_response():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]},
+                  "depart_at": "banana"})
+    assert not body.get("error")
+    assert body["depart_at"] == "banana"          # echo contract kept
+    assert body["depart_at_parsed"] is False
+
+
+def test_depart_at_parseable_marked_true():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]},
+                  "depart_at": "2026-10-07T08:30:00+05:30"})
+    assert not body.get("error")
+    assert body["depart_at_parsed"] is True
+
+
+def test_depart_at_absent_omits_marker():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}})
+    assert "depart_at_parsed" not in body
+
+
+def test_depart_at_parsed_mirrors_transit_parser():
+    # the flag reuses transit_v2._to_ist — exactly the acceptance the
+    # GTFS arm applies — so it can never disagree with what the transit
+    # leg actually did with the string.
+    assert v2plan._depart_at_parsed("banana") is False
+    assert v2plan._depart_at_parsed("2026-10-07T08:30:00") is True
+    assert v2plan._depart_at_parsed("2026-10-07T08:30:00Z") is True
+    assert v2plan._depart_at_parsed(1728100800) is True
+
+
+# --- per-segment field paint (route-render lane) -------------------------------
+_CPCB_BANDS = ("Good", "Satisfactory", "Moderate",
+               "Poor", "Very Poor", "Severe")
+
+
+def test_option_segments_shape_and_tiling():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert body["options"]
+    for o in body["options"]:
+        segs = o.get("segments")
+        assert isinstance(segs, list) and segs, o.get("label")
+        assert len(segs) <= 15                       # the coarse budget
+        # coverage ≈ the full path: spans tile [0,1] contiguously and
+        # share boundary vertices so the painted ramp never gaps
+        assert segs[0]["start_frac"] == 0.0
+        assert segs[-1]["end_frac"] == pytest.approx(1.0)
+        assert segs[0]["geometry"]["coordinates"][0] == \
+            o["geometry"]["coordinates"][0]
+        assert segs[-1]["geometry"]["coordinates"][-1] == \
+            o["geometry"]["coordinates"][-1]
+        for a, b in zip(segs, segs[1:]):
+            assert a["end_frac"] == pytest.approx(b["start_frac"])
+            assert a["geometry"]["coordinates"][-1] == \
+                b["geometry"]["coordinates"][0]
+        for s in segs:
+            assert s["geometry"]["type"] == "LineString"
+            assert len(s["geometry"]["coordinates"]) >= 2
+            assert s["dist_m"] > 0
+
+
+def test_option_segments_values_in_field_range():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    vals = [s["pm25"] for o in body["options"] for s in o["segments"]
+            if s["pm25"] is not None]
+    assert vals, "no segment carried a field read at all"
+    # seeded station pm2_5 = 120-210; krige reads stay inside a sane
+    # hull — a fabricated or wrong-unit value falls out of it
+    assert all(0 < v <= 600 for v in vals)
+    for o in body["options"]:
+        for s in o["segments"]:
+            if s["pm25"] is not None:
+                assert s["band"] in _CPCB_BANDS
+            else:
+                assert s["band"] in ("No data", None)
+
+
+def test_option_segments_count_on_long_geometry():
+    # a vertex-dense ~12 km polyline splits near the SEG_N budget and
+    # each span reports its OWN midpoint read — a varying field must
+    # produce varying segment values (the per-part breakdown is real,
+    # not the whole-route mean repainted)
+    coords = [[77.15 + i * 0.01, 28.60 + i * 0.005]
+              for i in range(40)]
+    geom = {"type": "LineString", "coordinates": coords}
+    fval = lambda lat, lon: 60.0 + 400.0 * (lon - 77.15) / 0.39
+    segs = v2plan._option_segments(geom, fval)
+    assert 10 <= len(segs) <= 15
+    pms = [s["pm25"] for s in segs]
+    assert all(v is not None for v in pms)
+    assert max(pms) - min(pms) > 100      # the gradient shows up per-part
+    assert pms[0] < pms[-1]               # reads follow the field, ordered
+    # degenerate + missing-field honesty
+    assert v2plan._option_segments(
+        {"type": "LineString", "coordinates": []}, fval) == []
+    assert v2plan._option_segments(geom, None) == []
+    nd = v2plan._option_segments(geom, lambda a, b: None)
+    assert all(s["pm25"] is None and s["band"] == "No data" for s in nd)
+
+
+def test_option_segments_field_empty_is_null_not_faked(monkeypatch):
+    # a field that can read nothing must paint nothing — every span
+    # reports pm25:null + band 'No data', never a fabricated value
+    monkeypatch.setattr(v2plan, "_ENG_PACK", None)
+    monkeypatch.delattr(FIELD, "_snap_fv", raising=False)
+    monkeypatch.setattr(FIELD, "value",
+                        lambda *a, **k: None, raising=False)
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert body["options"]
+    for o in body["options"]:
+        for s in o.get("segments") or []:
+            assert s["pm25"] is None
+            assert s["band"] == "No data"
+
+
+def test_route_deltas_baselines_and_honest_nulls():
+    # the judges' number: each option's delta prices its dose.mid
+    # against the honest baseline — route alts vs their mode default,
+    # defaults vs the purest same-mode alt, single-route modes vs the
+    # global fastest, the fastest vs itself (zeros)
+    opts = [
+        {"mode": "car", "label": "Car (AC) · default", "eta_s": 600,
+         "dose": {"mid": 12.0, "avg_conc_ugm3": 100.0},
+         "engine": "osrm", "alternative_index": None},
+        {"mode": "car", "label": "Car (AC) · least-smoke rd 1",
+         "eta_s": 780, "dose": {"mid": 9.0, "avg_conc_ugm3": 50.0},
+         "engine": "alive_core-path", "alternative_index": 1},
+        {"mode": "metro+walk", "label": "Metro", "eta_s": 900,
+         "dose": {"mid": 3.0, "avg_conc_ugm3": 40.0},
+         "engine": "transit"},
+        {"mode": "walk", "label": "Walk", "eta_s": 2400,
+         "dose": {"mid": 30.0, "avg_conc_ugm3": 95.0},
+         "engine": "osrm"},
+    ]
+    v2plan._route_deltas(opts)
+    car_def, car_alt, metro, walk = [o["delta"] for o in opts]
+    # the purest-route vs default-route comparison, both directions
+    assert car_alt["basis"] == "route" and car_alt["vs_label"].endswith("default")
+    assert car_alt["air_ug"] == -3.0 and car_alt["min_added"] == 3.0
+    assert car_alt["band_drop"] == 2        # 100→50 µg: two CPCB bands down
+    assert car_def["basis"] == "default" and "least-smoke" in car_def["vs_label"]
+    assert car_def["air_ug"] == 3.0 and car_def["min_added"] == -3.0
+    # single-route modes compare the mode-trade vs the global fastest
+    assert metro["basis"] == "fastest" and metro["min_added"] == 5.0
+    assert walk["basis"] == "fastest" and walk["min_added"] == 30.0
+    # the global fastest carries honest zeros
+    assert all(car_def[k] is not None for k in ("air_ug", "min_added"))
+    single = [opts[0]]                       # car default alone = fastest
+    v2plan._route_deltas(single)
+    assert single[0]["delta"]["basis"] == "self"
+    assert single[0]["delta"]["air_ug"] == 0.0
+
+
+def test_route_deltas_engine_only_rows_stay_null():
+    # fast:true paints engine rows with no eta — no baseline exists,
+    # and an unmade comparison must stay unmade (was an AttributeError)
+    rows = [{"mode": "car", "label": "Car (AC) · least-smoke rd",
+             "dose_ug": 9.0, "engine_dose_ug": 9.0,
+             "engine": "alive_core-path", "alternative_index": 1}]
+    v2plan._route_deltas(rows)
+    assert rows[0]["delta"] is None
