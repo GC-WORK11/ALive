@@ -1805,6 +1805,36 @@ async def landing_page():
                         headers=_PAGE_CACHE)
 
 
+@app.get("/app", include_in_schema=False)
+@app.get("/app/", include_in_schema=False)
+async def webapp_index():
+    """The consumer web app — consent → live air card → where-to →
+    journey → air-around-me → purest places. One static shell; every
+    number inside it comes from the same live /v2 surface the native
+    app reads. Short cache so a deploy rolls the page forward fast."""
+    from fastapi.responses import FileResponse
+    import os
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "webapp", "index.html"),
+        headers={"cache-control": "public, max-age=60"})
+
+
+@app.get("/app/{asset:path}", include_in_schema=False)
+async def webapp_asset(asset: str):
+    """Webapp assets under server/webapp/ — traversal-proof like
+    /static: resolved path must stay inside the webapp dir."""
+    from fastapi.responses import FileResponse
+    import os
+    root = os.path.realpath(os.path.join(os.path.dirname(__file__), "webapp"))
+    p = os.path.realpath(os.path.join(root, asset))
+    if not p.startswith(root + os.sep) or not os.path.isfile(p):
+        from fastapi import HTTPException
+        raise HTTPException(404)
+    hdrs = {"cache-control": "public, max-age=60"} if p.endswith(".html") \
+        else dict(_STATIC_CACHE)
+    return FileResponse(p, headers=hdrs)
+
+
 @app.get("/static/{asset:path}", include_in_schema=False)
 async def static_asset(asset: str):
     """Landing media under server/static/ — nested dirs allowed
