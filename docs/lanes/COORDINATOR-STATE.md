@@ -60,3 +60,10 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Honest remaining gaps (from lane report, do NOT hide): jagat farm vaishali ordering flickers; Overpass public mirrors dead from VM (layer stays for prod browsers); tiptop market kalyan puri absent from all indexes (3km nearest).
 - All 6 wave-2 lanes landed+deployed+terminated. Fleet clear for next wave.
 - Deploys this session: da798351 (:250), 758d5f4c (:251), 6e81401c (:252), c686c561 (:253).
+
+## 2026-10-10 ~18:30 UTC — e2e on prod + nav fixes (3a0c69f1, :255)
+- Full annotated e2e on PROD by testing agent: every screen verified live, 98s recording at /Users/devin/screencasts/rec-6c14c4d4-a567-478c-9a68-d6b5a631ac6d/.
+- Defects found & FIXED this commit: (1) closing any sheet stranded user on bare map — doors replace home via show(id,{},true); back() emptied stack. Fix: back() on empty stack → location.hash='#/home' (hashchange mounts home). (2) loc-chip covered sheet ✕ and was dead off-home → body[data-top] set in show()/back(); CSS hides chip when top≠home. (3) receipt "you covered of" copy, (4) purest "0 µg/m³ lighter" noise.
+- Landing: live-preview iframe now embeds REAL /app (was scripted /static/sim) + explicit "open the app" link (e045c3c, :254).
+- Rival fleet: coordinator idle, ZERO pushes to origin (no GC-WORK11 creds) — harmless.
+- Deploys: :250 da798351, :251 758d5f4c, :252 6e81401c, :253 c686c561, :254 e045c3c2, :255 3a0c69f1.
