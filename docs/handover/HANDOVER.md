@@ -1,3 +1,31 @@
+# ALive — AGENT QUICKSTART (2026-10-10, current)
+
+**You do NOT need a GitHub account to read this repo. It is public.**
+
+```bash
+git clone https://github.com/GC-WORK11/ALive.git
+cd ALive          # you are now on main with a remote named origin — handoffs work
+```
+
+- **Canonical public repo:** `https://github.com/GC-WORK11/ALive.git` — branch **`main`** is the single source of truth.
+- **If your handoff failed with "No git remote found":** you ran it outside a clone. `cd` into a folder cloned from the URL above, or run `git remote add origin https://github.com/GC-WORK11/ALive.git` inside your existing repo directory.
+- **Read access:** anonymous — clone/fetch works with zero credentials.
+- **Write access:** pushing requires a GitHub account added as a collaborator on `GC-WORK11/ALive`. Anonymous agents cannot push; send the owner your patch or ask for collaborator access.
+- **Secrets are NOT in the repo** — `ALIVE_ADMIN_TOKEN`, API keys, AWS creds live outside git. To run the backend locally, copy `server/.env.example` and fill in your own values. You cannot reach the production AWS infra from the code alone.
+
+## Repo map
+| Path | What it is |
+|---|---|
+| `server/` | FastAPI backend + C++ engine (`server/core/`), air field, routing, exposure/dose, emissions, community aggregates, admin |
+| `Mobile/` | Expo React Native app (SDK 57) — see `Mobile/AGENTS.md` before touching it |
+| `web/edge/` | Vercel static app: landing page + browser preview of the product |
+| `docs/gov/local/` | 12-memo government-platform research corpus; start at `12-peak-path.md` |
+| `docs/` | Design specs, data inventories, demo-day notes, older handovers |
+
+*Everything below this line is the older 2026-10-09 handover — kept for history; branches/accounts described there may be stale.*
+
+---
+
 # ALive — MASTER HANDOVER (2026-10-09 ~17:00 IST)
 *Written by the local Devin CLI session. You are the new parent orchestrator.*
 

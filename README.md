@@ -4,6 +4,8 @@
 
 Built for the AWS × WeMakeDevs Environmental Hacks hackathon, Track 01 (Air), Oct 8–11 2026. Delhi-only by design. MIT — see [`LICENSE`](LICENSE).
 
+**This repo is public — clone it with zero credentials:** `git clone https://github.com/GC-WORK11/ALive.git`. Agents and reviewers: start at [`docs/handover/HANDOVER.md`](docs/handover/HANDOVER.md) for the access model, repo map, and handoff protocol. Secrets live outside git; `server/.env.example` lists what a local run needs.
+
 ## See it live
 
 - **Web demo (no install, plain HTTP):** [alive108-….elb.ap-south-1.amazonaws.com](http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com) — the landing demo at `/`, then `/city`, `/community`, `/admin` (the engine room sits behind a real sign-in since Oct 7: operator token → `POST /v2/admin/login` → HMAC-signed HttpOnly session cookie; guests land on a gate card). `GET /health` is public and reports the running `build_sha`, field age, and per-source status.
