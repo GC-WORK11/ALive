@@ -51,3 +51,12 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Search acceptance PASSED in node harness: Pawan Bakery → Shahdara cluster (Royal Bakery 77.2839, block gates, Hanuman Mandir, locality). Browser stale-cache was the earlier false-negative — always cmd+shift+r between commits.
 - Integration audit written: docs/lanes/integration-audit.md. Blueprint suggestion filed (macOS aws-cli venv + deploy recipe).
 - Remaining: memory sync, final user wrap, credential-rotation reminder.
+
+## 2026-10-10 ~18:05 UTC — WAVE-2 CLOSED, prod blank-page fix shipped
+- **prod /app was blank since first deploy**: `/app` (no slash) → relative assets resolved `/app.js` → 404 → no JS. Fixed: `/app` → 301 `/app/` (6e81401). Verified on prod: consent renders over live field map at /app/#/whereto.
+- **Lesson**: curl-ing status codes ≠ rendering. Visual check caught it. When serving a static dir, ALWAYS test `/app` (no slash) form.
+- Search lane final commits: `b26623e` (purer-locality anchor ordering, kind-token anchor ban, structural stop-words) + `c686c56` report → deployed as `c686c561` (:253).
+- Search lane TERMINATED (acceptance verified: Pawan Bakery→Shahdara strip, ISKCON→0.1km, Neelanchal→honest Sant Nagar rows).
+- Honest remaining gaps (from lane report, do NOT hide): jagat farm vaishali ordering flickers; Overpass public mirrors dead from VM (layer stays for prod browsers); tiptop market kalyan puri absent from all indexes (3km nearest).
+- All 6 wave-2 lanes landed+deployed+terminated. Fleet clear for next wave.
+- Deploys this session: da798351 (:250), 758d5f4c (:251), 6e81401c (:252), c686c561 (:253).
