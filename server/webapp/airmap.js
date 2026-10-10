@@ -107,7 +107,7 @@ async function tapRead(lat, lon) {
   el.hidden = false;
   el.innerHTML = `<div class="sk" style="width:150px;height:40px"></div>`;
   const j = await A.api.get(`/aqi?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`, 9000);
-  if (!el.isConnected) return;
+  if (!state || el.hidden) return;
   if (!j || j.pm25 == null) {
     el.innerHTML = `<div class="am-plain">outside the field — no honest read here</div>
       <button class="am-x" type="button" aria-label="close">✕</button>`;
@@ -187,7 +187,7 @@ async function planCard() {
         ${lo != null && hi != null && hi > lo ? `<u style="bottom:${Math.round(lo * 100)}%;height:${Math.round((hi - lo) * 100)}%"></u>` : ''}
       </div>`;
     }).join('')}</div>
-    <div class="am-axis"><span>now</span><span>+12 h</span><span>tomorrow</span></div>
+    <div class="am-axis"><span>${esc(d.hours[0].ist_label || 'now')}</span><span>${esc((d.hours[Math.floor(d.hours.length / 2)] || {}).ist_label || '')}</span><span>${esc((d.hours[d.hours.length - 1] || {}).ist_label || '')}${d.hours[d.hours.length - 1] && d.hours[d.hours.length - 1].day_offset ? ' · tomorrow' : ''}</span></div>
     <div class="am-bestworst">
       ${best ? `<div class="am-bw"><span class="bw-l">lightest</span> ${esc(best.start_label || '')}${best.end_label ? '–' + esc(best.end_label) : ''} · ${A.fmt.ugm3(best.pm25_mid)}</div>` : ''}
       ${worst ? `<div class="am-bw"><span class="bw-l">heaviest</span> ${esc(worst.start_label || '')}${worst.end_label ? '–' + esc(worst.end_label) : ''} · ${A.fmt.ugm3(worst.pm25_mid)}</div>` : ''}
