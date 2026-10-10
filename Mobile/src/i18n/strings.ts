@@ -1,0 +1,2790 @@
+// String table — Hindi + English from day one (docs/plan/02 §principle 6).
+// Every consumer-facing string lives here, never hard-coded in components.
+// Keys are stable identifiers; add new keys to BOTH `en` and `hi`.
+
+const en = {
+  searchPlaceholder: "Where to?",
+  searchFromPlaceholder: "Where from?",
+  locPickFailed: "couldn't get your location — type a place instead",
+  backToExit: "press back again to exit",
+  pickTooClose: "that's about {n} m away — basically here; no route needed",
+  chooseOnMap: "Choose on map",
+  yourLocation: "Your location",
+  recents: "Recent",
+  home: "Home",
+  work: "Work",
+  searching: "Searching…",
+  directions: "Directions",
+  saveAsHome: "Save as Home",
+  saveAsWork: "Save as Work",
+  savedHome: "Home saved",
+  savedWork: "Work saved",
+  removeHome: "Remove Home",
+  removeWork: "Remove Work",
+  share: "Share",
+  shareAppBody: "checking the smoke on my Delhi trips before I go — Alive",
+  /** share text carries BOTH numbers — breathed (exposure) + put out
+      (emission) — the Air-track mission in one breath */
+  shareTripBody: "my trip {from} → {to}: I breathed about {dose} of smoke and my ride put out {co2} — estimated on Alive",
+  outsideDelhi: "outside Delhi — no smoke estimate here",
+  start: "Start",
+  /** the journey CTA — owner's plain words, 'start journey' */
+  startJourney: "start journey",
+  end: "End",
+  lightestOnBoth: "lightest on both",
+  lightestForYou: "lightest for you",
+  lightestForDelhi: "lightest for Delhi",
+  /** server reason_line templates (server/v2/plan.py rank_options) —
+      matched verbatim so the card reads in the user's language; the
+      optional " +N min vs fastest." suffix is handled separately */
+  reason_noEmis: "Least smoke for you — no emissions estimate for this set.",
+  reason_easyPick: "Least smoke for you and lowest emissions — the easy pick.",
+  reason_heavierDelhi: "Least smoke for you, but heavier for Delhi.",
+  reason_lowestEmis: "Lowest emissions of the options — but you'd breathe more.",
+  reason_fairTrade: "Within ~10% of the lightest dose and the lightest exhaust of those — a fair trade.",
+  reason_slowerSuffix: " {m} min slower than the fastest.",
+  /** server non_exhaust.note strings (DetailBlock only) — verbatim match */
+  ne_road: "road dust, brake and tyre wear — reports call this 'non-exhaust'; counted separately, never added to exhaust (about 86% of Delhi's traffic dust is this kind — Sahu et al. 2020)",
+  ne_rail: "rail — no road dust kicked up",
+  ne_zero: "zero — no engine",
+  /** option-card mode labels (server o.label) — keyed by o.mode; a route
+      suffix like " 548CL" is preserved verbatim */
+  mode_carAC: "Car (AC)",
+  mode_carOpen: "Car (windows down)",
+  mode_bike: "Bike / scooter",
+  mode_bus: "Bus",
+  mode_auto: "Auto-rickshaw",
+  mode_metroWalk: "Metro + walk",
+  mode_cycle: "Bicycle",
+  mode_walk: "On foot",
+  mode_approx: " (roughly)",
+  /** least-inhalation engine row suffixes (server labels
+      "… · least-smoke rd" / "… · least-smoke alt N" stay on the wire —
+      they localize to plain wording here so neither UI leaks the
+      engine's shorthand) */
+  mode_leastSmoke: " · least smoky way",
+  mode_leastSmokeAlt: " · least smoky option {n}",
+  /** a smoke qualifier the client demoted for failing its own claim
+      (api/plan.ts relabelLeastSmoke) — it stays a plain 'alt N' */
+  mode_altN: " · alt {n}",
+  /** corridor names under an engine row — "via Outer Circle → …" */
+  viaStreets: "via {streets}",
+  findingNewWay: "Finding a new way…",
+  /* no position fixes yet — the counters' honesty line: dose still counts,
+     at the air where the trip started (lifecycle-drive) */
+  navNoGps: "no location — counting the air where you started",
+  /* position stream lost mid-trip (parked / pocketed / GNSS dead):
+     the ride's meters paused, the air count kept going (nav-gap-fix) */
+  navPaused: "ride meters paused — still counting the air",
+  /* instrument-cluster meta suffix: accumulated paused minutes in the
+     same glanceable line as "8 min · 6.1 km left" */
+  navPausedMin: "paused ~{n} min",
+  /* bell tapped with OS notifications denied — the row's honest answer */
+  notifDenied: "notifications are off — tap to open Settings",
+  /* scheduleDeparture refused: the best window sits deep inside quiet
+     hours — a ping landing hours late would lie, so the row says why */
+  notifTooLate: "the best window is inside quiet hours — ping skipped",
+  youreHere: "You're here.",
+  /** manual "End" before reaching the destination — the trip is real,
+      but it never arrived */
+  tripEnded: "Trip ended.",
+  youBreathed: "You breathed",
+  done: "Done",
+  howWeGotThis: "How we got this",
+  howWe_in: "smoke you breathe — ≈ {mid} µg this trip (about {lo}–{hi})",
+  howWe_out: "smoke your ride puts out — {v}",
+  howWe_conf: "how sure we are: {c}",
+  howWe_cigs: "{n} cigarettes",
+  howWe_none: "no estimate for this option",
+  howWe_fieldAge: "air reading: {n} min old",
+  // vehicle question (S8)
+  vehicleQ1: "What are you taking?",
+  vehicleQ2: "Fuel?",
+  vehicleQ3: "Roughly when was it bought?",
+  vehicleQ_back: "back",
+  vehicleQ_skip: "skip — a typical Delhi ride works",
+  vehicleScooterBike: "scooter / bike",
+  vehicleCar: "car",
+  vehicleAuto: "auto",
+  vehicleCab: "cab",
+  vehicleBusMetro: "bus / metro",
+  vehicleCycleWalk: "cycle / walk",
+  fuelPetrol: "petrol",
+  fuelDiesel: "diesel",
+  fuelCNG: "CNG",
+  fuelElectric: "electric",
+  yearBefore2010: "before 2010",
+  year2010to2016: "2010–2016",
+  year2017to2019: "2017–2019",
+  year2020plus: "2020 or later",
+  yearNotSure: "not sure",
+  vehicleDone: "got it — estimates now use your ride.",
+  /* PUC certificate — the optional pollution-under-control section at the
+     end of the vehicle sheet (S8+); every field optional, skipped freely */
+  puc_title: "PUC certificate (optional)",
+  puc_helper: "from your vehicle's pollution certificate — improves YOUR emissions estimate",
+  puc_bsQ: "Bharat stage on the certificate",
+  puc_bs3: "BS-III",
+  puc_bs4: "BS-IV",
+  puc_bs6: "BS-VI",
+  puc_co: "CO %",
+  puc_coHint: "carbon monoxide — petrol / CNG",
+  puc_hc: "HC ppm",
+  puc_hcHint: "hydrocarbons — petrol / CNG",
+  puc_smoke: "smoke %",
+  puc_smokeHint: "smoke density — diesel",
+  puc_badge: "PUC",
+  // vehicle chip labels (S8 compact forms)
+  vehicle_car: "car",
+  vehicle_auto: "auto",
+  vehicle_bike: "bike / scooter",
+  vehicle_bus: "bus",
+  vehicle_metro: "metro",
+  vehicle_walk: "on foot",
+  vehicle_cycle: "cycle",
+  vehicle_year2017to2020: "2017–2020",
+  vehicle_year2021plus: "2021 or later",
+  vehicle_likeYours: "a typical Delhi ride",
+  // sidebar
+  sidebarToday: "Today",
+  sidebarThisWeek: "This week",
+  sidebarTrips: "Trips",
+  sidebarMyVehicle: "My vehicle",
+  sidebarDelhiToday: "Delhi today",
+  delhiTodayOpen: "today's air",
+  sidebarSavedPlaces: "Saved places",
+  sidebarSettings: "Settings",
+  sidebarHowAliveWorks: "How ALive works",
+  settingsVoice: "Voice",
+  settingsLanguage: "Language",
+  settingsUnits: "Units",
+  /* the units row reworded as information, not a dead-looking control
+     (audit #31) — one declarative line instead of a toggle-shaped row */
+  settingsUnitsInfo: "distances in km — metric only",
+  settingsShareData: "Share anonymous trip data",
+  settingsDeleteData: "Delete my data",
+  // settings screen (S-settings)
+  settingsAbout: "About",
+  settingsRate: "rate Alive",
+  settingsRateHint: "one line — what worked, what didn't",
+  settingsRateNotePh: "a line about the app — optional",
+  settingsRateSend: "send",
+  settingsRateSending: "sending…",
+  settingsRateThanks: "thanks — that helps",
+  settingsRateFail: "couldn't send — check your connection and try again",
+  settingsGeneral: "Language & display",
+  settingsPrivacy: "Privacy & sharing",
+  /* honesty-sweep: the brief fires ONCE next 6:45 after the toggle arms
+     it (notify.ts scheduleDailyBrief — one-shot DATE trigger, no repeat,
+     no re-arm). "each morning" promised a feature that isn't there */
+  settingsBriefHint: "a ping the next morning with the day's cleanest window",
+  settingsClose: "close",
+  settingsDataSources: "air: satellite estimate + live stations when they connect",
+  settingsDepartRemind: "clean-window pings",
+  settingsDepartRemindHint: "when a lighter time exists for your trip we offer a reminder — it goes off only if you tap it",
+  /* air alerts — the events engine (store/events.ts). Honest scope: the
+     checks run on the foreground poll — there's no background task, so
+     the hint says "while the app is open" rather than promise always-on. */
+  settingsAlerts: "Air alerts",
+  settingsAlertsHint: "the master switch for the alerts below — real events only, checked while the app is open",
+  settingsAlertsFires: "smoke & fires",
+  settingsAlertsFiresHint: "when the burn belt northwest of Delhi lights up",
+  settingsAlertsBand: "air turning worse",
+  settingsAlertsBandHint: "band crossings, severe days, air that isn't moving",
+  settingsAlertsWindows: "clean windows",
+  settingsAlertsWindowsHint: "when the day's lightest hours open up + tomorrow's read each evening",
+  settingsAlertsReflect: "your day on the road",
+  settingsAlertsReflectHint: "yesterday's trips, once a day — from your own ledger",
+  /* OS-level denial: the toggles below are app prefs; when the system has
+     notifications blocked none of them can reach the shade — say so and
+     hand over the escape hatch (Linking.openSettings). */
+  settingsNotifBlocked: "notifications are blocked in system settings — tap to open and allow",
+  settingsDevBuild: "dev build",
+  settingsHowNumbers: "How numbers are estimated",
+  settingsHowNumbersBody: "your breath number comes from a street-level air map — Delhi's monitoring stations + satellite weather, refreshed about every 15 minutes. it's always a range, never a fake-exact number. · 1 cigarette ≈ 316 µg of PM2.5 breathed in (the Berkeley Earth rule). · what your ride puts out comes from published tests on that kind of ride (ARAI / ICCT road measurements) — a range like 1.1–1.6 kg CO2. · your phone doesn't sense the air — it just moves through the map.",
+  /* same explainer minus the cigarette clause — the text when the
+     metaphor is off (settingsShowCig toggle, off by default) */
+  settingsHowNumbersBodyPlain: "your breath number comes from a street-level air map — Delhi's monitoring stations + satellite weather, refreshed about every 15 minutes. it's always a range, never a fake-exact number. · what your ride puts out comes from published tests on that kind of ride (ARAI / ICCT road measurements) — a range like 1.1–1.6 kg CO2. · your phone doesn't sense the air — it just moves through the map.",
+  settingsNearestInstrument: "right now: a real monitoring instrument read ~{n} km from you — that's the map's honesty, not a model guess.",
+  settingsNotifications: "Notifications",
+  /** cigarette-equivalence framing — opt-in, off by default */
+  settingsShowCig: "Cigarette comparison",
+  settingsShowCigHint: "off by default — your dose stays in µg",
+  /** dose readout in µg — every surface the cigarette number used to sit on */
+  doseUg: "{n} µg",
+  /** the unit's own micro-gloss — sits where µg first carries the
+      payload (DayPeek + hero number) so a stranger learns the symbol
+      instead of guessing */
+  unitUg: "µg (micrograms)",
+  /** sparkline/depart hour ticks — "+3h" in en, "+3घं" in hi */
+  hourTick: "+{n}h",
+  hourTickTilde: "~{n}h",
+  /** header city tag — a proper noun per locale, never Latin in hi */
+  cityTag: "DELHI",
+  /** freshness-chip provenance words (a11y label) — the server's raw
+      source tokens ("open-meteo/cams") never reach the user */
+  srcStations: "live stations",
+  srcModel: "satellite estimate",
+  srcNone: "no source",
+  settingsShareExplain: "share trips anonymously so Delhi sees its roads — nothing personal ever leaves this phone",
+  settingsStoreCells: "kept only as counts on a street grid — the raw trail is thrown away",
+  settingsStoreK: "a street appears only after 3+ different devices have crossed it",
+  settingsStoreNoAccount: "no name, no phone, no account — ever",
+  settingsStoreOff: "off = nothing is uploaded; your own stats still work on this phone",
+  settingsStoreThin: "about one dot per 100 m of road, rounded to ~11 m",
+  /* honesty-sweep: the id ALSO rotates itself every 30 days
+     (community.ts ID_TTL_MS) — "only if you delete" was a claim a
+     reader could falsify */
+  settingsStoreToken: "a random id — never linked to you; it changes itself every ~30 days, or when you delete your data",
+  settingsStoreTrim: "trip ends stay hidden — the first and last 300 m are dropped before a trip is stored",
+  settingsVehicleLike: "estimates run on this",
+  settingsVersion: "Version",
+  settingsWhatWeStore: "What we store",
+  // live counters / breath chips
+  breathingHeavier: "breathing heavier smoke here",
+  breathingLighter: "lighter here",
+  // data age
+  updatedMinAgo: "updated {n} min ago",
+  dataFromModelOnly: "estimated from satellites — live stations reconnecting",
+  // "Delhi today" — the consumer city view (docs/plan/07 §1)
+  delhiTitle: "Delhi today",
+  cityLoading: "reading Delhi's air…",
+  cityHeroLead: "a day of Delhi air",
+  cityHeroUnit: "cigarettes of smoke",
+  /** hero unit when the cigarette metaphor is off — the same figure in µg */
+  cityHeroUnitUg: "µg of fine smoke (PM2.5) inhaled today",
+  cityHeroRange: "likely between {lo} and {hi}",
+  cityNoField: "no live air reading right now",
+  cityStale: "older data — reconnecting",
+  citySpeciesTitle: "the other things in the air",
+  /* the US AQI tile's reason for existing lives here (audit): it's
+     the index people know from other apps — a comparison, not a
+     second measurement */
+  citySpeciesNote: "dust & gases — city average in µg/m³, about every 15 min · US AQI is the index other air apps quote",
+  cityTypicalLine:
+    "{pct}% of this hour's 10-year average ({med} µg/m³)",
+  whoRef: "WHO limit {n}",
+  cityTypicalBelow: "{p}% below the 10-year average for this hour ({med} µg/m³)",
+  cityTypicalAbove: "{p}% above the 10-year average for this hour ({med} µg/m³)",
+  cityForecastTitle: "the next 12 hours",
+  cityForecastNote: "satellite forecast matched to live readings, µg/m³",
+  cityForecastNow: "now",
+  cityStreetsTitle: "streets travellers crossed",
+  cityEmptyStreets: "nothing to show yet — a street appears after 3+ travellers cross it in 3 days",
+  /* fresh-install empty state — until this phone has one real trip the
+     traveller aggregates stay hidden (they read as "where I travelled") */
+  cityNoOwnTrips: "no trips yet — go live your day, we'll count it here",
+  cityNoOwnTripsSub: "the streets and totals in this view are counted from trips other people share",
+  cityHeavier: "heavier",
+  cityLighter: "lighter",
+  cityTrips: "{n} {tripNoun}",
+  /* "why now" — /v2/why composes the hero line in English; hi
+     rebuilds it from drivers[].kind + wind.from_deg, mirroring
+     server/v2/why.py:_line (top-2 drivers joined " and "-style) */
+  whyNoDriver: "the usual local air — no single driver stands out",
+  /* two why-bits join as prose, not math ('+ ' mid-sentence read as
+     jargon — audit #15) */
+  whyJoin: " and ",
+  whyBit_stubble: "stubble smoke drifting in on the {dir} wind",
+  whyBit_stagnation: "the air is barely moving — the day's pollution is sitting over the city",
+  whyBit_trendRising: "levels still climbing",
+  whyBit_trendFalling: "easing off the earlier high",
+  /* compass words for {dir} — server's expanded forms, not initials */
+  whyDir_N: "northerly",
+  whyDir_NE: "north-east",
+  whyDir_E: "easterly",
+  whyDir_SE: "south-east",
+  whyDir_S: "southerly",
+  whyDir_SW: "south-west",
+  whyDir_W: "westerly",
+  whyDir_NW: "north-west",
+  /** CityMoves pooled under-k bucket — the pool is the publishable unit,
+      no member mode's name may surface (server token is "other"). */
+  movesModeOther: "other ways",
+  /* "how Delhi moves" card — its own title (not "Delhi today"), the
+     window tag when it isn't 7 days, and the honest under-k footnotes */
+  movesTitle: "how Delhi moves",
+  movesWindowDays: "last {d} days",
+  movesNotEnough: "not enough shared trips yet — Delhi's movement shows after {k}+ travellers cross a street in {d} days",
+  movesSuppressed: "+{n} more trips stay private — fewer than {k} travellers crossed them",
+  movesCorridorN: "{n} {streetNoun} measured over {h} hours",
+  streetNounOne: "street",
+  streetNounMany: "streets",
+  movesTypical: "typical trip",
+  cityUnnamed: "a street we can't name yet",
+  cityTravellersTitle: "what ALive travellers did today",
+  cityTodayUtc: "utc day · resets 05:30 ist",
+  cityTravellersLine: "{trips} {tripNoun} · {km} km · ≈{cigs} cigarettes breathed · ≈{kg} kg put out",
+  cityTravellersLineUg: "{trips} {tripNoun} · {km} km · {ug} µg breathed · ≈{kg} kg put out",
+  tripNounOne: "trip",
+  tripNounMany: "trips",
+  citySwitched: "{n} {tripNoun} took a lighter way",
+  cityWhyTitle: "why this is an estimate",
+  cityBasisModel: "estimated from satellite + weather over Delhi, refreshed about every 15 min",
+  cityBasisStations: "{n} live stations counted in",
+  cityBasisNoStations: "no live stations right now — satellite estimate only",
+  cityBasisPm25: "fine smoke (PM2.5) {lo}–{hi} µg/m³ — the raw number behind the cigarettes",
+  cityBasisPm25Ug: "fine smoke (PM2.5) {lo}–{hi} µg/m³ — the raw number behind the hero figure",
+  cityBasisBand: "the range is honest — it covers what the meters miss and how different Delhi's neighbourhoods are",
+  cityBasisPrivacy: "a street shows up only after {k} different travellers crossed it in {h} hours — nobody is singled out",
+  cityRetry: "try again",
+  // layers sheet
+  layers: "Layers",
+  layerFires: "fires",
+  layerBlackspots: "crash spots",
+  layerCorridors: "streets travellers crossed",
+  /* walk-F6: the native ⓘ ornament renders tiny + bezel-clipped — this
+     row gives the same native attribution sheet a real tap target */
+  aboutMap: "about this map",
+  // sidebar header + ledger
+  breathed: "breathed",
+  breathedOnTrips: "breathed on trips",
+  putOut: "put out",
+  lessThanYesterday: "{p}% less than yesterday",
+  moreThanYesterday: "{p}% more than yesterday",
+  tripsEmpty: "no trips yet",
+  // trips ledger screen
+  ledgerDeleteAll: "delete all trips",
+  ledgerDeleteAllBody: "every saved trip is removed from this phone — this can't be undone",
+  ledgerDeleteAllTitle: "delete all trips?",
+  ledgerDeleteTrip: "delete this trip",
+  ledgerAllTime: "all saved trips",
+  ledgerDonated: "shared anonymously",
+  ledgerEmptyHint: "finish a trip and its smoke numbers land here",
+  ledgerEstNote: "estimates — honest ranges, never fake-exact",
+  ledgerLast7: "last 7 days",
+  ledgerShowTrip: "show trip details",
+  ledgerYesterday: "yesterday",
+  ledgerPrivacy: "trips stay on your phone",
+  tripsBreathed: "smoke you breathed",
+  tripsCigs: "{n} cigarettes",
+  tripsCount: "{n} trips",
+  tripsCountOne: "{n} trip",
+  tripsDoseBand: "about {lo}–{hi} µg",
+  tripsDoseDetail: "about {n} µg of smoke you breathed",
+  tripsOutDetail: "about {n} kg put out",
+  tripsPutOut: "smoke your ride put out",
+  tripsSavedVs: "{n} cigarettes less than the smokiest way",
+  tripsSavedVsUg: "{n} µg less than the smokiest way",
+  notSet: "not set",
+  // notifications (src/notify.ts) — consumer voice: "smoke", never PM2.5
+  notify_departure_title: "lighter air — now",
+  notify_departure_body: "same trip, ~{p}% less smoke than the smoky hours",
+  notify_brief_title: "delhi's cleanest window today",
+  /* the {p}% drop is computed off the /today FORECAST curve
+     (useShellFlow armDailyBrief) — 'expected ~' keeps it a forecast,
+     not a same-day fact */
+  notify_brief_body: "{win} — air expected ~{p}% lighter today.",
+  notify_chan_departure: "lighter-air pings",
+  notify_chan_brief: "morning air brief",
+  notify_chan_events: "air alerts",
+  /* air-event pings (store/events.ts → notifyAirEvent) — felt-line title,
+     body = the real number + its reference, minimal words. Every claim
+     traces to a served field; nothing is invented. */
+  notifyFiresTitle: "smoke is building northwest of Delhi",
+  notifyFiresBody: "{a} → {b} fires in the burn belt — wind carrying it this way{note}",
+  notifyFiresNcTitle: "fires up in the burn belt",
+  notifyFiresNcBody: "{a} → {b} fires northwest — the wind isn't bringing it to Delhi right now{note}",
+  notifyBandTitle: "the air just turned {word}",
+  notifyBandBody: "around you ~{n} µg/m³ — was {was} at the last read{note}",
+  notifyWindowTitle: "easiest hours ahead",
+  /* the win slot already carries a rendered clock — the IST suffix on
+     top was jargon; device-local time needs no zone tag */
+  notifyWindowBody: "today's lightest air ~{win} · about {n} µg/m³",
+  notifyStagTitle: "the air is sitting over the city",
+  notifyStagBody: "{f}× stiller than usual — the day's smoke will linger{note}",
+  notifySevereTitle: "severe air in Delhi today",
+  notifySevereBody: "today's air reads like GRAP stage {s} of 4 — our estimate, not the official call; a mask outside is worth it{note}",
+  /* notify-v2 — cause-aware kinds. {cause} names only drivers the server
+     already admitted (present tense — it describes now, never a forecast
+     of tomorrow's met); {a}/{b} are served µg/m³ ends, {s}/{a} the stage
+     + its aqi, {tr} the trip noun, {d}/{u} the compare day + dose. */
+  notifyCauseSmoke: " — stubble smoke riding the {dir} wind",
+  notifyCauseStag: " — the air barely moving to clear it",
+  notifyCauseSmokeStag: " — stubble smoke riding the {dir} wind, and the air barely moving",
+  notifyTrendUpTitle: "the city's air is climbing",
+  notifyTrendUpBody: "{a} → {b} µg/m³ over {h}h{cause}{note}",
+  notifyTrendDownTitle: "the city's air is easing",
+  notifyTrendDownBody: "{a} → {b} µg/m³ over {h}h{cause} — off the earlier high{note}",
+  notifyGrapUpTitle: "the day moved up a GRAP step",
+  notifyGrapUpBody: "today's air reads like stage {s} of 4 (AQI ~{a}) — our estimate, not the official call{note}",
+  notifyGrapDownTitle: "the day eased a GRAP step",
+  notifyGrapDownBody: "today's air reads like stage {s} of 4 (AQI ~{a}) — still our estimate{note}",
+  notifyGrapClearTitle: "the day eased off the GRAP map",
+  notifyGrapClearBody: "today's air no longer reads like a stage (AQI ~{a}) — still our estimate{note}",
+  notifyOutlookHeavyTitle: "tomorrow reads heavier",
+  notifyOutlookHeavyBody: "average ~{b} µg/m³ vs ~{a} today{cause}{note}",
+  notifyOutlookLightTitle: "tomorrow reads lighter",
+  notifyOutlookLightBody: "average ~{b} µg/m³ vs ~{a} today{win}{note}",
+  notifyOutlookWin: " — lightest around {w}",
+  notifyReflectTitle: "yesterday on the road",
+  notifyReflectBody: "{n} {tr} · about {u} µg inhaled{cmp}",
+  notifyReflectCmpHeavy: " — heavier than {d} ({u} µg)",
+  notifyReflectCmpLight: " — lighter than {d} ({u} µg)",
+  notifyReflectCmpSame: " — about the same as {d} ({u} µg)",
+  /* the cause_note — the parali/news line (server why.py:_cause_note;
+     app re-renders it through these keys from cause_note_fields).
+     Every number is a measured field — belt detections, carry wind,
+     ventilation, recorded city mean — never a reported-news feed. */
+  noteBelt: "{n} fires in the Punjab–Haryana belt",
+  noteBeltUp: ", up from {a} {h}h ago",
+  noteBeltDown: ", down from {a} {h}h ago",
+  noteCarryYes: " — a {dir} wind at {kmh} km/h is carrying it our way",
+  noteCarryYesNoKmh: " — a {dir} wind is carrying it our way",
+  noteCarryNo: " — the wind is carrying it away from us",
+  noteCarryUnknown: " — wind unread, can't tell if it's coming our way",
+  noteBeltQuiet: "the belt is quiet — {n} fires burning",
+  noteBeltQuiet0: "the belt is quiet right now",
+  noteStagVc: "the air is barely moving — ventilation {vc} m²/s vs ~3,000 typical", /* superseded by noteStagPct (jargon-sweep) — kept for stale-surface compat */
+  noteStag: "the air is barely moving",
+  noteTrendUp: "the city's average climbed {a} → {b} µg/m³ in ~{h}h",
+  noteTrendDown: "the city's average eased {a} → {b} µg/m³ in ~{h}h",
+  noteTailInflow: "smoke coming in while the air sits still",
+  noteTailClimb: "the climb is still on",
+  noteBackground: "the usual local air — no big driver in play right now",
+  noteMeasured: "measured, not reported",
+  setCurrentDest: "save current destination",
+  setPlace: "add",
+  onLabel: "on",
+  offLabel: "off",
+  unitsKm: "km",
+  unitsM: "m",
+  unitsKg: "kg",
+  settingsUnitsHint: "metric only",
+  morningAlert: "Morning air alert",
+  /* status under settingsShareExplain — state + how to undo, no
+     re-explain (two stacked lines saying the same thing twice was
+     audit slop #29) */
+  shareDataHint: "on — one tap to stop anytime",
+  shareDataHintOff: "off — nothing leaves this phone",
+  deleteConfirmTitle: "delete my data?",
+  deleteConfirmBody: "your trips, settings and anonymous id are removed from this phone",
+  deleteConfirmYes: "delete",
+  cancel: "cancel",
+  // first run — the sharing choice (docs/plan/onboarding.md, doc 07 §3)
+  consent_title: "One choice — and it's yours.",
+  consent_body: "Your dose and your routes live on this phone. Sharing sends only anonymous, trimmed trips — it's how Delhi's air map sees its streets. Works the same either way.",
+  consent_shareBtn: "Share trips anonymously",
+  consent_shareSub: "helps Delhi see its air, street by street",
+  consent_keepBtn: "Keep everything on my phone",
+  consent_keepSub: "nothing is uploaded — you can turn it on later",
+  consent_footnote: "Skipping keeps everything on this phone — either way, one tap in Settings changes it.",
+  howAliveBody: "ALive maps every way to where you're going — metro, car, auto, on foot. For each, it estimates the smoke you'd breathe along the way, from a live street-level air map built from stations, satellites and trips people shared. It also estimates the smoke your ride puts out, from published tests on that kind of ride. Your trips stay anonymous and help the city see its air street by street. Numbers are honest ranges, never fake-exact.",
+  // search + compare
+  fromLabel: "from",
+  /** the two-section where-to entry — 'To' row label (From = fromLabel) */
+  fieldTo: "To",
+  changeLabel: "change",
+  editingLabel: "editing",
+  fromHint: "type to change where you start from",
+  noResults: "nothing found — try a bigger name",
+  searchingLabel: "searching",
+  checkingRoutes: "finding the purest route for you…",
+  compare_refining: "least smoky roads first · adding metro, bus and more…",
+  /* planner arms lost to timeout — the option set is real but INCOMPLETE;
+     the sheet says which kind of route is missing, never pretends all */
+  degradedEngine: "least smoky picks unavailable right now — showing what's live",
+  degradedTransit: "metro & bus options unavailable right now",
+  degradedMotor: "car, auto & bike options unavailable right now",
+  degradedSlow: "walk & cycle options unavailable right now",
+  degradedGeneric: "some route options unavailable right now",
+  noRoutes: "no route found between those two places",
+  leaveAtBreatheLess: "{time} → ~{n}% less smoke — ping me",
+  departTomorrow: "tomorrow",
+  wellPing: "we'll ping you",
+  turnByTurn: "turn-by-turn",
+  settingsVoiceHint: "spoken turn-by-turn guidance",
+  hideTurns: "hide turns",
+  roadModesOnly: "step-by-step directions show for road rides",
+  followRoute: "follow the route line",
+  boardMetro: "board {a} → {b}",
+  arriveAt: "arrive {t}",
+  /* 12h clock markers — hi renders Devanagari पूर्वाह्न/अपराह्न (what iOS's
+     hi-IN ICU already shows); Android's toLocaleTimeString leaks Latin
+     "am"/"pm", so hi time labels are composed manually from these keys */
+  daypart_am: "am",
+  daypart_pm: "pm",
+  /* the header greeting — the surface meets you at your hour, not a bare
+     timestamp: "good evening · tuesday · 16:38 · delhi" */
+  homeGreetMorning: "good morning",
+  homeGreetAfternoon: "good afternoon",
+  homeGreetEvening: "good evening",
+  homeGreetNight: "up late",
+  offline: "can't reach the server — trying again",
+  offlineStale: "offline — showing last known air",
+  offlinePending: "{n} waiting to send",
+  // first run — onboarding beats (docs/plan/onboarding.md)
+  onb_next: "Next",
+  onb_skip: "Skip",
+  onb_whatTitle: "Every Delhi trip has an air price.",
+  /* beat 1 — the live ambient read IS the page; kicker stamps where the
+     number was read, the line carries the feeling it should leave */
+  onb_airKicker: "delhi · right now",
+  onb_airLine: "You can't see it. You still breathe it.",
+  /* beat 2 — the trip arc, one line per beat */
+  onb_arcLineSearch: "see the smoke before you go",
+  onb_arcLineDose: "it counts what you breathe as you go",
+  onb_arcLineReceipt: "a receipt of it when you arrive",
+  /* beat 3 — the phone-does-the-counting promise; the k-card carries the
+     proof (the big "3+" numeral sits beside this numeral-free sentence) */
+  onb_phoneTitle: "Nothing personal leaves this phone.",
+  onb_phoneBody: "No account, no name — shared trips lose both ends before they count.",
+  onb_kLabel: "a street appears only after this many different devices cross it",
+  /* the location ask — the reason sits on the button that fires the OS
+     dialog; "not now" is a real decline */
+  onb_locTitle: "One permission — where you are.",
+  onb_locBody: "ALive reads the air at your street and steers the map as you move. It stays on this phone.",
+  onb_locBtn: "turn on location",
+  onb_locLater: "not now",
+  onb_leaving: "a moment…",
+  onb_pageOf: "page {n} of {m}",
+  receiptSaved: "the smokiest way would have added {n} cigarettes",
+  receiptSavedUg: "the smokiest way would have added {n} µg",
+  minUnit: "min",
+  compare_pick: "our pick",
+  compare_yours: "your usual",
+  /** headline chip on the least-dose option — o.safest_path flag, or the
+      dose-min row when the server sends no flag */
+  compare_safest: "least smoky",
+  /** the chooser's verdict pill on the winning route — every claim
+      re-derived from the set's own numbers (routeTint.chooserVerdict);
+      never asserted ahead of them */
+  chooser_best: "cleanest and fastest",
+  chooser_lessVsFastest: "cleanest · {n}% less smoke than fastest",
+  chooser_cleanest: "the cleanest way there",
+  chooser_fastest: "the fastest way there",
+  compare_smokeIn: "smoke you breathe",
+  compare_smokeOut: "smoke your ride puts out",
+  plan_failed: "couldn't load the ways there — check the connection",
+  plan_failed_server: "the server couldn't route this trip",
+  plan_retry: "try again",
+  plan_outside_title: "this trip sits outside Delhi NCR",
+  plan_outside_body: "Alive only measures the air inside Delhi NCR — this trip leaves the air map, so its smoke can't be counted honestly.",
+  plan_outside_cta: "change the trip",
+  plan_coverage_note: "smoke counted only for the Delhi NCR part",
+  howWe_coverage: "the route leaves the smoke map — only the {pct}% inside it is counted, never stretched",
+  // live nav + receipt (src/nav, S6/S7)
+  nav_breathe: "smoke you breathe",
+  nav_putOut: "smoke your ride puts out",
+  nav_cigs: "{n} cigarettes",
+  /* under 1% of one the exact decimal lies ('<0.01 cigarettes') —
+     felt words instead (jargon-sweep): */
+  cigsTrace: "a trace of a cigarette",
+  nav_kg: "{n} kg",
+  nav_g: "{n} g",
+  nav_left: "{min} min · {km} km left",
+  /** under a kilometre the distance reads in metres — "350 m", never
+      a bare "0.35" (jargon-sweep) */
+  nav_left_m: "{min} min · {m} m left",
+  nav_recenter: "re-centre",
+  nav_in: "in {d} metres — {i}",
+  nav_now: "now — {i}",
+  nav_noSignal: "locating you…",
+  strip_unavailable: "live air update lost — counters paused",
+  receipt_breathed: "you breathed {n} cigarettes",
+  /* '×less' framed on what the number multiplies — plain-words smoke,
+     not math-school 'times less than' (jargon-sweep flag) */
+  receipt_lessVs: "about {n}× less smoke than by {m}",
+  receipt_lessVsWalk: "about {n}× less smoke than on foot",
+  receipt_moreVs: "{n}× more than by {m}",
+  receipt_putOutKg: "your ride put out {n} kg",
+  receipt_altPutOut: "{m} would have put out {n} kg",
+  receipt_estLike: "estimated for this kind of ride",
+  receipt_pmBand: "includes {lo}–{hi} g of fine dust (PM2.5)",
+  receipt_pmBandOne: "includes {x} g of fine dust (PM2.5)",
+  receipt_pmBandTiny: "includes a trace of fine dust (PM2.5)",
+  receipt_donated: "added anonymously to Delhi's air map",
+  receipt_queued: "saved — will send when back online",
+  receipt_private: "kept on this phone only",
+  /* fix-gap disclosure on the receipt: parked/backgrounded minutes
+     paused the ride's meters — they must not read as riding minutes */
+  receiptPaused: "ride meters paused ~{n} min — the air count kept going",
+  receipt_noDose: "no smoke estimate for this trip",
+  receipt_lessVsWorst: "about {n}× less smoke than the smokiest option",
+  receipt_putOutNone: "your ride put out nothing — no exhaust",
+  receipt_estShort: "about",
+  /* plain-fraction forms of the ×less comparison (jargon-sweep) —
+     "a third of walking" is how you'd say it, "0.43× less" isn't */
+  receipt_fracWalk: "about {f} of walking",
+  receipt_fracVs: "about {f} of {m}",
+  receipt_fracWorst: "about {f} of the smokiest option",
+  departNow: "now",
+  receipt_distance: "distance",
+  receipt_duration: "time",
+  // turn-step localisation (src/nav/instructions.ts) — mirrors
+  // server/v2/deps.py's English grammar so cues read natively
+  navStep_onto: " onto {r}",
+  navStep_uturn: "Make a U-turn",
+  navStep_headDir: "Head {d} on {r}",
+  navStep_headOut: "Head out",
+  navStep_arrive: "You'll arrive",
+  navStep_roundabout: "At the roundabout, take the {o} exit",
+  navStep_ramp: "Take the ramp",
+  navStep_exitRamp: "Take the exit",
+  navStep_mergeOn: "Merge onto {r}",
+  navStep_merge: "Merge",
+  navStep_continueOn: "Continue on {r}",
+  navStep_continueStraight: "Continue straight",
+  navStep_continue: "Continue",
+  navStep_keep: "Keep {s}",
+  navStep_bear: "Bear {d}",
+  navStep_turn: "Turn {d}",
+  // emissions explainer — rebuilt client-side in the user's language
+  // from the payload's structured fields (same grammar as
+  // server/emissions.py:_label); hi mirrors it natively
+  conf_low: "low",
+  conf_medium: "medium",
+  conf_high: "high",
+  emit_est: "estimated",
+  emit_innerFleet: "{f} {c}, Delhi average — {b}",
+  emit_innerYear: "{y} {f} {c}, {b}",
+  emit_innerEv: "electric {c}, includes grid electricity",
+  /* the ÷-notation died with the audit — riders, in words */
+  emit_perPax: ", per rider ({o} aboard)",
+  emit_pucTuned: " — tuned to your PUC certificate",
+  emit_basisPerVkm: "per km driven",
+  emit_basisPerPaxKm: "per km per passenger",
+  // fixed server label sentences (emissions.py) — verbatim-mapped
+  emit_metroShort: "metro per km per passenger (incl. electricity)",
+  emit_metroLong: "metro per km per passenger, incl. electricity (11–25 g CO2e per passenger-km — DMRC + CEA grid factors)",
+  // dose-note fallbacks (server/v2/plan.py) — shown when dose can't estimate
+  doseNote_engineDown: "smoke estimate unavailable",
+  doseNote_engineError: "smoke estimate error",
+  doseNote_fieldDown: "air map unavailable",
+  receipt_doseUgBand: "about {lo}–{hi} µg",
+  receipt_save: "save",
+  resultsHeader: "Results",
+  /* F2 — honest substitute labels (the 'don't assume' law): only when
+     the top hit stands in for a named place that missed */
+  searchSubstCategory: "nearby alternative — \"{name}\" not found",
+  searchSubstArea: "area only — \"{unit}\" not found",
+  /* 'shops & places here' — the address→shops browse section shown when
+     the strongest answer is an area/address (n = real rows found). */
+  shopsHere: "shops & places here ({n})",
+  noPlaceFound: "no place found — try a landmark",
+  emptySearchHint: "type a place or landmark — or choose on the map",
+  mapPickHint: "tap the map to drop a pin there",
+  /** armed pick resolving (reverse-name + origin fix — bounded, never a
+      fake 'pin dropped' while the outcome is still unknown) */
+  mapPickChecking: "checking this spot…",
+  /* the air map's own legend card — what the painted field means and
+     what stands behind it (AirMapCard). Station count reuses
+     srcStations, the scale ends reuse band_good/band_severe, the age
+     line reuses howWe_fieldAge/cityStale/cityNoField. */
+  airmapTitle: "the air map",
+  airmapLine: "redder = worse air right now",
+  /* tap readout (TapReadout) — the point's own answer: {place} is the
+     gazetteer locality, tapHere the honest unnamed fallback; the thin/
+     off-field qualifier reuses srcModel */
+  tapHint: "tap anywhere — that spot's air answers",
+  tapReading: "reading…",
+  tapOutside: "outside the air map — no read here",
+  tapHere: "this spot",
+  tapAqiA11y: "air at {place}: {n} µg/m³ — {band}",
+  // first run
+  // place-name fallbacks (useShellFlow: from/to when no place is picked)
+  placeCurrentLocation: "your location",
+  placeCentralDelhi: "central Delhi",
+  // where-to settle sheet (place preview before Directions)
+  locating: "locating you…",
+  placeNearLocality: "near {place}",
+  placeLastKnown: "last known spot · {m} min old",
+  placeSubstCat: "the place itself isn't mapped — closest {kind} shown",
+  placeSubstArea: "the exact spot isn't mapped — this is {area}",
+  placeNearAnchor: "near {anchor}",
+  placeAirNow: "air there now ~{n} µg/m³",
+  placeAirNone: "no field read there yet",
+  routeBubble: "{m} min · ~{d} µg",
+  // accessibility
+  a11yMenu: "menu",
+  a11yLocate: "locate me",
+  a11yLayers: "map layers",
+  a11yBack: "back",
+  a11yClear: "clear",
+  a11yClearSaved: "clear saved place",
+  placeDroppedPin: "dropped pin",
+  // dosimeter — the day stack (alive-depth L1–L4). Copy rule: never
+  // "don't go out" — always the cheaper-for-lungs version of the same plan.
+  dayTitle: "your day",
+  /* the weekly calendar's name — the lungs, not a ledger (owner's
+     wording: "your lungs' calendar") */
+  weekTitle: "your lungs' calendar",
+  /* the week detail when the picked day's coverage is too thin to tell
+     its story — a small count may still sit in the cell, so the line
+     says thin, not zero */
+  weekDayThin: "a thin read — too few hours logged to tell this day's story",
+  dayNow: "now",
+  /* the sparse hero — ambient truth labelled, never a fake personal
+     number (docs/lanes/hero-sparse): the field at the device's cell is
+     shown as the designed empty, the count line names what's missing */
+  daySparseAir: "today's air where you are: ~{n} µg/m³",
+  daySparseWait: "waiting for the first air reading today",
+  daySparseCount: "your count starts once the phone logs its first hours",
+  daySparseSamples: "{n} of {m} readings",
+  dayCovered: "{h}h {m}m counted",
+  dayCoveredMin: "{m}m counted",
+  dayPartsTitle: "where it accumulated",
+  /* {h} is a whole clock word now ('2pm' / '2 बजे') — no :00 tail */
+  dayArcDose: "≈{n} µg · {h}",
+  /* {c} is µg/m³ — the unit travels with the number or it reads as the
+     same µg the hero counts (numbers-sweep) */
+  dayArcAir: "{h} · air ~{c} µg/m³",
+  dayArcFlat: "{h}",
+  dayMorningFlat: "a flat day — any hour sits about as light as the next",
+  dayMorningHeavy: "heaviest ~{f}–{t} (≈{c} µg/m³)",
+  /* the window runs past the forecast's edge — 'heaviest ~8pm–' with
+     a dangling dash reads clipped; 'onward' is the honest shape */
+  dayMorningHeavyFrom: "heaviest from ~{f} onward (≈{c} µg/m³)",
+  dayMorningClean: "lightest ~{f}–{t} (≈{c} µg/m³)",
+  dayMorningCleanFrom: "lightest from ~{f} onward (≈{c} µg/m³)",
+  dayMorningMove: "the same plan at {f} breathes ~{x}× lighter than at {g}",
+  dayMorningStale: "last air reading {n} min ago",
+  dayMorningNoCell: "outside the air map — no hour-by-hour read here",
+  dayOutsideDelhi: "outside Delhi — the smoke map doesn't reach here",
+  /* the move card's first decision line — /v2/day serves it pre-built
+     in English; hi rebuilds the same sentences from the served windows
+     + series (decisions[].label tells us which grammar the server
+     picked). Mirrors server/v2/day.py:_decisions so wire English never
+     reaches the hi UI. */
+  moveDec_cleanWindow: "{w} stretch {win} — around {c} µg/m³, against {m} across the day",
+  moveDec_noClean: "no clean hours left today — the lightest is {n} µg/m³",
+  moveDec_short: "only ~{n}h of today left on the card — {b} throughout",
+  /* the served horizon is short, not the day: at 11 AM a 2-hour serve
+     is a truncated card, and 'only ~2h of today left' read as a lie
+     (audit #10) — this line names the card's reach instead of the
+     day's end */
+  moveDec_cardShort: "the next ~{n}h look {b} — the rest of today's card isn't in yet",
+  moveDec_flat: "no meaningful window today — {b} air all day ({lo}–{hi} µg/m³)",
+  moveDec_jagged: "no steady window today — from {lo} to {hi} µg/m³",
+  /* CPCB band words (districts.cpcb_band) — only ever used inside
+     "…{b} air / …{b} हवा" sentences, so hi forms agree with हवा */
+  band_good: "good",
+  band_satisfactory: "satisfactory",
+  band_moderate: "moderate",
+  band_poor: "poor",
+  band_veryPoor: "very poor",
+  band_severe: "severe",
+  bandScaleA11y: "air quality today: {b} — position {n} of 6 on the good to severe scale",
+  /* felt words — the band spoken like a person, not a scale
+     (the minimal meaning layer: colour + one word, no glossary) */
+  felt_easy: "good",
+  felt_fine: "satisfactory",
+  felt_fair: "moderate",
+  felt_heavy: "poor",
+  felt_rough: "very poor",
+  felt_harsh: "severe",
+  // the days ahead — /v2/outlook's own fold, rendered as served
+  dayOutlookTitle: "the days ahead",
+  dayLbl_today: "today",
+  dayLbl_tomorrow: "tomorrow",
+  dayLbl_monday: "monday",
+  dayLbl_tuesday: "tuesday",
+  dayLbl_wednesday: "wednesday",
+  dayLbl_thursday: "thursday",
+  dayLbl_friday: "friday",
+  dayLbl_saturday: "saturday",
+  dayLbl_sunday: "sunday",
+  dayOutlookLeastBad: "least-bad",
+  dayOutlookCleanest: "cleanest",
+  dayOutlookAllDayHeavy: "heavy right through — no lighter run to pick",
+  dayOutlookHeavyHours: "heaviest at {h}",
+  dayOutlookPartial: "first ~{n}h only",
+  dayOutlookTodayPartial: "rest of today (~{n}h)",
+  dayOutlookRange: "≈{lo}–{hi} µg/m³",
+  dayOutlookLoNote: "faded days are past live readings — satellite estimate only",
+  dayOutlookVerdict: "{d} looks {w} — average ~{c} vs ~{g} µg/m³ across the forecast",
+  dayOutlookVerdictPartial: " (only its first ~{n}h fall inside the forecast)",
+  dayOutlookFlatVerdict: "no meaningful difference between days — ~{c} µg/m³ throughout the {n}-day forecast",
+  lensTitle: "how you felt",
+  lensSub: "breath · eyes · energy — a 5-second check-in, on this phone only",
+  lensBreath: "breath",
+  lensEyes: "eyes",
+  lensEnergy: "energy",
+  lensGood: "good",
+  lensMeh: "meh",
+  lensRough: "rough",
+  lensPrivacy: "stays on this phone — never uploaded",
+  lensEarly: "a few check-ins in — the pattern needs ~7 days",
+  lensFlat: "{n} {dayNoun} in — no pattern yet, the lens stays honest",
+  dayNounOne: "day",
+  dayNounMany: "days",
+  lensLink: "your rough {f} follow heavy-smoke days",
+  lensFacetBreath: "breathing",
+  lensFacetEyes: "eye-burn",
+  lensFacetEnergy: "low-energy",
+  /* the dose ceiling in street words — "budget" read as money jargon
+     (owner's complaint); the limit framing survives, the word doesn't */
+  budgetTitle: "your daily limit",
+  budgetTitleSugg: "a suggested daily limit",
+  budgetWithin: "{r} µg left of your {b} µg line for today",
+  budgetWithinSugg: "{r} µg left of the suggested {b} µg line for today",
+  budgetOver: "{o} µg over your {p} limit today",
+  budgetOverSugg: "{o} µg over the suggested {p} limit today",
+  budgetProfileQ: "{b} µg is the most fine dust you want to breathe in a day — a line you set, not a medical rule",
+  /* F7 — the same ceiling before the user picks a profile: a suggested
+     reference, honestly disclosing the WHO anchor + assumed volume
+     (72 = WHO annual 5µg/m³ × ~14.4 m³; 216 = 24-h 15µg/m³ × ~14.4 m³;
+     130 = 15µg/m³ × ~8.6 m³, a child's smaller lungs). 'you set' only
+     exists once profile_set is true. The volume is a declared constant
+     (server v2/city.py DAY_M3 ≈14.4; child ≈60% of it) — the copy names
+     it our assumption so it never sits in the equation as a fact. */
+  budgetQGeneralSugg: "{b} µg — a suggested reference: WHO 24-h fine-dust guide 15 µg/m³ × ~14.4 m³ of air a day — the volume is our assumption, not WHO's",
+  budgetQSensitiveSugg: "{b} µg — a suggested reference: WHO annual fine-dust guide 5 µg/m³ × ~14.4 m³ of air a day — the volume is our assumption, not WHO's",
+  budgetQChildSugg: "{b} µg — a suggested reference: WHO 24-h guide 15 µg/m³ × ~8.6 m³ of air a day — our assumed volume for a child",
+  profileGeneral: "general",
+  profileSensitive: "sensitive",
+  profileChild: "child",
+  peekTitle: "your day so far",
+  peekOpenHint: "opens your day",
+  /* a week-strip day with nothing logged — the talkback line says so
+     instead of announcing a bare zero (audit #13) */
+  weekNoReads: "nothing logged",
+  peekEmpty: "no reads yet — open the map, take a trip, this fills in",
+  peekAmbient: "now ~{n} µg/m³",
+  /* compare sheet — the gap line under a heavier option's dose */
+  compare_vsLightest: "+{n} µg vs lightest",
+  /* the dose column when an option carries no estimate — a bare dash
+     says nothing; two short words say why */
+  compare_doseNA: "no estimate",
+  goLabel: "go somewhere",
+  /* the dosimeter home — the resting surface (docs/plan/design-refs) */
+  homeBreathed: "you've breathed today",
+  /* the ambient twin of the hero's inhaled µg — the unit must travel
+     with it or ~180 sits next to ≈42 µg and reads as one more dose
+     (numbers-sweep) */
+  homeOutsideNow: "outside ~{n} µg/m³ · {w}",
+  homeOfBudget: "of ~{b} µg daily",
+  homeWeek: "{n} µg this week",
+  /* the sparse week strip — the city's forecast days stand in (dimmed)
+     until the personal arc has a day counted; 'Delhi's next days' names
+     whose days they are so they never read as the user's own */
+  homeWeekCity: "Delhi's next days",
+  homeWeekSparse: "your week starts counting today",
+  moveTitle: "the move",
+  homeLinkMap: "Air map",
+  homeLinkCity: "Delhi today",
+  /* door label = screen title — the ledger calls itself 'Trips'
+     (sidebarTrips); the door's 'Your trips' was a label mismatch (audit) */
+  homeLinkTrips: "Trips",
+  /* the local-incidents card — sits above the doors on home, same
+     measured cause_note the Delhi today sheet carries under its hero */
+  incidentsTitle: "in Delhi's air right now",
+  /* design-v4 hero — one number, one felt word, one reference */
+  homeAirNowLead: "the air around you",
+  /* first-run coach tour — one caption per spotlighted piece (titles
+     reuse the surface's own keys: homeAirNowLead/dayTitle/homeLinkMap/
+     searchPlaceholder/weekTitle) */
+  tourAmbient: "live smoke at your spot, right now — the number proves itself below",
+  tourLedger: "your day builds here — every real read adds to the count",
+  tourMap: "the smoke painted over all of Delhi — tap to open the live map",
+  tourGo: "pick a place, get the least-smoky way there",
+  tourWeek: "seven days stack up here as they count — tap for the calendar",
+  tourSkip: "skip",
+  tourNext: "next",
+  tourDone: "got it",
+  refWhoOver: "{x}× the WHO daily limit",
+  refWhoUnder: "within the WHO daily limit",
+  refBudget: "{p}% of your daily limit",
+  refBudgetSugg: "{p}% of the suggested daily limit",
+  refYesterdayMore: "{n} µg more than yesterday",
+  refYesterdayLess: "{n} µg less than yesterday",
+  cityName: "Delhi",
+  /* vehicle sheet — class-group titles, spec captions, the honest
+     caption (landed from VehicleSheet's LOCAL table) */
+  veh_grp_own: "your own",
+  veh_grp_shared: "shared",
+  veh_grp_noengine: "no engine",
+  veh_why: "your pick sharpens the “your ride puts out” numbers — saved on this phone only",
+  veh_cap_car: "petrol · diesel · CNG · EV",
+  veh_cap_auto: "3-wheeler · mostly CNG",
+  veh_cap_bike: "scooter · motorcycle",
+  veh_cap_bus: "shared ride",
+  veh_cap_metro: "electric · shared",
+  veh_cap_cycle: "no exhaust",
+  veh_cap_walk: "no exhaust",
+  veh_cap_petrol: "cars · scooters · bikes",
+  veh_cap_diesel: "more fine particles",
+  veh_cap_cng: "lighter exhaust",
+  veh_cap_ev: "no exhaust",
+  veh_cap_y_pre2010: "BS-III or older",
+  veh_cap_y_2010_2016: "mostly BS III–IV",
+  veh_cap_y_2017_2020: "mostly BS-IV",
+  veh_cap_y_2021plus: "BS-VI era",
+  veh_cap_y_notsure: "we’ll use the Delhi average",
+  /* sidebar trip-row recency — compact suffixes; hi keeps the same
+     Devanagari abbreviations the chart hour ticks use (घं per hourTick,
+     dayCovered) so no Latin letters leak into a Hindi row */
+  /* time-ago is a full phrase — bare "10m" sits beside mode words and
+     reads as a DURATION ('Bicycle · 10 min'), not 'ago' (audit #27) */
+  agoNow: "just now",
+  agoMin: "{n} min ago",
+  agoHr: "{n} hr ago",
+  agoDay: "{n} d ago",
+
+  /* --- offline gazetteer kind labels (search/t0.ts kindLabel) ---
+     The corpus's own vocabulary — the en value IS the label the
+     gazetteer emits. The head covered ~97% of corpus weight at
+     832e7fa; the tail below carries real Hindi for the kinds a Delhi
+     search will actually land on, and KIND_SYNONYMS folds the raw
+     tail's variant spellings into the same keys. Anything still
+     unknown falls back to a localized "place" via localizeKind —
+     a Devanagari subtitle stays Devanagari. */
+  kind_atm: "ATM",
+  kind_delhi: "Delhi",
+  kind_address: "address",
+  kind_airport: "airport",
+  kind_amusementPark: "amusement park",
+  kind_apartment: "apartment",
+  kind_apartments: "apartments",
+  kind_applianceShop: "appliance shop",
+  kind_archaeologicalSite: "archaeological site",
+  kind_artwork: "artwork",
+  kind_attraction: "attraction",
+  kind_bagShop: "bag shop",
+  kind_bakery: "bakery",
+  kind_bank: "bank",
+  kind_bar: "bar",
+  kind_beverages: "beverages",
+  kind_block: "block",
+  kind_bloodBank: "blood bank",
+  kind_bookshop: "bookshop",
+  kind_boutique: "boutique",
+  kind_buddhistTemple: "buddhist temple",
+  kind_building: "building",
+  kind_busStation: "bus station",
+  kind_busStop: "bus stop",
+  kind_butcher: "butcher",
+  kind_cafe: "cafe",
+  kind_canal: "canal",
+  kind_carDealer: "car dealer",
+  kind_carRepair: "car repair",
+  kind_centre: "centre",
+  kind_chemist: "chemist",
+  kind_childcare: "childcare",
+  kind_church: "church",
+  kind_cinema: "cinema",
+  kind_city: "city",
+  kind_clinic: "clinic",
+  kind_clothingShop: "clothing shop",
+  kind_college: "college",
+  kind_commercial: "commercial",
+  kind_communityCentre: "community centre",
+  kind_company: "company",
+  kind_computerShop: "computer shop",
+  kind_constructionSite: "construction site",
+  kind_convenienceStore: "convenience store",
+  kind_cosmetics: "cosmetics",
+  kind_dairy: "dairy",
+  kind_dentist: "dentist",
+  kind_departmentStore: "department store",
+  kind_district: "district",
+  kind_doctor: "doctor",
+  kind_drain: "drain",
+  kind_dryCleaning: "dry cleaning",
+  kind_educationalInstitute: "educational institute",
+  kind_electricalShop: "electrical shop",
+  kind_electronics: "electronics",
+  kind_electronicsRepair: "electronics repair",
+  kind_embassy: "embassy",
+  kind_estateAgent: "estate agent",
+  kind_eventVenue: "event venue",
+  kind_fabricShop: "fabric shop",
+  kind_fastFood: "fast food",
+  kind_financialServices: "financial services",
+  kind_forest: "forest",
+  kind_fuel: "fuel",
+  kind_furniture: "furniture",
+  kind_garden: "garden",
+  kind_gate: "gate",
+  kind_generalStore: "general store",
+  kind_giftShop: "gift shop",
+  kind_governmentOffice: "government office",
+  kind_guestHouse: "guest house",
+  kind_gym: "gym",
+  kind_hardware: "hardware",
+  kind_hardwareStore: "hardware store",
+  kind_historicSite: "historic site",
+  kind_hospital: "hospital",
+  kind_hostel: "hostel",
+  kind_hotel: "hotel",
+  kind_house: "house",
+  kind_houseware: "houseware",
+  kind_iceCream: "ice cream",
+  kind_indoorVenue: "indoor venue",
+  kind_industrialArea: "industrial area",
+  kind_info: "info",
+  kind_interiors: "interiors",
+  kind_jewellery: "jewellery",
+  kind_junction: "junction",
+  kind_lab: "lab",
+  kind_lawyer: "lawyer",
+  kind_library: "library",
+  kind_liquorShop: "liquor shop",
+  kind_mall: "mall",
+  kind_market: "market",
+  kind_metro: "metro",
+  kind_metroEntrance: "metro entrance",
+  kind_mobileShop: "mobile shop",
+  kind_monument: "monument",
+  kind_mosque: "mosque",
+  kind_motorcycleDealer: "motorcycle dealer",
+  kind_museum: "museum",
+  kind_neighbourhood: "neighbourhood",
+  kind_office: "office",
+  kind_optician: "optician",
+  kind_park: "park",
+  kind_parking: "parking",
+  kind_pastryShop: "pastry shop",
+  kind_path: "path",
+  kind_pet: "pet",
+  kind_pharmacy: "pharmacy",
+  kind_photocopyShop: "photocopy shop",
+  kind_place: "place",
+  kind_placeOfWorship: "place of worship",
+  kind_platform: "platform",
+  kind_playground: "playground",
+  kind_police: "police",
+  kind_politicalOffice: "political office",
+  kind_postOffice: "post office",
+  kind_proposedSite: "proposed site",
+  kind_railway: "railway",
+  kind_railwayStation: "railway station",
+  kind_religiousSite: "religious site",
+  kind_rentalService: "rental service",
+  kind_residentialArea: "residential area",
+  kind_restaurant: "restaurant",
+  kind_retail: "retail",
+  kind_road: "road",
+  kind_room: "room",
+  kind_salon: "salon",
+  kind_school: "school",
+  kind_sector: "sector",
+  kind_shoeShop: "shoe shop",
+  kind_shop: "shop",
+  kind_sports: "sports",
+  kind_sportsCentre: "sports centre",
+  kind_sportsGround: "sports ground",
+  kind_stadium: "stadium",
+  kind_station: "station",
+  kind_stationery: "stationery",
+  kind_stop: "stop",
+  kind_stream: "stream",
+  kind_street: "street",
+  kind_substation: "substation",
+  kind_suburb: "suburb",
+  kind_supermarket: "supermarket",
+  kind_sweetsShop: "sweets shop",
+  kind_tailor: "tailor",
+  kind_temple: "temple",
+  kind_theatre: "theatre",
+  kind_toilet: "toilet",
+  kind_track: "track",
+  kind_trade: "trade",
+  kind_travelAgency: "travel agency",
+  kind_university: "university",
+  kind_vegetableShop: "vegetable shop",
+  kind_village: "village",
+  kind_water: "water",
+
+  /* --- the corpus's long tail (testday-ios finding: "fountain",
+     "muslim place of worship" bypassed localizeKind raw) --- */
+  kind_accountant: "accountant",
+  kind_adAgency: "ad agency",
+  kind_arcade: "arcade",
+  kind_artsCentre: "arts centre",
+  kind_auditorium: "auditorium",
+  kind_babyShop: "baby shop",
+  kind_bicycleRental: "bicycle rental",
+  kind_bicycleShop: "bicycle shop",
+  kind_brewery: "brewery",
+  kind_bridge: "bridge",
+  kind_carParts: "car parts",
+  kind_carRental: "car rental",
+  kind_carWash: "car wash",
+  kind_carpetShop: "carpet shop",
+  kind_castle: "castle",
+  kind_cemetery: "cemetery",
+  kind_chargingStation: "charging station",
+  kind_club: "club",
+  kind_conferenceCentre: "conference centre",
+  kind_court: "court",
+  kind_coworkingSpace: "coworking space",
+  kind_crematorium: "crematorium",
+  kind_depot: "depot",
+  kind_dogPark: "dog park",
+  kind_drinkingWater: "drinking water",
+  kind_drivingSchool: "driving school",
+  kind_dryFruits: "dry fruits",
+  kind_entrance: "entrance",
+  kind_farmland: "farmland",
+  kind_fireStation: "fire station",
+  kind_florist: "florist",
+  kind_foodCourt: "food court",
+  kind_fort: "fort",
+  kind_fountain: "fountain",
+  kind_gallery: "gallery",
+  kind_golfCourse: "golf course",
+  kind_grass: "grass",
+  kind_grindingMill: "grinding mill",
+  kind_gurdwara: "gurdwara",
+  kind_handicrafts: "handicrafts",
+  kind_hookahLounge: "hookah lounge",
+  kind_internetCafe: "internet cafe",
+  kind_itServices: "IT services",
+  kind_kiosk: "kiosk",
+  kind_lake: "lake",
+  kind_laundry: "laundry",
+  kind_leatherShop: "leather shop",
+  kind_locksmith: "locksmith",
+  kind_massage: "massage",
+  kind_medicalSupplies: "medical supplies",
+  kind_mess: "mess",
+  kind_metalWorks: "metal works",
+  kind_moneyChanger: "money changer",
+  kind_monitoringStation: "monitoring station",
+  kind_motorcycleRepair: "motorcycle repair",
+  kind_nationalPark: "national park",
+  kind_natureReserve: "nature reserve",
+  kind_newsagent: "newsagent",
+  kind_nightclub: "nightclub",
+  kind_paanShop: "paan shop",
+  kind_paintShop: "paint shop",
+  kind_perfumeShop: "perfume shop",
+  kind_photoStudio: "photo studio",
+  kind_physiotherapist: "physiotherapist",
+  kind_plantNursery: "plant nursery",
+  kind_plot: "plot",
+  kind_printShop: "print shop",
+  kind_pumpingStation: "pumping station",
+  kind_railHalt: "rail halt",
+  kind_repairShop: "repair shop",
+  kind_researchInstitute: "research institute",
+  kind_river: "river",
+  kind_roundabout: "roundabout",
+  kind_shelter: "shelter",
+  kind_socialFacility: "social facility",
+  kind_square: "square",
+  kind_steps: "steps",
+  kind_studio: "studio",
+  kind_supplements: "supplements",
+  kind_swimmingPool: "swimming pool",
+  kind_synagogue: "synagogue",
+  kind_tattooStudio: "tattoo studio",
+  kind_taxiStand: "taxi stand",
+  kind_teaShop: "tea shop",
+  kind_tehsil: "tehsil",
+  kind_telecom: "telecom",
+  kind_ticketCounter: "ticket counter",
+  kind_tobaccoShop: "tobacco shop",
+  kind_tollBooth: "toll booth",
+  kind_tomb: "tomb",
+  kind_tower: "tower",
+  kind_toyShop: "toy shop",
+  kind_tree: "tree",
+  kind_tyreShop: "tyre shop",
+  kind_vet: "vet",
+  kind_warehouse: "warehouse",
+  kind_wastewaterPlant: "wastewater plant",
+  kind_waterTower: "water tower",
+  kind_watchShop: "watch shop",
+  kind_well: "well",
+  kind_wholesale: "wholesale",
+  kind_zoo: "zoo",
+
+  /* share-sheet CO₂ cell — keeps the substance inside the unit template
+     so neither language glues "CO₂" after a unit word */
+  share_co2: "{n} kg CO₂",
+
+  /* home-truth: the ambient number's plain-word gloss + provenance —
+     the owner asked "what is it even showing, AQI or mixed index?"
+     and "verified with my live location it's WRONG". The number is a
+     PM2.5 point read in µg/m³; these lines say so and say where from */
+  homeAirWhat: "PM2.5 — fine dust per cubic metre of air, right now",
+  homeAirWhatFc: "expected PM2.5 per m³ of air — the forecast cell, not a live read",
+  homeAirWhatAqi: "PM2.5 dust per m³ of air · same air = AQI {a} on other apps",
+  homeAirNowCity: "the air near central Delhi",
+  homeAirForecast: "the air expected near you",
+  homeAirMeta: "read at your location · nearest live monitor ~{k} km away",
+  homeAirMetaPlace: "read near {p} · nearest live monitor ~{k} km away",
+  homeAirModel: "read at your location · no live monitors feeding the field right now",
+  homeAirPlaceModel: "read near {p} · no live monitors feeding the field right now",
+  homeAirEdge: "closest live monitors cover Delhi's core — this is their nearest read",
+  homeAirCityHint: "location is off or hasn't locked yet — turn it on for the air where you actually are",
+  homeDoseWhat: "µg = micrograms of fine dust your lungs took in — counted only when the app was with you",
+  /* the lungs' calendar sheet */
+  weekOpen: "open your lungs' calendar",
+  weekSheetSub: "tap a day to open its story",
+  /* "3/7" read as a date or a score — "of" is the counted-days form
+     a person says out loud (numbers-sweep) */
+  weekCountedFine: "{n} of {m} days counted",
+  weekDayDose: "you breathed {n} µg that day",
+  weekDayPct: "{p}% of your daily limit",
+  weekDayPctSugg: "{p}% of the suggested daily limit",
+  weekAheadTitle: "the air ahead",
+  weekAheadSub: "what the forecast says is coming — the days haven't happened yet",
+  weekAheadUnit: "µg/m³ — expected fine dust per cubic metre of air",
+  weekSheetFine: "only real readings land here — a blank day is a day the app wasn't with you, never a zero",
+
+  /* plan-flow pass (lane plan-flow) — felt mode-to-mode comparisons on
+     option rows, the never-started receipt's honest state, the vehicle
+     picker's before-line, the day strip's eyebrow + best-window caption */
+  compare_feltMore: "~{x}× more inhaled than {m}",
+  compare_moreVs: "+{n} µg more than {m}",
+
+  /* routes-delta pass (lane routes-delta) — the judges' number on the
+     chooser, priced honestly against the route a maps app would have
+     sent anyway: '−38% air · +6 min' when the detour buys air, 'same
+     air — take the fast one' when it doesn't, 'heavier — take the fast
+     one' when it costs both. 'worth it for {who}' only fires where the
+     drop clears a CPCB band or the dose cut is material — that honesty
+     is the feature. */
+  delta_airPct: "{p}% air",
+  delta_sameAir: "same air",
+  delta_minQuicker: "{m} min quicker",
+  delta_sameTime: "same time",
+  delta_worth: "worth it for {who}",
+  delta_takeFast: "take the fast one",
+  delta_defaultSaves: "the default · {p} air vs the purest — saves {m} min",
+  delta_defaultSlower: "the default · {p} air vs the purest — {m} min slower",
+  delta_defaultBoth: "the default — fastest AND the lighter air today",
+  delta_defaultCleanSlow: "the default · the lighter air, {m} min slower",
+  delta_selfLightest: "the default — fastest, and the lightest air today",
+  who_schoolRun: "the school run",
+  who_rider: "a delivery rider",
+  who_commute: "the commute",
+  who_rideIn: "the ride in",
+  who_walkThere: "the walk there",
+  who_visitor: "a visitor",
+  receipt_notStarted: "ended before it really started",
+  receipt_notStartedSub: "under 100 m — nothing counted",
+  veh_now: "right now: {v}",
+  veh_introTitle: "before you pick",
+  veh_introBody: "the smoke estimate fits what you actually take — a metro cabin, a bike, a car on Ring Road breathe different air on the same trip.",
+  veh_introHonest: "no sign-in, nothing leaves this phone. you can skip it — the Delhi fleet average is a decent guess.",
+  veh_start: "tell us what you're taking",
+  depart_airByHour: "air by hour",
+  depart_bestLine: "lightest around {time} — ≈ {n} µg",
+
+
+  /* jargon-sweep adds — plain-words frames for numbers that were leaking
+     engineering units or internals (docs/lanes/jargon-sweep-report.md) */
+  /** stagnation note's measure — the stillness factor as a percent of the
+      air's usual clearing pace (was raw m²/s) */
+  noteStagPct: "the air is barely moving — clearing at ~{p}% of its usual pace",
+  /** freshness chip's tight form — "{n} min old" so a bare "12 min" never
+      reads as a duration on the map/compare surface */
+  fieldAgeCompact: "{n} min old",
+  /** compact chip when no field landed — a word, not a bare "—" */
+  fieldAgeNone: "no reading",
+  /** the AQI tile's scale gloss — separates the index from µg/m³ species */
+  aqiScale: "0–500 scale",
+  /** the city hero's ambient reference — names itself so the inhaled-µg
+      hero figure and the ambient µg/m³ never read as one number */
+  /* scope the number: this is the CITY's mean — the home screen's
+     air number is the field at your spot; same word, different scope
+     (audit #16 'two air numbers') */
+  cityHeroAirNow: "city average now ~{n} µg/m³",
+  /** the ambient band word printed under the INHALED-µg hero figure —
+      scoped to the air so the dose number never wears an air band */
+  cityHeroAirFelt: "the air outside — {w}",
+  /** moves corridor count when the served window is a whole number of
+      days — "3 days" where "72 hours" used to sit */
+  movesCorridorNDays: "{n} {streetNoun} measured over the last {d} days",
+  cityBasisPrivacyDays: "a street shows up only after {k} different travellers crossed it in {d} days — nobody is singled out",
+  /** one-sided dose band upper bound — "up to {n}" when the low end
+      isn't served (was a bare "?") */
+  bandUpTo: "up to {n}",
+  /* the share-text composer — clauses compose so a missing estimate never
+     renders a bare "—" inside the sentence */
+  shareTripLine: "my trip {from} → {to}: {what} — estimated on Alive",
+  shareClauseBreathe: "I breathed about {dose} of smoke",
+  shareClausePutOut: "my ride put out {co2}",
+
+  /* the explore intent row + sheet — 'stays' and 'when to go out' as
+     query paths off the live engine */
+  exploreHeader: "air answers",
+  airIntentTitle: "the air map",
+  exploreStays: "stays — lightest air first",
+  explorePlay: "when's the air lightest to play",
+  exploreNearPlace: "near {place}",
+  exploreNearYou: "near you",
+  exploreAnchorNearYou: "near you",
+  exploreAnchorNear: "near {place}",
+  exploreStayTitle: "stays",
+  explorePlayTitle: "when to go out",
+  exploreReading: "reading the field…",
+  exploreNoStays: "no lodging rows within reach of the live field here",
+  exploreNoCurve: "no honest curve for this spot right now",
+  exploreOutOfArea: "outside the live field — Delhi/NCR only",
+  exploreLighter: "{n} µg lighter",
+  exploreHeavier: "{n} µg heavier",
+  exploreSameAir: "same air",
+  exploreNowChip: "now {n}",
+  exploreThinRead: "thin read — nearest monitor ~{n} km",
+  exploreThinReadNoKm: "thin read — no live monitor nearby",
+  exploreNowOnly: "forecast down — scored on live reads only",
+  exploreUnrated: "no honest read",
+  exploreBestChip: "lightest",
+  exploreWorstChip: "heaviest",
+  exploreNowMarker: "now",
+  exploreAvgLine: "24 h avg ~{n} µg/m³",
+  exploreTomorrow: "tomorrow",
+  exploreInDays: "in {n} days",
+  exploreWindowChip: "{start}–{end} {day}",
+  exploreStayDeltaBase: "vs your air now",
+
+  /* the dedicated stays/playtime components — warm surfaces, still
+     honest numbers only */
+  staysTitle: "where to stay",
+  staysDisclosure: "each number is the next-24 h air at that address",
+  staysWalkMin: "~{n} min walk",
+  staysKmAway: "{n} km away",
+  staysNowBasis: "now",
+  staysPinHint: "tap a stay to pin it on the air map",
+  playDisclosure: "rolling 24 h — now to this time tomorrow",
+  playBestLine: "lightest window — {w} · ~{n} µg",
+  playWorstLine: "heaviest — {w} · ~{n} µg",
+  exploreToday: "today",
+  doorStaysSub: "stays, lightest air first · near you",
+  doorPlaySub: "the next 24 h · near you",
+} as const;
+
+export type StringKey = keyof typeof en;
+
+/** the felt-word for a band index — colour's name in one word
+    (the minimal meaning layer: colour + one word, no glossary) */
+const FELT_BY_BAND = [
+  "felt_easy", "felt_fine", "felt_fair",
+  "felt_heavy", "felt_rough", "felt_harsh",
+] as const;
+export const feltKeyForBand = (idx: number | null): StringKey =>
+  FELT_BY_BAND[Math.max(0, Math.min(5, idx ?? 1))] as StringKey;
+
+const hi: Record<StringKey, string> = {
+  searchPlaceholder: "कहाँ जाना है?",
+  searchFromPlaceholder: "कहाँ से?",
+  locPickFailed: "आपकी लोकेशन नहीं मिली — कोई जगह लिखें",
+  backToExit: "बाहर निकलने के लिए फिर से back दबाएँ",
+  pickTooClose: "वो जगह बस {n} मीटर दूर है — यहीं समझिए, रास्ते की ज़रूरत नहीं",
+  chooseOnMap: "नक्शे पर चुनें",
+  yourLocation: "आपकी लोकेशन",
+  recents: "हाल की जगहें",
+  home: "घर",
+  work: "काम",
+  searching: "खोज रहे हैं…",
+  directions: "रास्ता दिखाएँ",
+  saveAsHome: "घर बनाएँ",
+  saveAsWork: "काम की जगह बनाएँ",
+  savedHome: "घर सेव हो गया",
+  savedWork: "काम की जगह सेव हो गई",
+  removeHome: "घर हटाएँ",
+  removeWork: "काम की जगह हटाएँ",
+  share: "शेयर करें",
+  shareAppBody: "जाने से पहले अपनी दिल्ली यात्राओं का धुआँ-हिसाब — Alive",
+  shareTripBody: "मेरी यात्रा {from} → {to}: मैंने करीब {dose} धुआँ साँस में लिया और गाड़ी ने {co2} छोड़ा — Alive पर अनुमानित",
+  outsideDelhi: "दिल्ली से बाहर — धुएँ का अंदाज़ा नहीं मिलेगा",
+  start: "शुरू करें",
+  /** the journey CTA — owner's plain words */
+  startJourney: "यात्रा शुरू करें",
+  end: "खत्म करें",
+  lightestOnBoth: "दोनों में सबसे हल्का",
+  lightestForYou: "आपके लिए सबसे हल्का",
+  lightestForDelhi: "दिल्ली के लिए सबसे हल्का",
+  reason_noEmis: "आपके लिए सबसे कम धुआँ — इस सेट में गाड़ी के धुएँ का अनुमान नहीं।",
+  reason_easyPick: "आपके लिए सबसे कम धुआँ, गाड़ी से भी सबसे कम — आसान चुनाव।",
+  reason_heavierDelhi: "आपके लिए सबसे कम धुआँ, लेकिन दिल्ली के लिए भारी।",
+  reason_lowestEmis: "विकल्पों में गाड़ी का धुआँ सबसे कम — लेकिन आप ज़्यादा साँस में लेंगे।",
+  reason_fairTrade: "सबसे हल्की साँस-गिनती से ~10% भीतर, और इन्हीं में गाड़ी का धुआँ भी सबसे हल्का — सही समझौता।",
+  reason_slowerSuffix: " सबसे तेज़ से {m} मिनट धीमा।",
+  ne_road: "सड़क की धूल, ब्रेक और टायर का घिसना — रिपोर्ट इसे 'नॉन-एग्ज़ॉस्ट' कहती हैं; अलग गिना गया, इंजन के धुएँ में कभी नहीं जोड़ा (दिल्ली की ट्रैफ़िक-धूल का ~86% यही किस्म — Sahu et al. 2020)",
+  ne_rail: "रेल — सड़क की धूल फिर नहीं उड़ती",
+  ne_zero: "ज़ीरो — इंजन नहीं",
+  mode_carAC: "कार (AC)",
+  mode_carOpen: "कार (खिड़कियाँ खुली)",
+  mode_bike: "बाइक / स्कूटर",
+  mode_bus: "बस",
+  mode_auto: "ऑटो-रिक्शा",
+  mode_metroWalk: "मेट्रो + पैदल",
+  mode_cycle: "साइकिल",
+  mode_walk: "पैदल",
+  mode_approx: " (करीब)",
+  mode_leastSmoke: " · सबसे कम धुआँ वाला रास्ता",
+  mode_leastSmokeAlt: " · सबसे कम धुआँ विकल्प {n}",
+  mode_altN: " · विकल्प {n}",
+  viaStreets: "{streets} होते हुए",
+  findingNewWay: "नया रास्ता ढूँढ रहे हैं…",
+  navNoGps: "लोकेशन नहीं — जहाँ से चले थे वहीं की हवा गिन रहे हैं",
+  navPaused: "सवारी के मीटर रुके — हवा गिनना जारी है",
+  navPausedMin: "~{n} मिनट रुके थे",
+  notifDenied: "नोटिफ़िकेशन बंद हैं — Settings खोलने के लिए टैप करें",
+  notifTooLate: "सबसे साफ़ समय शांत-समय में आता है — पिंग नहीं भेजा",
+  youreHere: "आप पहुँच गए।",
+  tripEnded: "यात्रा ख़त्म हुई।",
+  youBreathed: "आपने साँस में लिया",
+  done: "हो गया",
+  howWeGotThis: "यह नंबर कैसे निकला",
+  howWe_in: "साँस का धुआँ — इस यात्रा में ≈ {mid} µg (अंदाज़ {lo}–{hi})",
+  howWe_out: "गाड़ी से निकला धुआँ — {v}",
+  howWe_conf: "हमें कितना भरोसा: {c}",
+  howWe_cigs: "{n} सिगरेट",
+  howWe_none: "इस विकल्प के लिए कोई अनुमान नहीं",
+  howWe_fieldAge: "हवा की रीडिंग: {n} मिनट पुरानी",
+  vehicleQ1: "किससे जाते हैं?",
+  vehicleQ2: "फ़्यूल?",
+  vehicleQ3: "लगभग कब खरीदी थी?",
+  vehicleQ_back: "पीछे",
+  vehicleQ_skip: "छोड़ें — मामूली दिल्ली गाड़ी से चलेगा",
+  vehicleScooterBike: "स्कूटर / बाइक",
+  vehicleCar: "कार",
+  vehicleAuto: "ऑटो",
+  vehicleCab: "कैब",
+  vehicleBusMetro: "बस / मेट्रो",
+  vehicleCycleWalk: "साइकिल / पैदल",
+  fuelPetrol: "पेट्रोल",
+  fuelDiesel: "डीज़ल",
+  fuelCNG: "सीएनजी",
+  fuelElectric: "इलेक्ट्रिक",
+  yearBefore2010: "2010 से पहले",
+  year2010to2016: "2010–2016",
+  year2017to2019: "2017–2019",
+  year2020plus: "2020 या उसके बाद",
+  yearNotSure: "पता नहीं",
+  vehicleDone: "ठीक है — अब अनुमान आपकी सवारी से लगेगा।",
+  puc_title: "PUC सर्टिफ़िकेट (चाहें तो)",
+  puc_helper: "आपकी गाड़ी के प्रदूषण प्रमाणपत्र से — आपकी गाड़ी के धुएँ का अनुमान और सटीक करता है",
+  puc_bsQ: "प्रमाणपत्र पर कौन-सा BS स्टेज है?",
+  puc_bs3: "BS-III",
+  puc_bs4: "BS-IV",
+  puc_bs6: "BS-VI",
+  puc_co: "CO %",
+  puc_coHint: "कार्बन मोनोऑक्साइड — पेट्रोल / CNG",
+  puc_hc: "HC ppm",
+  puc_hcHint: "हाइड्रोकार्बन — पेट्रोल / CNG",
+  puc_smoke: "धुआँ %",
+  puc_smokeHint: "धुएँ की घनता — डीज़ल",
+  puc_badge: "PUC",
+  vehicle_car: "कार",
+  vehicle_auto: "ऑटो",
+  vehicle_bike: "बाइक / स्कूटर",
+  vehicle_bus: "बस",
+  vehicle_metro: "मेट्रो",
+  vehicle_walk: "पैदल",
+  vehicle_cycle: "साइकिल",
+  vehicle_year2017to2020: "2017–2020",
+  vehicle_year2021plus: "2021 या बाद",
+  vehicle_likeYours: "मामूली दिल्ली गाड़ी",
+  sidebarToday: "आज",
+  sidebarThisWeek: "इस हफ़्ते",
+  sidebarTrips: "यात्राएँ",
+  sidebarMyVehicle: "मेरी गाड़ी",
+  sidebarDelhiToday: "आज की दिल्ली",
+  delhiTodayOpen: "आज की हवा",
+  sidebarSavedPlaces: "सेव की गई जगहें",
+  sidebarSettings: "सेटिंग्स",
+  sidebarHowAliveWorks: "ALive कैसे काम करता है",
+  settingsVoice: "आवाज़",
+  settingsLanguage: "भाषा",
+  settingsUnits: "नाप",
+  settingsUnitsInfo: "दूरी km में — सिर्फ़ मीट्रिक",
+  settingsShareData: "गुमनाम यात्रा डेटा शेयर करें",
+  settingsDeleteData: "मेरा डेटा मिटाएँ",
+  settingsRate: "Alive को रेट करें",
+  settingsRateHint: "एक पंक्ति — क्या अच्छा लगा, क्या नहीं",
+  settingsRateNotePh: "ऐप के बारे में एक पंक्ति — मर्ज़ी है",
+  settingsRateSend: "भेजें",
+  settingsRateSending: "भेजा जा रहा है…",
+  settingsRateThanks: "शुक्रिया — इससे मदद मिलेगी",
+  settingsRateFail: "नहीं भेजा जा सका — कनेक्शन देखें और फिर कोशिश करें",
+  breathingHeavier: "यहाँ धुआँ भारी",
+  breathingLighter: "यहाँ धुआँ हल्का",
+  updatedMinAgo: "{n} मिनट पहले अपडेट हुआ",
+  dataFromModelOnly: "सैटेलाइट से अंदाज़ा — लाइव स्टेशन फिर जुड़ रहे हैं",
+  delhiTitle: "आज की दिल्ली",
+  cityLoading: "दिल्ली की हवा पढ़ रहे हैं…",
+  cityHeroLead: "दिल्ली की हवा का एक दिन",
+  cityHeroUnit: "सिगरेट के बराबर धुआँ",
+  cityHeroUnitUg: "आज साँस में लिया बारीक धुआँ (PM2.5) — µg",
+  cityHeroRange: "शायद {lo} से {hi} के बीच",
+  cityNoField: "अभी हवा की लाइव रीडिंग नहीं",
+  cityStale: "पुराना डेटा — फिर जुड़ रहा है",
+  citySpeciesTitle: "हवा में और क्या-क्या है",
+  citySpeciesNote: "धूल और गैसें — शहर का औसत µg/m³ में, हर ~15 मिनट में ताज़ा · US AQI वही नंबर है जो बाकी ऐप दिखाते हैं",
+  cityTypicalLine:
+    "इस समय के 10-वर्ष औसत {med} µg/m³ का {pct}%",
+  whoRef: "WHO सीमा {n}",
+  cityTypicalBelow: "इस समय के 10-वर्ष औसत ({med} µg/m³) से {p}% कम",
+  cityTypicalAbove: "इस समय के 10-वर्ष औसत ({med} µg/m³) से {p}% ज़्यादा",
+  cityForecastTitle: "अगले 12 घंटे",
+  cityForecastNote: "सैटेलाइट का अंदाज़ा, लाइव रीडिंग से जोड़ा, µg/m³",
+  cityForecastNow: "अभी",
+  cityStreetsTitle: "जिन सड़कों से यात्री गुज़रे",
+  cityEmptyStreets: "अभी दिखाने को कुछ नहीं — 3+ यात्रियों के 3 दिन में गुज़रने पर सड़क दिखती है",
+  cityNoOwnTrips: "अभी तक कोई यात्रा नहीं — अपना दिन जिएँ, हम इसे यहाँ गिनेंगे",
+  cityNoOwnTripsSub: "यहाँ की सड़कें और आँकड़े दूसरों की साझा की गई यात्राओं से गिने जाते हैं",
+  cityHeavier: "ज़्यादा धुआँ",
+  cityLighter: "कम धुआँ",
+  cityTrips: "{n} {tripNoun}",
+  /* "why tonight" — drivers[].kind से rebuild (server/v2/why.py:_line) */
+  whyNoDriver: "यहाँ का सामान्य धुआँ — कोई एक वजह सामने नहीं",
+  whyJoin: " और ",
+  whyBit_stubble: "पराली का धुआँ {dir} की हवा से बहता आ रहा है",
+  whyBit_stagnation: "हवा ज़रा भी नहीं चल रही — दिन का धुआँ शहर के ऊपर ठहरा है",
+  whyBit_trendRising: "धुआँ बढ़ता ही जा रहा है",
+  whyBit_trendFalling: "पहले के पीक से अब थोड़ा हल्का",
+  /* हवा की दिशा — {dir} के लिए दिशा-शब्द */
+  whyDir_N: "उत्तर",
+  whyDir_NE: "उत्तर-पूर्व",
+  whyDir_E: "पूर्व",
+  whyDir_SE: "दक्षिण-पूर्व",
+  whyDir_S: "दक्षिण",
+  whyDir_SW: "दक्षिण-पश्चिम",
+  whyDir_W: "पश्चिम",
+  whyDir_NW: "उत्तर-पश्चिम",
+  movesModeOther: "बाक़ी तरीक़े",
+  movesTitle: "दिल्ली कैसे चलती है",
+  movesWindowDays: "पिछले {d} दिन",
+  movesNotEnough: "अभी साझा यात्राएँ कम हैं — {d} दिन में {k}+ यात्री एक सड़क से गुज़रें तो दिल्ली की चाल दिखती है",
+  movesSuppressed: "+{n} यात्राएँ निजी रहीं — उन सड़कों से {k} से कम यात्री गुज़रे",
+  movesCorridorN: "{h} घंटे में {n} {streetNoun} नापी गईं",
+  streetNounOne: "सड़क",
+  streetNounMany: "सड़कें",
+  movesTypical: "आम यात्रा",
+  cityUnnamed: "एक सड़क जिसका नाम नहीं जानते",
+  cityTravellersTitle: "ALive यात्रियों ने आज क्या किया",
+  cityTodayUtc: "utc दिन · 05:30 ist पर रीसेट",
+  cityTravellersLine: "{trips} {tripNoun} · {km} किमी · ≈{cigs} सिगरेट साँस में · ≈{kg} किलो छोड़ा",
+  cityTravellersLineUg: "{trips} {tripNoun} · {km} किमी · {ug} µg साँस में · ≈{kg} किलो छोड़ा",
+  tripNounOne: "यात्रा",
+  tripNounMany: "यात्राएँ",
+  citySwitched: "{n} {tripNoun} हल्के रास्ते पर",
+  cityWhyTitle: "यह अनुमान क्यों है",
+  cityBasisModel: "दिल्ली के ऊपर सैटेलाइट + मौसम से अंदाज़ा, हर ~15 मिनट में ताज़ा",
+  cityBasisStations: "{n} लाइव स्टेशन भी गिने गए",
+  cityBasisNoStations: "अभी कोई लाइव स्टेशन नहीं — सिर्फ़ सैटेलाइट से अंदाज़ा",
+  cityBasisPm25: "बारीक धुआँ (PM2.5) {lo}–{hi} µg/m³ — सिगरेट-गिनती के पीछे का आँकड़ा",
+  cityBasisPm25Ug: "बारीक धुआँ (PM2.5) {lo}–{hi} µg/m³ — ऊपर के आँकड़े का असली आधार",
+  cityBasisBand: "रेंज ईमानदार है — इसमें स्टेशन की चूक और मोहल्लों का फ़र्क़ दोनों है",
+  cityBasisPrivacy: "कोई सड़क तभी दिखती है जब {h} घंटे में {k} अलग यात्री उससे गुज़रें — कोई अलग से पहचाना नहीं जा सकता",
+  cityRetry: "फिर कोशिश करें",
+  layers: "लेयर",
+  settingsAbout: "ऐप के बारे में",
+  settingsGeneral: "भाषा और डिस्प्ले",
+  settingsPrivacy: "निजता और शेयरिंग",
+  settingsBriefHint: "अगली सुबह एक पिंग — दिन की सबसे साफ़ घड़ी",
+  settingsClose: "बंद करें",
+  settingsDataSources: "हवा: सैटेलाइट से अंदाज़ा + जुड़े हुए लाइव स्टेशन",
+  settingsDepartRemind: "साफ़-समय सूचनाएँ",
+  settingsDepartRemindHint: "आपकी यात्रा का हल्का समय मिले तो रिमाइंडर सुझाते हैं — बजता है सिर्फ़ आपके टैप पर",
+  /* हवा के अलर्ट — events इंजन (store/events.ts) की टॉगल */
+  settingsAlerts: "हवा के अलर्ट",
+  settingsAlertsHint: "नीचे के चारों अलर्ट का मास्टर स्विच — सिर्फ़ असली घटनाएँ · ऐप खुला हो तभी जाँच",
+  settingsAlertsFires: "धुआँ और आग",
+  settingsAlertsFiresHint: "उत्तर-पश्चिम की बेल्ट में आग बढ़े तो",
+  settingsAlertsBand: "हवा का बिगड़ना",
+  settingsAlertsBandHint: "हवा खराब दर्जे में उतरे, गंभीर दिन, या हवा ठहरी हो तो",
+  settingsAlertsWindows: "साफ़ घड़ी",
+  settingsAlertsWindowsHint: "दिन की सबसे हल्की घड़ी खुलने पर + शाम को कल की हवा",
+  settingsAlertsReflect: "सड़क पर आपका दिन",
+  settingsAlertsReflectHint: "कल की यात्राएँ, दिन में एक बार — आपकी अपनी गिनती से",
+  settingsNotifBlocked: "फ़ोन की सेटिंग में नोटिफ़िकेशन बंद हैं — इज़ाज़त देने के लिए टैप करें",
+  settingsDevBuild: "डेव बिल्ड",
+  settingsHowNumbers: "ये नंबर कैसे बनते हैं",
+  settingsHowNumbersBody: "साँस का नंबर सड़क-स्तर के हवा-नक्शे से आता है — दिल्ली के मॉनिटरिंग स्टेशन + सैटेलाइट मौसम, हर ~15 मिनट में ताज़ा। यह हमेशा एक रेंज है, नकली-सटीक संख्या नहीं। · 1 सिगरेट ≈ 316 µg PM2.5 साँस में (बर्कले अर्थ नियम)। · आपकी गाड़ी का धुआँ उस तरह की गाड़ियों के प्रकाशित माप से (ARAI / ICCT सड़क माप) — जैसे 1.1–1.6 kg CO2। · आपका फ़ोन हवा नहीं नापता — वह बस उस नक्शे से गुज़रता है।",
+  settingsHowNumbersBodyPlain: "साँस का नंबर सड़क-स्तर के हवा-नक्शे से आता है — दिल्ली के मॉनिटरिंग स्टेशन + सैटेलाइट मौसम, हर ~15 मिनट में ताज़ा। यह हमेशा एक रेंज है, नकली-सटीक संख्या नहीं। · आपकी गाड़ी का धुआँ उस तरह की गाड़ियों के प्रकाशित माप से (ARAI / ICCT सड़क माप) — जैसे 1.1–1.6 kg CO2। · आपका फ़ोन हवा नहीं नापता — वह बस उस नक्शे से गुज़रता है।",
+  settingsNearestInstrument: "अभी: एक असली हवा-स्टेशन ने आपसे ~{n} किमी दूर पढ़ा — यही नक्शे की ईमानदारी है, मॉडल का अंदाज़ा नहीं।",
+  settingsNotifications: "सूचनाएँ",
+  settingsShowCig: "सिगरेट-तुलना दिखाएँ",
+  settingsShowCigHint: "डिफ़ॉल्ट से बंद — साँस का नंबर µg में ही दिखता है",
+  doseUg: "{n} µg",
+  unitUg: "µg (माइक्रोग्राम)",
+  hourTick: "+{n}घं",
+  hourTickTilde: "~{n}घं",
+  cityTag: "दिल्ली",
+  srcStations: "लाइव स्टेशन",
+  srcModel: "सैटेलाइट अंदाज़ा",
+  srcNone: "कोई ज़रिया नहीं",
+  settingsShareExplain: "यात्राएँ गुमनाम साझा करें ताकि दिल्ली अपनी सड़कें देखे — निजी कुछ भी इस फ़ोन से कभी नहीं जाता",
+  settingsStoreCells: "सिर्फ़ सड़क-ग्रिड की गिनती में रखा जाता है — कच्चा रास्ता फेंक दिया जाता है",
+  settingsStoreK: "कोई सड़क तभी दिखती है जब 3+ अलग डिवाइस उससे गुज़र चुके हों",
+  settingsStoreNoAccount: "न नाम, न फ़ोन, न अकाउंट — कभी नहीं",
+  settingsStoreOff: "बंद = कुछ भी अपलोड नहीं होता; आपके अपने आँकड़े इसी फ़ोन पर चलते रहते हैं",
+  settingsStoreThin: "करीब हर 100 मी सड़क पर एक पॉइंट, ~11 मी तक गोल करके",
+  settingsStoreToken: "एक बेनेमी आईडी — आपसे कभी नहीं जुड़ती; हर ~30 दिन में ख़ुद बदल जाती है, या डेटा मिटाने पर",
+  settingsStoreTrim: "यात्रा के सिरे छिपे रहते हैं — पहले और आख़िरी 300 मी स्टोर होने से पहले कट जाते हैं",
+  settingsVehicleLike: "अनुमान इसी से लगते हैं",
+  settingsVersion: "वर्ज़न",
+  settingsWhatWeStore: "हम क्या रखते हैं",
+  layerFires: "आग",
+  layerBlackspots: "एक्सीडेंट स्पॉट",
+  layerCorridors: "सड़कें जिनसे यात्री गुज़रे",
+  aboutMap: "इस नक्शे के बारे में",
+  breathed: "साँस में लिया",
+  breathedOnTrips: "यात्राओं में लिया",
+  putOut: "गाड़ी ने छोड़ा",
+  lessThanYesterday: "कल से {p}% कम",
+  moreThanYesterday: "कल से {p}% ज़्यादा",
+  tripsEmpty: "अभी तक कोई यात्रा नहीं",
+  notSet: "सेट नहीं है",
+  notify_departure_title: "हल्की हवा — अब",
+  notify_departure_body: "यही यात्रा — धुआँदार घंटों से ~{p}% कम धुआँ",
+  notify_brief_title: "आज दिल्ली की सबसे साफ़ घड़ी",
+  notify_brief_body: "{win} — आज हवा ~{p}% हल्की रहने का अंदाज़ा।",
+  notify_chan_departure: "हल्की-हवा सूचनाएँ",
+  notify_chan_brief: "सुबह की हवा-जानकारी",
+  notify_chan_events: "हवा के अलर्ट",
+  /* air-event पिंग — शीर्षक महसूस होने वाली पंक्ति, body = असली संख्या + संदर्भ */
+  notifyFiresTitle: "दिल्ली के उत्तर-पश्चिम में धुआँ बढ़ रहा है",
+  notifyFiresBody: "बेल्ट में आग {a} → {b} — हवा इसे इधर ला रही है{note}",
+  notifyFiresNcTitle: "बेल्ट में आग बढ़ी",
+  notifyFiresNcBody: "उत्तर-पश्चिम में आग {a} → {b} — अभी हवा इसे दिल्ली नहीं ला रही{note}",
+  notifyBandTitle: "हवा अभी {word} हुई",
+  notifyBandBody: "आसपास ~{n} µg/m³ — पिछली रीडिंग में {was} थी{note}",
+  notifyWindowTitle: "साफ़ घड़ी आ रही है",
+  notifyWindowBody: "आज की सबसे हल्की हवा ~{win} · करीब {n} µg/m³",
+  notifyStagTitle: "हवा शहर के ऊपर ठहरी है",
+  notifyStagBody: "हवा {f}× ज़्यादा ठहरी — दिन का धुआँ रुका रहेगा{note}",
+  notifySevereTitle: "दिल्ली में आज बुरी हवा",
+  notifySevereBody: "आज की हवा GRAP स्टेज {s}/4 जैसी है — हमारा अनुमान, आधिकारिक घोषणा नहीं; बाहर मास्क सही रहेगा{note}",
+  notifyCauseSmoke: " — {dir} हवा पर आता पराली-धुआँ",
+  notifyCauseStag: " — हवा ठहरी है, धुआँ हटने वाला नहीं",
+  notifyCauseSmokeStag: " — {dir} हवा पर पराली-धुआँ, और ठहरी हवा साथ में",
+  notifyTrendUpTitle: "शहर की हवा भारी हो रही है",
+  notifyTrendUpBody: "{h} घंटे में {a} → {b} µg/m³{cause}{note}",
+  notifyTrendDownTitle: "शहर की हवा हल्की हो रही है",
+  notifyTrendDownBody: "{h} घंटे में {a} → {b} µg/m³{cause} — पहले के पीक से उतरती{note}",
+  notifyGrapUpTitle: "दिन की हवा एक GRAP स्टेप ऊपर गई",
+  notifyGrapUpBody: "आज की हवा स्टेज {s}/4 जैसी है (AQI ~{a}) — हमारा अनुमान, आधिकारिक घोषणा नहीं{note}",
+  notifyGrapDownTitle: "दिन की हवा एक GRAP स्टेप नीचे आई",
+  notifyGrapDownBody: "आज की हवा स्टेज {s}/4 जैसी है (AQI ~{a}) — फिर भी हमारा ही अनुमान{note}",
+  notifyGrapClearTitle: "दिन की हवा GRAP नक्शे से बाहर",
+  notifyGrapClearBody: "आज की हवा किसी स्टेज जैसी नहीं (AQI ~{a}) — फिर भी हमारा ही अनुमान{note}",
+  notifyOutlookHeavyTitle: "कल की हवा भारी दिख रही है",
+  notifyOutlookHeavyBody: "औसत ~{b} µg/m³ बनाम आज ~{a}{cause}{note}",
+  notifyOutlookLightTitle: "कल की हवा हल्की दिख रही है",
+  notifyOutlookLightBody: "औसत ~{b} µg/m³ बनाम आज ~{a}{win}{note}",
+  notifyOutlookWin: " — सबसे हल्का {w} के आसपास",
+  notifyReflectTitle: "कल सड़क पर",
+  notifyReflectBody: "{n} {tr} · करीब {u} µg साँस में{cmp}",
+  notifyReflectCmpHeavy: " — {d} ({u} µg) से ज़्यादा",
+  notifyReflectCmpLight: " — {d} ({u} µg) से कम",
+  notifyReflectCmpSame: " — {d} ({u} µg) के बराबर",
+  /* पराली/समाचार पंक्ति — हर संख्या नापी गई है (FIRMS आग, हवा,
+     वेंटिलेशन, दर्ज शहर-औसत); कोई समाचार-फ़ीड नहीं */
+  noteBelt: "पंजाब–हरियाणा बेल्ट में {n} आगें",
+  noteBeltUp: ", ~{h} घं में {a} से बढ़कर",
+  noteBeltDown: ", ~{h} घं में {a} से घटकर",
+  noteCarryYes: " — {dir} हवा {kmh} km/h से इसे दिल्ली की ओर ला रही है",
+  noteCarryYesNoKmh: " — {dir} हवा इसे दिल्ली की ओर ला रही है",
+  noteCarryNo: " — हवा इसे हमसे दूर ले जा रही है",
+  noteCarryUnknown: " — हवा की दिशा पता नहीं, आएगा या नहीं कह नहीं सकते",
+  noteBeltQuiet: "बेल्ट शांत — {n} आगें जल रही हैं",
+  noteBeltQuiet0: "बेल्ट अभी शांत है",
+  noteStagVc: "हवा मुश्किल से घुल रही — वेंटिलेशन {vc} m²/s बनाम ~3,000 सामान्य", /* superseded by noteStagPct (jargon-sweep) */
+  noteStag: "हवा ज़रा भी नहीं घूम रही",
+  noteTrendUp: "शहर का औसत {a} → {b} µg/m³ चढ़ा, ~{h} घं में",
+  noteTrendDown: "शहर का औसत {a} → {b} µg/m³ घटा, ~{h} घं में",
+  noteTailInflow: "आता धुआँ ठहरी हवा में फँसा",
+  noteTailClimb: "चढ़ाई जारी है",
+  noteBackground: "यहाँ का सामान्य — अभी कोई बड़ी वजह नहीं",
+  noteMeasured: "मापा हुआ, रिपोर्ट नहीं",
+  // trips ledger screen
+  ledgerDeleteAll: "सारी यात्राएँ मिटाएँ",
+  ledgerDeleteAllBody: "सेव की गई हर यात्रा इस फ़ोन से हट जाएगी — वापस नहीं आएगी",
+  ledgerDeleteAllTitle: "सारी यात्राएँ मिटाएँ?",
+  ledgerDeleteTrip: "यह यात्रा मिटाएँ",
+  ledgerAllTime: "सभी सेव की गई यात्राएँ",
+  ledgerDonated: "गुमनाम साझा किया",
+  ledgerEmptyHint: "यात्रा पूरी करें — उसके धुएँ के आँकड़े यहाँ सेव होंगे",
+  ledgerEstNote: "अनुमान — ईमानदार रेंज, नकली-सटीकता नहीं",
+  ledgerLast7: "पिछले 7 दिन",
+  ledgerShowTrip: "यात्रा की जानकारी देखें",
+  ledgerYesterday: "कल",
+  ledgerPrivacy: "यात्राएँ आपके फ़ोन पर ही रहती हैं",
+  tripsBreathed: "आपने साँस में लिया धुआँ",
+  tripsCigs: "{n} सिगरेट",
+  tripsCount: "{n} यात्राएँ",
+  tripsCountOne: "{n} यात्रा",
+  tripsDoseBand: "करीब {lo}–{hi} µg",
+  tripsDoseDetail: "करीब {n} µg धुआँ आपने साँस में लिया",
+  tripsOutDetail: "करीब {n} किलो छोड़ा",
+  tripsPutOut: "आपकी गाड़ी ने छोड़ा धुआँ",
+  tripsSavedVs: "सबसे धुआँदार रास्ते से {n} सिगरेट कम",
+  tripsSavedVsUg: "सबसे धुआँदार रास्ते से {n} µg कम",
+  setCurrentDest: "अभी की मंज़िल सेव करें",
+  setPlace: "जोड़ें",
+  onLabel: "चालू",
+  offLabel: "बंद",
+  unitsKm: "किमी",
+  unitsM: "मी",
+  unitsKg: "किलो",
+  settingsUnitsHint: "सिर्फ़ मीट्रिक",
+  morningAlert: "सुबह का हवा-अलर्ट",
+  shareDataHint: "चालू — एक टैप से कभी भी बंद",
+  shareDataHintOff: "बंद — कुछ भी इस फ़ोन से बाहर नहीं",
+  deleteConfirmTitle: "मेरा डेटा मिटाएँ?",
+  deleteConfirmBody: "आपकी यात्राएँ, सेटिंग्स और गुमनाम आईडी इस फ़ोन से हट जाएँगे",
+  deleteConfirmYes: "मिटाएँ",
+  cancel: "रद्द करें",
+  consent_title: "एक चुनाव — और वो आपका है।",
+  consent_body: "आपकी साँस का धुआँ और आपके रास्ते इसी फ़ोन पर रहते हैं। शेयर करने से सिर्फ़ गुमनाम, कटी हुई यात्राएँ जाती हैं — इसी से दिल्ली का हवा-नक्शा अपनी सड़कें देखता है। दोनों हालत में हर फ़ीचर चलता है।",
+  consent_shareBtn: "यात्राएँ गुमनाम साझा करें",
+  consent_shareSub: "इससे दिल्ली अपनी हवा सड़क-दर-सड़क देखती है",
+  consent_keepBtn: "सब कुछ मेरे फ़ोन पर रखें",
+  consent_keepSub: "कुछ अपलोड नहीं होता — बाद में चालू कर सकते हैं",
+  consent_footnote: "स्किप करना यानी सब कुछ इसी फ़ोन पर — दोनों ही हालत में सेटिंग्स से एक टैप में बदलें।",
+  howAliveBody: "ALive आपकी मंज़िल तक के हर रास्ते दिखाता है — मेट्रो, कार, ऑटो, पैदल। हर एक के लिए यह अनुमान लगाता है कि रास्ते में आप कितना धुआँ साँस में लेंगे — स्टेशनों, सैटेलाइट और लोगों की साझा यात्राओं से बने लाइव सड़क-स्तर हवा-नक्शे से। यह यह भी बताता है कि आपकी गाड़ी कितना धुआँ छोड़ती है, उस तरह की गाड़ियों के प्रकाशित माप से। आपकी यात्राएँ गुमनाम रहती हैं और शहर को उसकी हवा सड़क-दर-सड़क दिखाती हैं। संख्याएँ ईमानदार रेंज हैं, नकली-सटीकता नहीं।",
+  fromLabel: "शुरुआत",
+  /** the two-section where-to entry — 'To' row label */
+  fieldTo: "मंज़िल",
+  changeLabel: "बदलें",
+  editingLabel: "बदल रहे हैं",
+  fromHint: "शुरुआत की जगह बदलने के लिए लिखें",
+  noResults: "कुछ नहीं मिला — बड़ा नाम लिखकर देखें",
+  searchingLabel: "खोज रहे हैं",
+  checkingRoutes: "आपके लिए सबसे साफ़ रास्ता खोज रहे हैं…",
+  compare_refining: "पहले सबसे कम धुएँ वाली सड़कें · मेट्रो, बस वग़ैरह जोड़ रहे हैं…",
+  degradedEngine: "सबसे कम धुएँ वाले रास्ते अभी नहीं मिल रहे — जो लाइव है वही दिखा रहे हैं",
+  degradedTransit: "मेट्रो और बस के विकल्प अभी नहीं मिल रहे",
+  degradedMotor: "कार, ऑटो और बाइक के विकल्प अभी नहीं मिल रहे",
+  degradedSlow: "पैदल और साइकिल के विकल्प अभी नहीं मिल रहे",
+  degradedGeneric: "कुछ रास्ता विकल्प अभी नहीं मिल रहे",
+  noRoutes: "दोनों जगहों के बीच कोई रास्ता नहीं मिला",
+  leaveAtBreatheLess: "{time} → ~{n}% कम धुआँ — याद दिलाएँ",
+  departTomorrow: "कल",
+  wellPing: "हम याद दिला देंगे",
+  turnByTurn: "मोड़-दर-मोड़",
+  settingsVoiceHint: "मोड़-दर-मोड़ निर्देश आवाज़ में",
+  hideTurns: "मोड़ छिपाएँ",
+  roadModesOnly: "मोड़-दर-मोड़ रास्ता सड़क वाली गाड़ियों के लिए दिखता है",
+  followRoute: "नक्शे की लकीर के साथ चलें",
+  boardMetro: "{a} पर चढ़ें → {b} पर उतरें",
+  arriveAt: "{t} तक पहुँचें",
+  daypart_am: "पूर्वाह्न",
+  daypart_pm: "अपराह्न",
+  homeGreetMorning: "सुप्रभात",
+  homeGreetAfternoon: "नमस्कार",
+  homeGreetEvening: "शुभ संध्या",
+  homeGreetNight: "देर रात",
+  offline: "सर्वर से संपर्क नहीं — फिर कोशिश हो रही है",
+  offlineStale: "ऑफ़लाइन — पिछली ज्ञात हवा दिख रही है",
+  offlinePending: "{n} भेजने को बाकी",
+  onb_next: "आगे",
+  onb_skip: "छोड़ें",
+  onb_whatTitle: "दिल्ली की हर यात्रा की एक हवा-कीमत है।",
+  onb_airKicker: "दिल्ली · अभी",
+  onb_airLine: "आप उसे देख नहीं सकते। फिर भी साँस में लेते हैं।",
+  onb_arcLineSearch: "जाने से पहले धुआँ देखें",
+  onb_arcLineDose: "जाते-जाते आपकी साँस का धुआँ गिनता है",
+  onb_arcLineReceipt: "पहुँचने पर उसकी रसीद",
+  onb_phoneTitle: "निजी कुछ भी इस फ़ोन से नहीं जाता।",
+  onb_phoneBody: "ना खाता, ना नाम — शेयर की गई यात्राओं के दोनों सिरे कट जाते हैं।",
+  onb_kLabel: "सड़क तभी दिखती है जब इतने अलग डिवाइस उससे गुज़रें",
+  onb_locTitle: "एक इजाज़त — आप कहाँ हैं।",
+  onb_locBody: "ALive आपकी सड़क की हवा पढ़ता है और नक्शे को आपके साथ चलाता है। लोकेशन इसी फ़ोन पर रहती है।",
+  onb_locBtn: "लोकेशन चालू करें",
+  onb_locLater: "अभी नहीं",
+  onb_leaving: "एक क्षण…",
+  onb_pageOf: "पेज {n}, कुल {m}",
+  receiptSaved: "सबसे धुआँदार रास्ता {n} सिगरेट ज़्यादा देता",
+  receiptSavedUg: "सबसे धुआँदार रास्ता {n} µg ज़्यादा देता",
+  minUnit: "मिनट",
+  compare_pick: "हमारी पसंद",
+  compare_yours: "हमेशा वाला रास्ता",
+  compare_safest: "सबसे कम धुआँ",
+  chooser_best: "सबसे साफ़ और सबसे तेज़",
+  chooser_lessVsFastest: "सबसे साफ़ · सबसे तेज़ से {n}% कम धुआँ",
+  chooser_cleanest: "सबसे साफ़ रास्ता",
+  chooser_fastest: "सबसे तेज़ रास्ता",
+  compare_smokeIn: "आपके साँस का धुआँ",
+  compare_smokeOut: "आपकी गाड़ी का धुआँ",
+  plan_failed: "रास्ते नहीं खुल पाए — कनेक्शन जाँचें",
+  plan_failed_server: "सर्वर रास्ता नहीं बना पाया",
+  plan_retry: "फिर कोशिश करें",
+  plan_outside_title: "यह यात्रा दिल्ली NCR से बाहर है",
+  plan_outside_body: "Alive सिर्फ़ दिल्ली NCR की हवा नापता है — यह यात्रा हवा-नक्शे से बाहर जाती है, इसलिए धुएँ का ईमानदार हिसाब नहीं बन सकता।",
+  plan_outside_cta: "यात्रा बदलें",
+  plan_coverage_note: "धुएँ का हिसाब सिर्फ़ NCR वाले हिस्से का है",
+  howWe_coverage: "रास्ता धुएँ-नक्शे से बाहर जाता है — सिर्फ़ ढके हुए {pct}% की गिनती हुई, अनुमान नहीं लगाया गया",
+  nav_breathe: "आपके साँस का धुआँ",
+  nav_putOut: "आपकी गाड़ी का धुआँ",
+  nav_cigs: "{n} सिगरेट",
+  cigsTrace: "सिगरेट का नामो-निशान",
+  nav_kg: "{n} किलो",
+  nav_g: "{n} ग्राम",
+  nav_left: "{min} मिनट · {km} किमी बाकी",
+  /** ज़्यादा करीब की दूरी मीटर में — "350 मी", "0.35" जैसा बिना-शब्द
+      दशमलव नहीं (jargon-sweep) */
+  nav_left_m: "{min} मिनट · {m} मी बाकी",
+  nav_recenter: "नक्शा केंद्र में लाएँ",
+  nav_in: "{d} मी में — {i}",
+  nav_now: "अब — {i}",
+  nav_noSignal: "आपकी लोकेशन ढूँढ रहे हैं…",
+  strip_unavailable: "लाइव हवा-अपडेट नहीं मिला — काउंटर रुके हैं",
+  receipt_breathed: "आपने {n} सिगरेट के बराबर धुआँ साँस में लिया",
+  receipt_lessVs: "{m} की तुलना में ~{n}× कम धुआँ",
+  receipt_lessVsWalk: "पैदल की तुलना में ~{n}× कम धुआँ",
+  receipt_moreVs: "{m} से {n}× ज़्यादा",
+  receipt_putOutKg: "आपकी गाड़ी ने {n} किलो छोड़ा",
+  receipt_altPutOut: "{m} ने {n} किलो छोड़ा होता",
+  receipt_estLike: "इस तरह की सवारी का अनुमान",
+  receipt_pmBand: "जिसमें {lo}–{hi} ग्राम बारीक धूल (PM2.5)",
+  receipt_pmBandOne: "जिसमें {x} ग्राम बारीक धूल (PM2.5)",
+  receipt_pmBandTiny: "जिसमें बारीक धूल (PM2.5) का नामो-निशान",
+  receipt_donated: "दिल्ली के हवा-नक्शे में गुमनाम रूप से जुड़ा",
+  receipt_queued: "सेव हो गया — नेटवर्क लौटने पर भेजा जाएगा",
+  receipt_private: "सिर्फ़ इस फ़ोन पर रखा गया",
+  receiptPaused: "सवारी के मीटर ~{n} मिनट रुके — हवा गिनना चलता रहा",
+  receipt_noDose: "इस यात्रा के लिए धुएँ का अंदाज़ा नहीं",
+  receipt_lessVsWorst: "सबसे धुआँदार विकल्प से ~{n}× कम धुआँ",
+  receipt_putOutNone: "आपकी गाड़ी ने कुछ नहीं छोड़ा — बिल्कुल धुआँ नहीं",
+  receipt_estShort: "करीब",
+  receipt_fracWalk: "पैदल की तुलना में लगभग {f} धुआँ",
+  receipt_fracVs: "{m} की तुलना में लगभग {f} धुआँ",
+  receipt_fracWorst: "सबसे धुआँदार विकल्प की तुलना में लगभग {f} धुआँ",
+  departNow: "अब",
+  receipt_distance: "दूरी",
+  receipt_duration: "समय",
+  // turn-step localisation — road names stay as named (Latin)
+  navStep_onto: " {r} पर",
+  navStep_uturn: "यू-टर्न लें",
+  navStep_headDir: "{r} पर {d} की ओर चलें",
+  navStep_headOut: "निकलें",
+  navStep_arrive: "आप पहुँच जाएँगे",
+  navStep_roundabout: "गोल चक्कर पर {o} निकास लें",
+  navStep_ramp: "रैंप लें",
+  navStep_exitRamp: "निकास लें",
+  navStep_mergeOn: "{r} में मिलें",
+  navStep_merge: "मिलें",
+  navStep_continueOn: "{r} पर चलते रहें",
+  navStep_continueStraight: "सीधे चलते रहें",
+  navStep_continue: "चलते रहें",
+  navStep_keep: "{s} रहें",
+  navStep_bear: "हल्का {d} मुड़ें",
+  navStep_turn: "{d} मुड़ें",
+  conf_low: "कम",
+  conf_medium: "ठीक-ठाक",
+  conf_high: "पूरा",
+  emit_est: "अनुमानित",
+  emit_innerFleet: "{f} {c}, दिल्ली औसत — {b}",
+  emit_innerYear: "{y} {f} {c}, {b}",
+  emit_innerEv: "इलेक्ट्रिक {c}, ग्रिड बिजली सहित",
+  emit_perPax: ", हर यात्री ({o} सवारी)",
+  emit_pucTuned: " — आपके PUC प्रमाणपत्र पर ट्यून किया",
+  emit_basisPerVkm: "गाड़ी के प्रति किमी",
+  emit_basisPerPaxKm: "यात्री के प्रति किमी",
+  emit_metroShort: "मेट्रो यात्री के प्रति किमी (बिजली सहित)",
+  emit_metroLong: "मेट्रो यात्री के प्रति किमी, बिजली सहित (11–25 g CO2e प्रति यात्री-किमी — DMRC + CEA ग्रिड फ़ैक्टर)",
+  doseNote_engineDown: "धुएँ-अनुमान नहीं मिल रहा",
+  doseNote_engineError: "धुएँ-अनुमान में गड़बड़ी",
+  doseNote_fieldDown: "हवा-नक्शा नहीं मिल रहा",
+  receipt_doseUgBand: "करीब {lo}–{hi} µg",
+  receipt_save: "सेव करें",
+  resultsHeader: "नतीजे",
+  searchSubstCategory: "नज़दीकी विकल्प — \"{name}\" नहीं मिला",
+  searchSubstArea: "सिर्फ़ इलाक़ा — \"{unit}\" नहीं मिला",
+  shopsHere: "यहाँ की दुकानें और जगहें ({n})",
+  noPlaceFound: "कोई जगह नहीं मिली — कोई लैंडमार्क लिखकर देखें",
+  emptySearchHint: "जगह या लैंडमार्क लिखें — या नक्शे पर चुनें",
+  mapPickHint: "नक्शे पर टैप करके पिन लगाएँ",
+  mapPickChecking: "यह जगह जाँच रहे हैं…",
+  airmapTitle: "हवा का नक्शा",
+  airmapLine: "जितना लाल, उतनी ख़राब हवा अभी",
+  tapHint: "कहीं भी टैप करें — उस जगह की हवा बताएगी",
+  tapReading: "पढ़ रहे हैं…",
+  tapOutside: "हवा के नक्शे से बाहर — यहाँ रीडिंग नहीं",
+  tapHere: "यह जगह",
+  tapAqiA11y: "{place} की हवा: {n} µg/m³ — {band}",
+  placeCurrentLocation: "आपकी लोकेशन",
+  placeCentralDelhi: "सेंट्रल दिल्ली",
+  locating: "आपकी लोकेशन ढूँढ रहे हैं…",
+  placeNearLocality: "{place} के पास",
+  placeLastKnown: "पिछली जानी लोकेशन · {m} मिनट पुरानी",
+  placeSubstCat: "वो जगह नक्शे पर नहीं है — सबसे नज़दीकी {kind} दिखाया",
+  placeSubstArea: "वो हिस्सा नक्शे पर नहीं है — यह {area} है",
+  placeNearAnchor: "{anchor} के पास",
+  placeAirNow: "वहाँ अभी ~{n} µg/m³",
+  placeAirNone: "वहाँ का फ़ील्ड रीड अभी नहीं है",
+  routeBubble: "{m} मिनट · ~{d} µg",
+  a11yMenu: "मेन्यू",
+  a11yLocate: "मुझे ढूँढें",
+  a11yLayers: "नक्शे के लेयर",
+  a11yBack: "पीछे",
+  a11yClear: "साफ़ करें",
+  a11yClearSaved: "सेव की गई जगह हटाएँ",
+  placeDroppedPin: "लगाई गई पिन",
+  dayTitle: "आपका दिन",
+  weekTitle: "आपके फेफड़ों का कैलेंडर",
+  weekDayThin: "कम गिनती — इस दिन की कहानी के लिए घंटे बहुत कम हैं",
+  dayNow: "अभी",
+  daySparseAir: "आज की हवा आपके यहाँ: ~{n} µg/m³",
+  daySparseWait: "आज की पहली हवा रीडिंग का इंतज़ार",
+  daySparseCount: "आपकी गिनती तब शुरू होगी जब फ़ोन अपने पहले घंटे लिख लेगा",
+  daySparseSamples: "{m} में से {n} रीडिंग",
+  dayCovered: "{h} घंटे {m} मिनट गिने",
+  dayCoveredMin: "{m} मिनट गिने",
+  dayPartsTitle: "कहाँ जुड़ा",
+  dayArcDose: "≈{n} µg · {h}",
+  dayArcAir: "{h} · हवा ~{c} µg/m³",
+  dayArcFlat: "{h}",
+  dayMorningFlat: "सपाट दिन — किसी भी घड़ी में हवा लगभग बराबर है",
+  dayMorningHeavy: "सबसे भारी ~{f}–{t} (≈{c} µg/m³)",
+  dayMorningHeavyFrom: "~{f} के बाद सबसे भारी (≈{c} µg/m³)",
+  dayMorningClean: "सबसे हल्का ~{f}–{t} (≈{c} µg/m³)",
+  dayMorningCleanFrom: "~{f} के बाद सबसे हल्का (≈{c} µg/m³)",
+  dayMorningMove: "वही काम {f} करने से {g} के मुक़ाबले ~{x}× कम धुआँ",
+  dayMorningStale: "आख़िरी हवा रीडिंग {n} मिनट पहले",
+  dayMorningNoCell: "हवा-नक्शे से बाहर — यहाँ घंटे-दर-घंटे रीडिंग नहीं",
+  dayOutsideDelhi: "दिल्ली से बाहर — यहाँ धुएँ का नक्शा नहीं पहुँचता",
+  /* move कार्ड की पहली फ़ैसला-पंक्ति — server/v2/day.py:_decisions की
+     वही व्याकरण, served windows + series से rebuild */
+  moveDec_cleanWindow: "सबसे साफ़ दौरान {win} (औसत {c} बनाम दिन {m} µg/m³)",
+  moveDec_noClean: "आज साफ़ घड़ी नहीं बची — सबसे हल्की हवा {n} µg/m³",
+  moveDec_short: "आज के कार्ड में सिर्फ़ ~{n} घंटे — हर घड़ी {b} हवा",
+  moveDec_cardShort: "अगले ~{n} घंटे {b} — आज का बाक़ी कार्ड अभी नहीं आया",
+  moveDec_flat: "आज कोई खास घड़ी नहीं — दिनभर {b} हवा ({lo}–{hi} µg/m³)",
+  moveDec_jagged: "आज कोई घड़ी टिकी नहीं — सबसे हल्की {lo} µg/m³, सबसे भारी {hi}",
+  /* CPCB बैंड-शब्द — हमेशा "…{b} हवा" के अंदर, इसलिए हवा के लिंग पर */
+  band_good: "अच्छी",
+  band_satisfactory: "ठीक-ठाक",
+  band_moderate: "मध्यम",
+  band_poor: "ख़राब",
+  band_veryPoor: "बहुत ख़राब",
+  band_severe: "गंभीर",
+  bandScaleA11y: "आज की हवा: {b} — अच्छी से गंभीर स्केल पर {n}वाँ स्थान, कुल 6",
+  felt_easy: "अच्छी",
+  felt_fine: "ठीक-ठाक",
+  felt_fair: "मध्यम",
+  felt_heavy: "ख़राब",
+  felt_rough: "बहुत ख़राब",
+  felt_harsh: "गंभीर",
+  // the days ahead — /v2/outlook का अपना मोड़, जैसा मिला वैसा
+  dayOutlookTitle: "आने वाले दिन",
+  dayLbl_today: "आज",
+  dayLbl_tomorrow: "कल",
+  dayLbl_monday: "सोमवार",
+  dayLbl_tuesday: "मंगलवार",
+  dayLbl_wednesday: "बुधवार",
+  dayLbl_thursday: "गुरुवार",
+  dayLbl_friday: "शुक्रवार",
+  dayLbl_saturday: "शनिवार",
+  dayLbl_sunday: "रविवार",
+  dayOutlookLeastBad: "सबसे कम ख़राब",
+  dayOutlookCleanest: "सबसे साफ़",
+  dayOutlookAllDayHeavy: "पूरा दिन भारी — कोई हल्की घड़ी नहीं",
+  dayOutlookHeavyHours: "सबसे भारी {h}",
+  dayOutlookPartial: "सिर्फ़ पहले ~{n}घं",
+  dayOutlookTodayPartial: "आज का बाक़ी दिन (~{n}घं)",
+  dayOutlookRange: "≈{lo}–{hi} µg/m³",
+  dayOutlookLoNote: "फीके दिन लाइव रीडिंग की पहुँच से बाहर — सिर्फ़ सैटेलाइट अंदाज़ा",
+  dayOutlookVerdict: "{d} {w} लगता है — औसत ~{c} बनाम ~{g} µg/m³ पूरे अंदाज़े में",
+  dayOutlookVerdictPartial: " (सिर्फ़ इसके पहले ~{n}घं अंदाज़े में)",
+  dayOutlookFlatVerdict: "दिनों में कोई असली फ़र्क़ नहीं — {n}-दिन के अंदाज़े में ~{c} µg/m³",
+  lensTitle: "कैसा महसूस हुआ",
+  lensSub: "साँस · आँखें · ताक़त — 5-सेकंड चेक-इन, सिर्फ़ इसी फ़ोन पर",
+  lensBreath: "साँस",
+  lensEyes: "आँखें",
+  lensEnergy: "ताक़त",
+  lensGood: "अच्छा",
+  lensMeh: "ठीक-ठाक",
+  lensRough: "बुरा",
+  lensPrivacy: "सिर्फ़ इसी फ़ोन पर — कभी अपलोड नहीं",
+  lensEarly: "कुछ चेक-इन हुए — पैटर्न को ~7 दिन चाहिए",
+  lensFlat: "{n} {dayNoun} हुए — अभी कोई पैटर्न नहीं, चेक-इन ईमानदारी से ख़ाली",
+  dayNounOne: "दिन",
+  dayNounMany: "दिन",
+  lensLink: "आपका बुरा {f} भारी-धुएँ वाले दिनों के बाद आता है",
+  lensFacetBreath: "साँस",
+  lensFacetEyes: "आँखों का जलना",
+  lensFacetEnergy: "कम ताक़त",
+  budgetTitle: "आपकी दैनिक सीमा",
+  budgetTitleSugg: "एक सुझाई दैनिक सीमा",
+  budgetWithin: "आज आपकी {b} µg सीमा में से {r} µg बाक़ी",
+  budgetWithinSugg: "आज सुझाई {b} µg सीमा में से {r} µg बाक़ी",
+  budgetOver: "आज आपकी {p} सीमा से {o} µg ज़्यादा",
+  budgetOverSugg: "आज सुझाई {p} सीमा से {o} µg ज़्यादा",
+  budgetProfileQ: "{b} µg — एक दिन में साँस में लेने की बारीक धूल की आपकी हद; आपकी ख़ुद की लकीर, कोई डॉक्टरी नियम नहीं",
+  /* en block carries the F7 note — the tail names the breathed volume
+     हमारा अंदाज़ा (our assumption), never WHO's figure */
+  budgetQGeneralSugg: "{b} µg — एक सुझाई सीमा: WHO 24-घंटे बारीक-धूल मानदंड 15 µg/m³ × दिन की ~14.4 m³ हवा — साँस-मात्रा हमारा अंदाज़ा है, WHO का नहीं",
+  budgetQSensitiveSugg: "{b} µg — एक सुझाई सीमा: WHO वार्षिक बारीक-धूल मानदंड 5 µg/m³ × दिन की ~14.4 m³ हवा — साँस-मात्रा हमारा अंदाज़ा है, WHO का नहीं",
+  budgetQChildSugg: "{b} µg — एक सुझाई सीमा: WHO 24-घंटे मानदंड 15 µg/m³ × दिन की ~8.6 m³ हवा — बच्चे की साँस-मात्रा हमारा अंदाज़ा है",
+  profileGeneral: "सामान्य",
+  profileSensitive: "संवेदनशील",
+  profileChild: "बच्चा",
+  peekTitle: "आपका दिन अब तक",
+  peekOpenHint: "आपका दिन खोलता है",
+  weekNoReads: "कुछ दर्ज नहीं",
+  peekEmpty: "अभी कोई रीडिंग नहीं — नक्शा खोलें, एक यात्रा करें, यहाँ भर जाएगा",
+  peekAmbient: "अभी ~{n} µg/m³",
+  /* compare sheet — the gap line under a heavier option's dose */
+  compare_vsLightest: "सबसे हल्के से {n} µg ज़्यादा",
+  compare_doseNA: "अनुमान नहीं",
+  goLabel: "कहीं जाएँ",
+  /* the dosimeter home — the resting surface (docs/plan/design-refs) */
+  homeBreathed: "आज आपने साँस में लिया",
+  homeOutsideNow: "बाहर ~{n} µg/m³ · {w}",
+  homeOfBudget: "दिन की ~{b} µg में से",
+  homeWeek: "इस हफ़्ते {n} µg",
+  homeWeekCity: "दिल्ली के अगले दिन",
+  homeWeekSparse: "आपका हफ़्ता आज से गिना जाएगा",
+  moveTitle: "आज का फ़ैसला",
+  homeLinkMap: "हवा का नक्शा",
+  homeLinkCity: "आज की दिल्ली",
+  homeLinkTrips: "यात्राएँ",
+  incidentsTitle: "दिल्ली की हवा में अभी",
+  homeAirNowLead: "आपके आसपास की हवा",
+  tourAmbient: "इस वक़्त आपकी जगह का धुआँ — नीचे अंक अपना सबूत दिखाता है",
+  tourLedger: "आपका दिन यहाँ जुड़ता है — हर असली रीडिंग गिनती में जुड़ती है",
+  tourMap: "पूरी दिल्ली पर चढ़ा धुआँ — लाइव नक्शा खोलने के लिए टैप कीजिए",
+  tourGo: "जगह चुनिए, वहाँ का सबसे हल्का रास्ता पाइए",
+  tourWeek: "गिनते हुए दिन यहाँ सात-सात जुड़ते हैं — कैलेंडर के लिए टैप",
+  tourSkip: "छोड़ें",
+  tourNext: "आगे",
+  tourDone: "समझ गया",
+  refWhoOver: "WHO की दैनिक सीमा का {x}×",
+  refWhoUnder: "WHO की दैनिक सीमा के भीतर",
+  refBudget: "आपकी दैनिक सीमा का {p}%",
+  refBudgetSugg: "सुझाई दैनिक सीमा का {p}%",
+  refYesterdayMore: "कल से {n} µg ज़्यादा",
+  refYesterdayLess: "कल से {n} µg कम",
+  cityName: "दिल्ली",
+  veh_grp_own: "अपनी गाड़ी",
+  veh_grp_shared: "साझा सवारी",
+  veh_grp_noengine: "बिना इंजन",
+  veh_why: "आपकी पसंद से ‘गाड़ी का धुआँ’ अनुमान सटीक होता है — सिर्फ़ इस फ़ोन पर सेव",
+  veh_cap_car: "पेट्रोल · डीज़ल · CNG · EV",
+  veh_cap_auto: "3-व्हीलर · ज़्यादातर CNG",
+  veh_cap_bike: "स्कूटर · मोटरसाइकिल",
+  veh_cap_bus: "साझा सवारी",
+  veh_cap_metro: "इलेक्ट्रिक · साझा",
+  veh_cap_cycle: "धुआँ नहीं",
+  veh_cap_walk: "धुआँ नहीं",
+  veh_cap_petrol: "कार · स्कूटर · बाइक",
+  veh_cap_diesel: "ज़्यादा बारीक धूल",
+  veh_cap_cng: "हल्का धुआँ",
+  veh_cap_ev: "धुआँ नहीं",
+  veh_cap_y_pre2010: "BS-III या पुरानी",
+  veh_cap_y_2010_2016: "ज़्यादातर BS III–IV",
+  veh_cap_y_2017_2020: "ज़्यादातर BS-IV",
+  veh_cap_y_2021plus: "BS-VI दौर",
+  veh_cap_y_notsure: "दिल्ली का औसत लेंगे",
+  agoNow: "अभी",
+  agoMin: "{n} मिनट पहले",
+  agoHr: "{n} घंटे पहले",
+  agoDay: "{n} दिन पहले",
+
+  /* offline gazetteer kind labels — en block carries the corpus's own
+     words; the typed dict pins this table to the same key set */
+  kind_atm: "एटीएम",
+  kind_delhi: "दिल्ली",
+  kind_address: "पता",
+  kind_airport: "एयरपोर्ट",
+  kind_amusementPark: "मनोरंजन पार्क",
+  kind_apartment: "अपार्टमेंट",
+  kind_apartments: "अपार्टमेंट",
+  kind_applianceShop: "उपकरण दुकान",
+  kind_archaeologicalSite: "पुरातात्विक स्थल",
+  kind_artwork: "कला-कृति",
+  kind_attraction: "देखने की जगह",
+  kind_bagShop: "बैग दुकान",
+  kind_bakery: "बेकरी",
+  kind_bank: "बैंक",
+  kind_bar: "बार",
+  kind_beverages: "पेय की दुकान",
+  kind_block: "ब्लॉक",
+  kind_bloodBank: "ब्लड बैंक",
+  kind_bookshop: "किताबों की दुकान",
+  kind_boutique: "बुटीक",
+  kind_buddhistTemple: "बौद्ध मंदिर",
+  kind_building: "इमारत",
+  kind_busStation: "बस अड्डा",
+  kind_busStop: "बस स्टॉप",
+  kind_butcher: "कसाई की दुकान",
+  kind_cafe: "कैफ़े",
+  kind_canal: "नहर",
+  kind_carDealer: "कार डीलर",
+  kind_carRepair: "कार मरम्मत",
+  kind_centre: "केंद्र",
+  kind_chemist: "कैमिस्ट",
+  kind_childcare: "बच्चों की देखभाल",
+  kind_church: "चर्च",
+  kind_cinema: "सिनेमा",
+  kind_city: "शहर",
+  kind_clinic: "क्लिनिक",
+  kind_clothingShop: "कपड़ों की दुकान",
+  kind_college: "कॉलेज",
+  kind_commercial: "कमर्शियल इलाका",
+  kind_communityCentre: "सामुदायिक केंद्र",
+  kind_company: "कंपनी",
+  kind_computerShop: "कंप्यूटर दुकान",
+  kind_constructionSite: "निर्माण जगह",
+  kind_convenienceStore: "किराने की दुकान",
+  kind_cosmetics: "कॉस्मेटिक्स दुकान",
+  kind_dairy: "डेयरी",
+  kind_dentist: "दाँतों का डॉक्टर",
+  kind_departmentStore: "डिपार्टमेंट स्टोर",
+  kind_district: "ज़िला",
+  kind_doctor: "डॉक्टर",
+  kind_drain: "नाली",
+  kind_dryCleaning: "ड्राई क्लीनिंग",
+  kind_educationalInstitute: "शैक्षणिक संस्थान",
+  kind_electricalShop: "इलेक्ट्रिकल दुकान",
+  kind_electronics: "इलेक्ट्रॉनिक्स दुकान",
+  kind_electronicsRepair: "इलेक्ट्रॉनिक्स मरम्मत",
+  kind_embassy: "एम्बेसी",
+  kind_estateAgent: "प्रॉपर्टी डीलर",
+  kind_eventVenue: "कार्यक्रम की जगह",
+  kind_fabricShop: "कपड़ा दुकान",
+  kind_fastFood: "फ़ास्ट फ़ूड",
+  kind_financialServices: "वित्तीय सेवाएँ",
+  kind_forest: "जंगल",
+  kind_fuel: "पेट्रोल पंप",
+  kind_furniture: "फ़र्नीचर दुकान",
+  kind_garden: "बगीचा",
+  kind_gate: "गेट",
+  kind_generalStore: "जनरल स्टोर",
+  kind_giftShop: "गिफ़्ट दुकान",
+  kind_governmentOffice: "सरकारी दफ़्तर",
+  kind_guestHouse: "गेस्ट हाउस",
+  kind_gym: "जिम",
+  kind_hardware: "हार्डवेयर",
+  kind_hardwareStore: "हार्डवेयर दुकान",
+  kind_historicSite: "ऐतिहासिक जगह",
+  kind_hospital: "अस्पताल",
+  kind_hostel: "हॉस्टल",
+  kind_hotel: "होटल",
+  kind_house: "मकान",
+  kind_houseware: "घरेलू सामान दुकान",
+  kind_iceCream: "आइसक्रीम",
+  kind_indoorVenue: "इंडोर जगह",
+  kind_industrialArea: "इंडस्ट्रियल इलाका",
+  kind_info: "जानकारी",
+  kind_interiors: "इंटीरियर",
+  kind_jewellery: "ज़ेवर दुकान",
+  kind_junction: "चौराहा",
+  kind_lab: "लैब",
+  kind_lawyer: "वकील",
+  kind_library: "लाइब्रेरी",
+  kind_liquorShop: "शराब की दुकान",
+  kind_mall: "मॉल",
+  kind_market: "बाज़ार",
+  kind_metro: "मेट्रो",
+  kind_metroEntrance: "मेट्रो एंट्रेंस",
+  kind_mobileShop: "मोबाइल दुकान",
+  kind_monument: "स्मारक",
+  kind_mosque: "मस्जिद",
+  kind_motorcycleDealer: "मोटरसाइकिल डीलर",
+  kind_museum: "म्यूज़ियम",
+  kind_neighbourhood: "मोहल्ला",
+  kind_office: "दफ़्तर",
+  kind_optician: "ऑप्टिशन",
+  kind_park: "पार्क",
+  kind_parking: "पार्किंग",
+  kind_pastryShop: "पेस्ट्री दुकान",
+  kind_path: "रास्ता",
+  kind_pet: "पेट शॉप",
+  kind_pharmacy: "दवाई की दुकान",
+  kind_photocopyShop: "फ़ोटोकॉपी दुकान",
+  kind_place: "जगह",
+  kind_placeOfWorship: "पूजा की जगह",
+  kind_platform: "प्लेटफ़ॉर्म",
+  kind_playground: "खेलने का मैदान",
+  kind_police: "पुलिस",
+  kind_politicalOffice: "राजनीतिक दफ़्तर",
+  kind_postOffice: "पोस्ट ऑफिस",
+  kind_proposedSite: "बनने वाली जगह",
+  kind_railway: "रेलवे",
+  kind_railwayStation: "रेलवे स्टेशन",
+  kind_religiousSite: "धार्मिक जगह",
+  kind_rentalService: "किराये की सेवा",
+  kind_residentialArea: "रिहाइशी इलाका",
+  kind_restaurant: "रेस्टोरेंट",
+  kind_retail: "खुदरा दुकान",
+  kind_road: "सड़क",
+  kind_room: "कमरा",
+  kind_salon: "सैलून",
+  kind_school: "स्कूल",
+  kind_sector: "सेक्टर",
+  kind_shoeShop: "जूतों की दुकान",
+  kind_shop: "दुकान",
+  kind_sports: "खेल",
+  kind_sportsCentre: "खेल केंद्र",
+  kind_sportsGround: "खेल का मैदान",
+  kind_stadium: "स्टेडियम",
+  kind_station: "स्टेशन",
+  kind_stationery: "स्टेशनरी दुकान",
+  kind_stop: "स्टॉप",
+  kind_stream: "छोटी नदी",
+  kind_street: "गली",
+  kind_substation: "सबस्टेशन",
+  kind_suburb: "उपनगर",
+  kind_supermarket: "सुपरमार्केट",
+  kind_sweetsShop: "मिठाई की दुकान",
+  kind_tailor: "दर्ज़ी",
+  kind_temple: "मंदिर",
+  kind_theatre: "थिएटर",
+  kind_toilet: "शौचालय",
+  kind_track: "ट्रैक",
+  kind_trade: "व्यापार",
+  kind_travelAgency: "ट्रैवल एजेंसी",
+  kind_university: "यूनिवर्सिटी",
+  kind_vegetableShop: "सब्ज़ी दुकान",
+  kind_village: "गाँव",
+  kind_water: "पानी",
+  kind_accountant: "एकाउंटेंट",
+  kind_adAgency: "विज्ञापन एजेंसी",
+  kind_arcade: "आर्केड",
+  kind_artsCentre: "कला केंद्र",
+  kind_auditorium: "सभागार",
+  kind_babyShop: "बेबी दुकान",
+  kind_bicycleRental: "साइकिल किराये पर",
+  kind_bicycleShop: "साइकिल दुकान",
+  kind_brewery: "ब्रुअरी",
+  kind_bridge: "पुल",
+  kind_carParts: "कार पुर्ज़े",
+  kind_carRental: "कार किराये पर",
+  kind_carWash: "कार वॉश",
+  kind_carpetShop: "कालीन दुकान",
+  kind_castle: "महल",
+  kind_cemetery: "कब्रिस्तान",
+  kind_chargingStation: "चार्जिंग स्टेशन",
+  kind_club: "क्लब",
+  kind_conferenceCentre: "सम्मेलन केंद्र",
+  kind_court: "कोर्ट",
+  kind_coworkingSpace: "को-वर्किंग स्पेस",
+  kind_crematorium: "श्मशान",
+  kind_depot: "डिपो",
+  kind_dogPark: "डॉग पार्क",
+  kind_drinkingWater: "पीने का पानी",
+  kind_drivingSchool: "ड्राइविंग स्कूल",
+  kind_dryFruits: "मेवा दुकान",
+  kind_entrance: "एंट्रेंस",
+  kind_farmland: "खेत",
+  kind_fireStation: "फ़ायर स्टेशन",
+  kind_florist: "फूलों की दुकान",
+  kind_foodCourt: "फ़ूड कोर्ट",
+  kind_fort: "क़िला",
+  kind_fountain: "फ़व्वारा",
+  kind_gallery: "गैलरी",
+  kind_golfCourse: "गोल्फ़ कोर्स",
+  kind_grass: "घास का मैदान",
+  kind_grindingMill: "आटा चक्की",
+  kind_gurdwara: "गुरुद्वारा",
+  kind_handicrafts: "हस्तशिल्प दुकान",
+  kind_hookahLounge: "हुक्का लाउंज",
+  kind_internetCafe: "इंटरनेट कैफ़े",
+  kind_itServices: "आईटी सेवाएँ",
+  kind_kiosk: "कियोस्क",
+  kind_lake: "झील",
+  kind_laundry: "लॉन्ड्री",
+  kind_leatherShop: "चमड़े की दुकान",
+  kind_locksmith: "ताला-चाबी वाला",
+  kind_massage: "मसाज",
+  kind_medicalSupplies: "मेडिकल सामग्री दुकान",
+  kind_mess: "मैस",
+  kind_metalWorks: "धातु कारखाना",
+  kind_moneyChanger: "मनी चेंजर",
+  kind_monitoringStation: "मॉनिटरिंग स्टेशन",
+  kind_motorcycleRepair: "मोटरसाइकिल मरम्मत",
+  kind_nationalPark: "राष्ट्रीय उद्यान",
+  kind_natureReserve: "प्रकृति आरक्षित क्षेत्र",
+  kind_newsagent: "अख़बार की दुकान",
+  kind_nightclub: "नाइट क्लब",
+  kind_paanShop: "पान की दुकान",
+  kind_paintShop: "पेंट दुकान",
+  kind_perfumeShop: "इत्र दुकान",
+  kind_photoStudio: "फ़ोटो स्टूडियो",
+  kind_physiotherapist: "फ़िज़ियोथेरेपिस्ट",
+  kind_plantNursery: "नर्सरी",
+  kind_plot: "प्लॉट",
+  kind_printShop: "प्रिंटिंग दुकान",
+  kind_pumpingStation: "पंपिंग स्टेशन",
+  kind_railHalt: "रेल हॉल्ट",
+  kind_repairShop: "मरम्मत दुकान",
+  kind_researchInstitute: "रिसर्च संस्थान",
+  kind_river: "नदी",
+  kind_roundabout: "गोल चक्कर",
+  kind_shelter: "शेल्टर",
+  kind_socialFacility: "सामाजिक सुविधा",
+  kind_square: "चौक",
+  kind_steps: "सीढ़ियाँ",
+  kind_studio: "स्टूडियो",
+  kind_supplements: "सप्लीमेंट्स दुकान",
+  kind_swimmingPool: "स्विमिंग पूल",
+  kind_synagogue: "सिनैगॉग",
+  kind_tattooStudio: "टैटू स्टूडियो",
+  kind_taxiStand: "टैक्सी स्टैंड",
+  kind_teaShop: "चाय की दुकान",
+  kind_tehsil: "तहसील",
+  kind_telecom: "टेलीकॉम दुकान",
+  kind_ticketCounter: "टिकट काउंटर",
+  kind_tobaccoShop: "तंबाकू दुकान",
+  kind_tollBooth: "टोल बूथ",
+  kind_tomb: "मक़बरा",
+  kind_tower: "टावर",
+  kind_toyShop: "खिलौनों की दुकान",
+  kind_tree: "पेड़",
+  kind_tyreShop: "टायर दुकान",
+  kind_vet: "पशु डॉक्टर",
+  kind_warehouse: "गोदाम",
+  kind_wastewaterPlant: "सीवेज प्लांट",
+  kind_waterTower: "पानी की टंकी",
+  kind_watchShop: "घड़ी दुकान",
+  kind_well: "कुआँ",
+  kind_wholesale: "थोक दुकान",
+  kind_zoo: "चिड़ियाघर",
+  share_co2: "CO₂ {n} किग्रा",
+  /* home-truth: ambient number gloss + provenance */
+  homeAirWhat: "PM2.5 — हवा के एक घन मीटर में बारीक धूल, इसी वक़्त",
+  homeAirWhatFc: "एक m³ हवा में अनुमानित PM2.5 — आगे का अंदाज़ा, लाइव रीडिंग नहीं",
+  homeAirWhatAqi: "एक m³ हवा में PM2.5 धूल · यही हवा = बाकी ऐप्स पर AQI {a}",
+  homeAirNowCity: "मध्य दिल्ली के पास की हवा",
+  homeAirForecast: "आपके पास होने वाली हवा",
+  homeAirMeta: "आपकी लोकेशन पर पढ़ा गया · नज़दीकी लाइव मॉनिटर ~{k} किमी दूर",
+  homeAirMetaPlace: "{p} के पास पढ़ा गया · नज़दीकी लाइव मॉनिटर ~{k} किमी दूर",
+  homeAirModel: "आपकी लोकेशन पर पढ़ा गया · अभी फ़ील्ड में कोई लाइव मॉनिटर नहीं",
+  homeAirPlaceModel: "{p} के पास पढ़ा गया · अभी फ़ील्ड में कोई लाइव मॉनिटर नहीं",
+  homeAirEdge: "नज़दीकी लाइव स्टेशन दिल्ली के कोर तक ही पहुँचते हैं — यह उनकी सबसे नज़दीकी रीडिंग है",
+  homeAirCityHint: "लोकेशन बंद है या अभी लॉक नहीं हुई — जहाँ आप असल में हैं वहाँ की हवा के लिए उसे चालू करें",
+  homeDoseWhat: "µg = आपके फेफड़ों में उतरी बारीक धूल का वज़न — सिर्फ़ तब गिना जाता है जब ऐप आपके साथ था",
+  /* the lungs' calendar sheet */
+  weekOpen: "आपके फेफड़ों का कैलेंडर खोलें",
+  weekSheetSub: "किसी दिन की कहानी खोलने के लिए उसे टैप करें",
+  weekCountedFine: "{m} में से {n} दिन गिने",
+  weekDayDose: "उस दिन आपने {n} µg साँस में लिया",
+  weekDayPct: "आपकी तय दैनिक सीमा का {p}%",
+  weekDayPctSugg: "सुझाई दैनिक सीमा का {p}%",
+  weekAheadTitle: "आगे की हवा",
+  weekAheadSub: "आगे का अंदाज़ा क्या कहता है — ये दिन अभी हुए नहीं",
+  weekAheadUnit: "µg/m³ — हवा के एक घन मीटर में अनुमानित बारीक धूल",
+  weekSheetFine: "यहाँ सिर्फ़ असली रीडिंग उतरती हैं — खाली दिन मतलब ऐप आपके साथ नहीं था, कभी शून्य नहीं",
+
+  /* plan-flow pass — the new keys' Hindi mirrors (en block carries the
+     design note) */
+  compare_feltMore: "{m} से ~{x}× ज़्यादा धुआँ",
+  compare_moreVs: "{m} से {n} µg ज़्यादा",
+
+  /* routes-delta जोड़ — डिफ़ॉल्ट रास्ते की तुलना में ईमानदार कीमत */
+  delta_airPct: "{p}% हवा",
+  delta_sameAir: "हवा लगभग वही",
+  delta_minQuicker: "{m} मिनट जल्दी",
+  delta_sameTime: "उतना ही समय",
+  delta_worth: "{who} के लिए सार्थक",
+  delta_takeFast: "तेज़ रास्ता लें",
+  delta_defaultSaves: "डिफ़ॉल्ट · सबसे साफ़ रास्ते से {p} हवा — {m} मिनट बचत",
+  delta_defaultSlower: "डिफ़ॉल्ट · सबसे साफ़ रास्ते से {p} हवा — {m} मिनट धीमा",
+  delta_defaultBoth: "डिफ़ॉल्ट — आज सबसे तेज़ और सबसे हल्की हवा दोनों",
+  delta_defaultCleanSlow: "डिफ़ॉल्ट · हवा सबसे हल्की, {m} मिनट धीमा",
+  delta_selfLightest: "डिफ़ॉल्ट — सबसे तेज़, और आज सबसे हल्की हवा",
+  who_schoolRun: "स्कूल के चक्कर",
+  who_rider: "डिलीवरी राइडर",
+  who_commute: "रोज़ के सफ़र",
+  who_rideIn: "साइकिल से आने-जाने",
+  who_walkThere: "पैदल जाने",
+  who_visitor: "शहर घूमने आए मेहमान",
+  receipt_notStarted: "शुरू होने से पहले ही ख़त्म",
+  receipt_notStartedSub: "100 मी से कम — कुछ गिना नहीं गया",
+  veh_now: "अभी: {v}",
+  veh_introTitle: "चुनने से पहले",
+  veh_introBody: "धुएँ का अंदाज़ आपकी असली सवारी पर बैठता है — मेट्रो डिब्बा, बाइक, रिंग रोड की कार एक ही रास्ते पर अलग हवा साँसते हैं।",
+  veh_introHonest: "कोई साइन-इन नहीं, कुछ भी इस फ़ोन से बाहर नहीं जाता। छोड़ भी सकते हैं — दिल्ली की औसत गाड़ी ठीक अंदाज़ा है।",
+  veh_start: "बताएँ क्या ले रहे हैं",
+  depart_airByHour: "घंटेवार हवा",
+  depart_bestLine: "सबसे हल्का {time} के आसपास — ≈ {n} µg",
+
+
+  /* jargon-sweep जोड़े — इकाइयाँ/आंतरिक-शब्द लीक करती संख्याओं के सीधे-शब्द
+     फ़्रेम (docs/lanes/jargon-sweep-report.md) */
+  noteStagPct: "हवा ज़रा भी नहीं घूम रही — साफ़ होने की रफ़्तार सामान्य की ~{p}%",
+  fieldAgeCompact: "{n} मिनट पुरानी",
+  fieldAgeNone: "कोई रीडिंग नहीं",
+  aqiScale: "0–500 स्केल",
+  cityHeroAirNow: "इस समय शहर का औसत ~{n} µg/m³",
+  /** देखें अंग्रेज़ी कुंजी की टिप्पणी — बाहर की हवा का बैंड-शब्द, साँस में
+      ली गई µg संख्या के नीचे */
+  cityHeroAirFelt: "बाहर की हवा — {w}",
+  movesCorridorNDays: "पिछले {d} दिनों में {n} {streetNoun} नापी गईं",
+  cityBasisPrivacyDays: "कोई सड़क तभी दिखती है जब {d} दिनों में {k} अलग यात्री उससे गुज़रें — कोई अलग से पहचाना नहीं जा सकता",
+  bandUpTo: "{n} तक",
+  shareTripLine: "मेरी यात्रा {from} → {to}: {what} — Alive पर अनुमानित",
+  shareClauseBreathe: "मैंने साँस में लिया करीब {dose} धुआँ",
+  shareClausePutOut: "मेरी गाड़ी ने छोड़ा {co2}",
+
+  exploreHeader: "हवा के जवाब",
+  airIntentTitle: "हवा का नक्शा",
+  exploreStays: "रुकने की जगह — सबसे हल्की हवा पहले",
+  explorePlay: "खेलने के लिए हवा कब सबसे हल्की",
+  exploreNearPlace: "{place} के पास",
+  exploreNearYou: "आपके पास",
+  exploreAnchorNearYou: "आपके पास",
+  exploreAnchorNear: "{place} के पास",
+  exploreStayTitle: "रुकने की जगह",
+  explorePlayTitle: "बाहर निकलने का समय",
+  exploreReading: "फ़ील्ड पढ़ रहे हैं…",
+  exploreNoStays: "यहाँ लाइव फ़ील्ड की पहुँच में कोई रुकने की जगह नहीं",
+  exploreNoCurve: "इस जगह के लिए अभी कोई सच्चा कर्व नहीं",
+  exploreOutOfArea: "लाइव फ़ील्ड से बाहर — सिर्फ़ दिल्ली/NCR",
+  exploreLighter: "{n} µg हल्की",
+  exploreHeavier: "{n} µg भारी",
+  exploreSameAir: "उतनी ही हवा",
+  exploreNowChip: "अभी {n}",
+  exploreThinRead: "पतली रीडिंग — सबसे नज़दीक मॉनिटर ~{n} km",
+  exploreThinReadNoKm: "पतली रीडिंग — पास में कोई लाइव मॉनिटर नहीं",
+  exploreNowOnly: "फ़ोरकास्ट बंद — सिर्फ़ लाइव रीडिंग से",
+  exploreUnrated: "कोई सच्ची रीडिंग नहीं",
+  exploreBestChip: "सबसे हल्की",
+  exploreWorstChip: "सबसे भारी",
+  exploreNowMarker: "अभी",
+  exploreAvgLine: "24 घं औसत ~{n} µg/m³",
+  exploreTomorrow: "कल",
+  exploreInDays: "{n} दिन में",
+  exploreWindowChip: "{start}–{end} {day}",
+  exploreStayDeltaBase: "आपकी हवा से तुलना में",
+
+  staysTitle: "कहाँ रुकें",
+  staysDisclosure: "हर संख्या उस पते की अगले-24 घंटे की हवा है",
+  staysWalkMin: "~{n} मिनट पैदल",
+  staysKmAway: "{n} km दूर",
+  staysNowBasis: "अभी",
+  staysPinHint: "किसी जगह पर टैप करें — वह एयर मैप पर पिन हो जाएगी",
+  playDisclosure: "घूमती 24 घंटे — अभी से कल इसी समय तक",
+  playBestLine: "सबसे हल्की खिड़की — {w} · ~{n} µg",
+  playWorstLine: "सबसे भारी — {w} · ~{n} µg",
+  exploreToday: "आज",
+  doorStaysSub: "सबसे हल्की हवा वाली जगहें पहले · आपके पास",
+  doorPlaySub: "अगले 24 घंटे · आपके पास",
+};
+
+export type Lang = "en" | "hi";
+
+const tables: Record<Lang, Record<StringKey, string>> = { en, hi };
+
+/** Translate; interpolates {n}-style placeholders from `vars`. */
+export function t(key: StringKey, lang: Lang = "en", vars?: Record<string, string | number>): string {
+  let s: string = tables[lang][key] ?? en[key];
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
+  return s;
+}
+
+/** Localize a server's option label by mode (labels are English on the
+ * wire). Exact matches translate; a route suffix like " 548CL" is kept
+ * verbatim after the localized base; unknown modes pass through. */
+const MODE_BASE: Record<string, { en: string; key: StringKey }> = {
+  car: { en: "Car (AC)", key: "mode_carAC" },
+  car_open: { en: "Car (windows down)", key: "mode_carOpen" },
+  bike: { en: "Bike / scooter", key: "mode_bike" },
+  bus: { en: "Bus", key: "mode_bus" },
+  auto: { en: "Auto-rickshaw", key: "mode_auto" },
+  "metro+walk": { en: "Metro + walk", key: "mode_metroWalk" },
+  cycle: { en: "Bicycle", key: "mode_cycle" },
+  walk: { en: "On foot", key: "mode_walk" },
+};
+
+/** English bases, longest first — a server mode like "metro" can carry the
+ *  "metro+walk" label, so an unknown mode falls back to prefix-matching
+ *  every known base instead of leaking the English label. */
+const BASES = Object.values(MODE_BASE).sort((a, b) => b.en.length - a.en.length);
+
+export function modeLabel(mode: string, label: string, lang: Lang): string {
+  const byMode = MODE_BASE[mode];
+  const b = byMode && label.startsWith(byMode.en)
+    ? byMode
+    : BASES.find((x) => label === x.en || label.startsWith(x.en + " ") || label.startsWith(x.en + "("));
+  if (!b) return label;
+  const rest = label.slice(b.en.length);
+  /* " (approx.)" is wire English too — localize the whole suffix; the
+     least-inhalation engine suffixes likewise translate instead of
+     leaking wire English into the Hindi UI */
+  let suffix = rest;
+  if (rest.startsWith(" (approx")) suffix = t("mode_approx", lang);
+  else {
+    /* the wire form ("least-smoke rd/alt N") AND the stored display form
+       ("least smoky way/option N") — trips saved under either wording
+       re-localize instead of leaking stale English into the other UI */
+    const alt = rest.match(/^ · (?:least-smoke alt|least smoky option) (\d+)$/);
+    if (alt) suffix = t("mode_leastSmokeAlt", lang, { n: alt[1] });
+    else if (rest === " · least-smoke rd" || rest === " · least smoky way")
+      suffix = t("mode_leastSmoke", lang);
+    else {
+      /* ' · alt N' — the client's own demoted qualifier (plan.ts
+         relabelLeastSmoke): localizes like the engine suffixes so the
+         Hindi UI never leaks wire English */
+      const a = rest.match(/^ · alt (\d+)$/);
+      if (a) suffix = t("mode_altN", lang, { n: a[1] });
+    }
+  }
+  return t(b.key, lang) + suffix;
+}
+
+/** Place names are stored verbatim at save-time, so a ledger row keeps the
+ *  language it was named in ("your location" inside a Hindi UI). Sentinel
+ *  names — the phone's own placeholders, not real place names — are
+ *  re-rendered in the current language; real gazetteer names pass through. */
+/** "≈ 0 cigarettes" reads wrong — the approximation mark belongs on
+ *  estimates, not exact zeros. Templates carry "{n} <unit>" and call
+ *  sites pass approx(value): 0 → "0", 0.28 → "≈ 0.28". */
+export const approx = (n: number | string): string =>
+  Number(n) === 0 ? "0" : `≈ ${n}`;
+
+/** µg readout rule — the same trip dose must print identically on the
+ *  receipt hero, sidebar rows, live counter and the ledger: under 10 µg
+ *  one decimal stays (≈ 1.6, not ≈ 2), 10+ rounds whole. */
+export const doseUgRound = (ug: number): number =>
+  ug >= 10 ? Math.round(ug) : Math.round(ug * 10) / 10;
+
+/* ── clock words: ONE convention for every displayed time (the audit's
+   12h/24h split — LedgerScreen's "4:42 pm" vs nav/compare "16:42").
+   Displayed clocks are 12h: "4:42 pm" / "4:42 अपराह्न"; hour-only
+   slots read "4pm" / "4 बजे". hi dayparts come from the daypart_*
+   keys — hi-IN toLocaleTimeString leaks Latin on Android ICU.
+   Every clock is an Asia/Kolkata wall time — this is a Delhi product:
+   a non-IST device showing "good morning" at night is a lie (e2e-sweep
+   #6). The shift is the same convention events.ts uses: +330 min on
+   the instant, then UTC getters — Date objects/timestamps are read as
+   real instants, never as device-local wall clocks. */
+const IST_MS = 330 * 60 * 1000;
+const istParts = (t: number) => {
+  const ist = new Date(t + IST_MS);
+  return { h24: ist.getUTCHours(), min: ist.getUTCMinutes() };
+};
+
+export const clockLabel = (d: Date | number, lang: Lang): string => {
+  const t0 = typeof d === "number" ? d : d.getTime();
+  const { h24, min } = istParts(t0);
+  const h12 = ((h24 + 11) % 12) + 1;
+  const mm = `${min}`.padStart(2, "0");
+  return `${h12}:${mm} ${t(h24 < 12 ? "daypart_am" : "daypart_pm", lang)}`;
+};
+
+/** the tight form for ticks/ranges — en drops the space ("4:42pm");
+ *  hi keeps it (Devanagari needs the word boundary). */
+export const clockTight = (d: Date | number, lang: Lang): string =>
+  lang === "en" ? clockLabel(d, lang).replace(" ", "") : clockLabel(d, lang);
+
+/** hour-only label of an INSTANT — "4pm" / "4 बजे"; a :30 slot falls
+ *  back to the tight clock so a stray minute never gets silently
+ *  rounded away. For a bare Delhi hour-of-day use hourOfDay. */
+export const hourLabel = (d: Date | number, lang: Lang): string => {
+  const t0 = typeof d === "number" ? d : d.getTime();
+  const { h24, min } = istParts(t0);
+  const h12 = ((h24 + 11) % 12) + 1;
+  if (min !== 0) return clockTight(d, lang);
+  return lang === "hi" ? `${h12} बजे` : `${h12}${h24 < 12 ? "am" : "pm"}`;
+};
+
+/** Delhi hour-of-day → the same "4pm" / "4 बजे" word hourLabel writes.
+ *  h is a wall index (0–23, wraps outside), not an instant — the arc
+ *  cells and the move-card windows count Delhi hours, not timestamps. */
+export const hourOfDay = (h: number, lang: Lang): string => {
+  const whole = Math.floor(h);
+  const h24 = ((whole % 24) + 24) % 24;
+  const h12 = ((h24 + 11) % 12) + 1;
+  const min = Math.round((h - whole) * 60);
+  if (min > 0 && min < 60) {
+    const s = `${h12}:${`${min}`.padStart(2, "0")} ${t(h24 < 12 ? "daypart_am" : "daypart_pm", lang)}`;
+    return lang === "en" ? s.replace(" ", "") : s;
+  }
+  return lang === "hi" ? `${h12} बजे` : `${h12}${h24 < 12 ? "am" : "pm"}`;
+};
+
+/** served "HH:MM" tokens → the display clock, inside any string:
+ *  "06:00–09:00 IST" → "6:00am–9:00am". Served tokens are already IST
+ *  wall times, so the rewrite is timezone-free; the wire's IST suffix
+ *  drops — 'IST' is jargon on a consumer face. A token that isn't a
+ *  real clock time passes through. */
+export const wireClockLabel = (s: string, lang: Lang): string =>
+  s
+    .replace(/\b(\d{1,2}):(\d{2})\b/g, (_m, h, min) => {
+      const hh = Number(h), mm = Number(min);
+      if (hh > 23 || mm > 59) return `${h}:${min}`;
+      const h12 = ((hh + 11) % 12) + 1;
+      return lang === "hi"
+        ? `${h12}:${min} ${t(hh < 12 ? "daypart_am" : "daypart_pm", lang)}`
+        : `${h12}:${min}${hh < 12 ? "am" : "pm"}`;
+    })
+    .replace(/\s*IST\b/g, "");
+
+/* "2.3× less" is wire-math; "a third of" is how you'd say it to a
+   friend (jargon-sweep receipt_lessVs flag). Maps the dose:worst
+   ratio onto the nearest common fraction word — ratios landing
+   between common fractions (7.3×, 11×) return null and keep the
+   honest × form; a fake "a seventh of" reads worse than the number. */
+const SMOKE_FRACS: [number, string, string][] = [
+  [2, "half", "आधा"],
+  [3, "a third", "तिहाई"],
+  [4, "a quarter", "चौथाई"],
+  [5, "a fifth", "पाँचवाँ हिस्सा"],
+  [6, "a sixth", "छठा हिस्सा"],
+  [8, "an eighth", "आठवाँ हिस्सा"],
+  [10, "a tenth", "दसवाँ हिस्सा"],
+];
+export const smokeFraction = (ratio: number, lang: Lang): string | null => {
+  if (!(ratio > 1)) return null;
+  let best: [number, string, string] | null = null;
+  let bestD = Infinity;
+  for (const row of SMOKE_FRACS) {
+    const d = Math.abs(1 / ratio - 1 / row[0]);
+    if (d < bestD) { best = row; bestD = d; }
+  }
+  if (!best || bestD > 0.13 * (1 / best[0])) return null;
+  return lang === "hi" ? best[2] : best[1];
+};
+
+const PLACE_SENTINEL: Record<string, keyof typeof en> = {
+  "your location": "placeCurrentLocation",
+  "आपकी लोकेशन": "placeCurrentLocation",
+  "Dropped pin": "placeDroppedPin",
+  "गिराई गई पिन": "placeDroppedPin",
+  "लगाई गई पिन": "placeDroppedPin",
+  "central Delhi": "placeCentralDelhi",
+  "सेंट्रल दिल्ली": "placeCentralDelhi",
+};
+
+export function placeNameLabel(name: string, lang: Lang): string {
+  const key = PLACE_SENTINEL[name];
+  return key ? t(key, lang) : name;
+}
+
+/* Gazetteer kind labels (search/t0.ts kindLabel output + server-tier
+   subtitles through search/client.ts cleanSubtitle) — English on the
+   wire and in stored recents, so the map keys on the English label and
+   re-renders in the current language. The table DERIVES from the en
+   strings, so a new kind_* key can never drift out of coverage. */
+const KIND_LABEL: Record<string, StringKey> = Object.fromEntries(
+  (Object.entries(en) as [StringKey, string][])
+    .filter(([k]) => k.startsWith("kind_"))
+    .map(([k, label]) => [label.toLowerCase(), k]),
+);
+
+/* the raw tail's variant spellings — same kind under a different corpus
+   label folds into the key the table already has (and the reported
+   leaks: "muslim place of worship" etc.) */
+const KIND_SYNONYMS: Record<string, StringKey> = {
+  "aata chakki": "kind_grindingMill",
+  "agency": "kind_office",
+  "alcohol": "kind_liquorShop",
+  "art": "kind_artwork",
+  "association": "kind_office",
+  "bag": "kind_bagShop",
+  "bathroom fittings": "kind_hardwareStore",
+  "bed shop": "kind_furniture",
+  "bicycle parking": "kind_parking",
+  "blood donation": "kind_bloodBank",
+  "books": "kind_bookshop",
+  "buddhist place of worship": "kind_buddhistTemple",
+  "bureau de change": "kind_moneyChanger",
+  "bus depot": "kind_depot",
+  "charge point": "kind_chargingStation",
+  "christian place of worship": "kind_church",
+  "civic office": "kind_governmentOffice",
+  "coffee shop": "kind_cafe",
+  "common": "kind_park",
+  "computer": "kind_computerShop",
+  "confectionery": "kind_sweetsShop",
+  "consultant": "kind_office",
+  "convenience": "kind_convenienceStore",
+  "cycleway": "kind_path",
+  "diplomatic": "kind_embassy",
+  "ditch": "kind_drain",
+  "dormitory": "kind_hostel",
+  "dressmaker": "kind_tailor",
+  "educational institution": "kind_educationalInstitute",
+  "financial advisor": "kind_financialServices",
+  "fitness station": "kind_gym",
+  "garden centre": "kind_plantNursery",
+  "garage": "kind_carRepair",
+  "general": "kind_generalStore",
+  "graveyard": "kind_cemetery",
+  "grocery": "kind_convenienceStore",
+  "hairdresser": "kind_salon",
+  "hamlet": "kind_village",
+  "hindu place of worship": "kind_temple",
+  "industrial": "kind_industrialArea",
+  "information": "kind_info",
+  "jeweller": "kind_jewellery",
+  "jewish place of worship": "kind_synagogue",
+  "key cutter": "kind_locksmith",
+  "laboratory": "kind_lab",
+  "local authority": "kind_governmentOffice",
+  "logistics": "kind_office",
+  "marketplace": "kind_market",
+  "memorial": "kind_monument",
+  "monastery": "kind_religiousSite",
+  "money transfer": "kind_moneyChanger",
+  "motorcycle parking": "kind_parking",
+  "motel": "kind_hotel",
+  "moving company": "kind_office",
+  "muslim place of worship": "kind_mosque",
+  "narrow gauge": "kind_railway",
+  "neighborhood": "kind_neighbourhood",
+  "optometrist": "kind_optician",
+  "parking space": "kind_parking",
+  "pedestrian": "kind_street",
+  "phase": "kind_sector",
+  "photographer": "kind_photoStudio",
+  "pitch": "kind_sportsGround",
+  "political": "kind_politicalOffice",
+  "post box": "kind_postOffice",
+  "printing": "kind_printShop",
+  "public transport": "kind_stop",
+  "pub": "kind_bar",
+  "quarter": "kind_neighbourhood",
+  "research": "kind_researchInstitute",
+  "resort": "kind_hotel",
+  "ruins": "kind_archaeologicalSite",
+  "sample collection": "kind_lab",
+  "shoemaker": "kind_shoeShop",
+  "shoes": "kind_shoeShop",
+  "shrine": "kind_religiousSite",
+  "sikh place of worship": "kind_gurdwara",
+  "sports hall": "kind_sportsCentre",
+  "stop position": "kind_stop",
+  "store": "kind_shop",
+  "student accommodation": "kind_hostel",
+  "subdistrict": "kind_district",
+  "theme park": "kind_amusementPark",
+  "toilets": "kind_toilet",
+  "town": "kind_city",
+  "townhall": "kind_governmentOffice",
+  "unclassified": "kind_road",
+  "variety store": "kind_generalStore",
+  "watchmaker": "kind_watchShop",
+  "water body": "kind_water",
+  "water park": "kind_amusementPark",
+  "water point": "kind_drinkingWater",
+  "wine shop": "kind_liquorShop",
+};
+
+/** A kind/subtitle label → the current language. Normalizes first —
+ *  server subtitles arrive post-cleanSubtitle ("Muslim place of
+ *  worship", capitals kept) while corpus labels may still carry
+ *  underscores — then splits "kind · anchor" compounds so a known kind
+ *  localizes beside its untouched anchor name. Unknown labels pass
+ *  through in English (the corpus's own words are honest, a fabricated
+ *  guess wouldn't be); in Hindi, a bare lowercase kind-token resolves
+ *  to the generic "place" label — while an unmatched string carrying
+ *  capitals (a name/address fragment, real information) stays
+ *  verbatim instead of being erased. */
+export function localizeKind(label: string, lang: Lang): string {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/_/g, " ");
+  /* a gazetteer namespace is provenance, never a word — "overture:
+     rental_service" leaked raw into recents (e2e-sweep P2-4); the
+     cleaned tail is what the kind table and the reader both key on */
+  const bare = (s: string) => norm(s).replace(/^[a-z]+:/, "");
+  const one = (s: string): string | null => {
+    const key = KIND_LABEL[bare(s)] ?? KIND_SYNONYMS[bare(s)];
+    return key ? t(key, lang) : null;
+  };
+  const direct = one(label);
+  if (direct) return direct;
+  if (label.includes("·")) {
+    const segs = label.split("·");
+    if (segs.some((s) => one(s) !== null))
+      return segs.map((s) => one(s) ?? s.trim()).join(" · ");
+  }
+  const stripped = bare(label);
+  if (stripped !== norm(label))
+    return lang === "hi" && /^[a-z][a-z ]*$/.test(stripped)
+      ? t("kind_place", "hi") : stripped;
+  return lang === "hi" && /^[a-z][a-z ]*$/.test(label) ? t("kind_place", "hi") : label;
+}

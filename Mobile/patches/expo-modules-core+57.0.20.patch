@@ -1,0 +1,24 @@
+diff --git a/node_modules/expo-modules-core/ios/Core/SharedObjects/SharedObjectRegistry.swift b/node_modules/expo-modules-core/ios/Core/SharedObjects/SharedObjectRegistry.swift
+--- a/node_modules/expo-modules-core/ios/Core/SharedObjects/SharedObjectRegistry.swift
++++ b/node_modules/expo-modules-core/ios/Core/SharedObjects/SharedObjectRegistry.swift
+@@ -126,7 +126,20 @@
+     // whichever ran last and lose the earlier runtimes' pairings.
+     let nativeState = nativeObject.nativeState ?? {
+       let releaser: ObjectReleaser = { [weak self] id in
++#if targetEnvironment(simulator)
++        // The C++ SharedObject can be released during GC finalization on the
++        // GC background thread; `delete` runs module release hooks that are
++        // only safe on the JS thread, so hop through the runtime scheduler.
++        if let runtime = try? self?.appContext?.runtime {
++          runtime.schedule {
++            self?.delete(id)
++          }
++        } else {
++          self?.delete(id)
++        }
++#else
+         self?.delete(id)
++#endif
+       }
+       let state = SharedObjectNativeState(native: nativeObject) { context, deallocator in
+         return SharedObjectUtils.makeSharedObjectNativeStatePtr(
