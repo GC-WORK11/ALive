@@ -9,9 +9,9 @@ Lane contract: docs/lanes/webapp-wave2.md. Lane prompt files on coordinator box:
 |---|---|---|
 | home+consent | a54609c0108248caa7ecd07ac724f3ff | DONE, terminated. Shipped 6027c8c/33e4d64/5a22c94 + docs/lanes/home-report.md |
 | deep search | d398397c2cb14f74814e6d2efe09ba65 | running |
-| journey+receipt | 57f50f8033314de598e579092834b1ce | running (started ~16:46) |
+| journey+receipt | 57f50f80 | DONE+terminated: e9136f0/194cfe6/3851646 — real GPS nav, labeled preview, honest receipt |
 | whereto | — | DONE BY COORDINATOR inline: cbadb07 (whereto.js+whereto.css). Needs browser QA pass. |
-| airmap+purest | — | NOT LAUNCHED (slot cap) — prompt file ready |
+| airmap+purest | e21a32eb | running (launched ~17:25) |
 | admin | — | NOT LAUNCHED (slot cap) — prompt file ready |
 
 ## Rival tree (DO NOT duplicate — outside coordinator control, 403 on interact)
@@ -40,3 +40,5 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - "iskcon east of kailash": /v2/search resolves 3 delhi_index hits incl ISKCON East Delhi (28.56ish) — verified live in whereto.
 - 17:05 probe: airmap.js is a 109-line scaffold only (legend+tap readout+playtime card stub) — airpurest lane builds it out. search.js 103 lines (engine→Photon→Nominatim cascade exists but shallow). app.js 217 lines frozen.
 - Rival fleet: still no pushes to origin (only main exists remotely).
+
+- 17:26: journey lane landed (nav+receipt verified); airpurest launched; search still working.
