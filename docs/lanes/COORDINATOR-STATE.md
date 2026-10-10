@@ -38,3 +38,5 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - "Pawan Bakery c block Hanuman mandir Ashok nagar shahdara": /v2/search misses (gives Pawan Plaza pastry 0.5km central). Photon finds "Royal Bakery, Near Hanuman Mandir road, Shahdara" (77.2839,28.6211) — right locality. Fix = better token handling/bias.
 - "Neelanchal dham santnagar": /v2/search, Photon, Nominatim, Overpass-spellings ALL empty — POI likely absent from OSM. Photon resolves "Sant Nagar" localities (77.0912,28.647 west; 77.2495,28.5548 south). Honest UX = offer locality + drop-a-pin, never invent coords.
 - "iskcon east of kailash": /v2/search resolves 3 delhi_index hits incl ISKCON East Delhi (28.56ish) — verified live in whereto.
+- 17:05 probe: airmap.js is a 109-line scaffold only (legend+tap readout+playtime card stub) — airpurest lane builds it out. search.js 103 lines (engine→Photon→Nominatim cascade exists but shallow). app.js 217 lines frozen.
+- Rival fleet: still no pushes to origin (only main exists remotely).
