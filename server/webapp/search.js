@@ -32,6 +32,7 @@ const ANCHOR_TAIL = new Set(['nagar', 'vihar', 'pur', 'pura', 'puri', 'abad',
   'khadar', 'khas', 'kailash', 'ganj', 'estate', 'town', 'sector', 'sec',
   'block', 'pocket', 'phase', 'part', 'road', 'marg', 'street', 'chowk',
   'chungi', 'square', 'circle', 'market', 'wala', 'place', 'village',
+  'park', 'nagri', 'kunj', 'lok', 'pahari', 'dwara',
   'shahdara', 'noida', 'gurgaon', 'gurugram', 'ghaziabad', 'faridabad',
   'dwarka', 'rohini', 'burari', 'sarai', 'paharganj', 'mandi']);
 
@@ -56,6 +57,12 @@ const KIND_ALIAS = {
   bazar: ['bazar', 'bazaar', 'market'],
   masjid: ['masjid', 'mosque'],
   mosque: ['mosque', 'masjid'],
+  gurgaon: ['gurgaon', 'gurugram'],
+  gurugram: ['gurugram', 'gurgaon'],
+  shop: ['shop', 'store', 'mart'],
+  store: ['store', 'shop', 'mart'],
+  lake: ['lake', 'jheel', 'sarovar'],
+  jheel: ['jheel', 'lake', 'sarovar'],
   gurudwara: ['gurudwara', 'gurdwara'],
   gurdwara: ['gurudwara', 'gurdwara'],
   hospital: ['hospital', 'clinic', 'nursing'],
@@ -90,12 +97,17 @@ function hav(lat1, lon1, lat2, lon2) {
    ('sec' hits 'sector' via prefix; 'sanjay' hits 'sanjays'). */
 const tokHit = (q, n) => q === n || n.startsWith(q) || (q.length >= 4 && q.startsWith(n));
 
-/* fraction of query tokens the row's name+sub covers */
+/* fraction of query tokens the row's name+sub covers — a token also
+   hits through its kind-aliases ('dham' covers an iskcon row) */
 function nameSim(qToks, row) {
   if (!qToks.length) return 0;
   const nToks = norm(`${row.name} ${row.sub}`).split(' ');
   let hit = 0;
-  for (const q of qToks) if (nToks.some((n) => tokHit(q, n))) hit++;
+  for (const q of qToks) {
+    const alts = KIND_ALIAS[q];
+    if (nToks.some((n) => tokHit(q, n) ||
+        (alts && alts.some((a) => tokHit(a, n))))) hit++;
+  }
   return hit / qToks.length;
 }
 
@@ -123,6 +135,15 @@ function coversToks(toks, row) {
   return toks.some((t) => n.some((x) => tokHit(t, x)));
 }
 
+/* EVERY locality token covered — 'mahadev park' must not pass the
+   gate for 'chittaranjan park' just because both say park */
+function coversAllToks(toks, row) {
+  if (!toks.length) return true;
+  const n = norm(`${row.name} ${row.sub}`).split(' ');
+  return toks.every((t) => n.some((x) => tokHit(t, x) ||
+    (KIND_ALIAS[t] || []).some((a) => x.startsWith(a) || a.startsWith(x))));
+}
+
 function score(row, ctx) {
   const sim = nameSim(ctx.qToks, row);
   const lead = leadHit(ctx.qToks, row);
@@ -136,6 +157,17 @@ function score(row, ctx) {
   if (ctx.anchorToks.length) {
     if (coversToks(ctx.anchorToks, row)) s += 0.35;
     else if ((row.dist ?? 0) > 8000) s -= 0.6;
+  }
+  /* resolved-anchor gravity: a row sitting inside the locality the
+     query named beats a same-named thing 20km across the city. rows
+     that survived the lead-regex + radius filter earn a deep bonus. */
+  if (ctx.anchorPts && ctx.anchorPts.length) {
+    const dA = Math.min(...ctx.anchorPts.map((p) =>
+      hav(p.lat, p.lon, row.lat, row.lon)));
+    s += 1.2 / (1 + dA / 2600);
+    if (dA > 14000) s -= 1.0;
+    if (row._deep) s += 0.55;
+    row._dA = dA;
   }
   row._sim = sim; row._lead = lead; row._score = s;
   return s;
@@ -276,14 +308,31 @@ function overpassByName(regex, limit = 10) {
 /* ── anchor decomposition ───────────────────────────────────────── */
 
 /* candidate anchor strings: trailing suffixes (longest first) plus
-   interior n-grams that end on a locality-looking token */
+   interior n-grams that end on a locality-looking token. Two guards:
+   never the whole query ('jagat farm market vaishali' would resolve
+   the wrong-town POI as its own anchor) and never a candidate that
+   swallows the lead entity word ('pawan ...' is the place, not land). */
+/* structural words that describe a place's shape, not its name —
+   fine as the tail of a longer candidate ('chittaranjan park'),
+   poison alone ('park' resolves to whichever park is nearest) */
+const GENERIC_TAIL = new Set(['nagar', 'vihar', 'pur', 'pura', 'puri',
+  'abad', 'bagh', 'colony', 'enclave', 'extension', 'extn', 'garhi',
+  'garh', 'sarai', 'khadar', 'khas', 'ganj', 'estate', 'town', 'sector',
+  'sec', 'block', 'pocket', 'phase', 'part', 'road', 'marg', 'street',
+  'chowk', 'chungi', 'square', 'circle', 'market', 'wala', 'place',
+  'village', 'park', 'nagri', 'kunj', 'lok', 'pahari', 'dwara',
+  'sarai', 'mandi']);
+
 function anchorCandidates(qToks) {
   const out = [], seen = new Set();
   const push = (arr) => {
+    if (!arr.length || arr.length >= qToks.length) return;
+    if (arr.includes(qToks[0])) return;
+    if (arr.length === 1 && GENERIC_TAIL.has(arr[0])) return;
     const s = arr.join(' ');
     if (s && !seen.has(s)) { seen.add(s); out.push(s); }
   };
-  for (let n = Math.min(4, qToks.length); n >= 1; n--) push(qToks.slice(-n));
+  for (let n = Math.min(3, qToks.length - 1); n >= 1; n--) push(qToks.slice(-n));
   for (let i = 0; i < qToks.length; i++) {
     if (!ANCHOR_TAIL.has(qToks[i])) continue;
     for (let n = 3; n >= 1; n--) {
@@ -306,18 +355,21 @@ function anchorFit(row, aToks) {
 async function resolveAnchor(cand, bias) {
   const aToks = sigTokens(cand);
   const [eng, ph, nm] = await Promise.all([
-    engineSearch(cand, bias), photonSearch(cand, bias), nominatimSearch(cand, bias),
+    engineSearch(cand, bias).catch(() => []),
+    photonSearch(cand, bias).catch(() => []),
+    nominatimSearch(cand, bias).catch(() => []),
   ]);
-  return dedupe([...eng, ...ph, ...nm])
+  const fit = dedupe([...eng, ...ph, ...nm])
     .map((r) => ({ r, fit: anchorFit(r, aToks) }))
     .filter((x) => x.fit >= 0.66)
-    .sort((a, b) => b.fit - a.fit || (a.r.dist ?? 9e9) - (b.r.dist ?? 9e9))
-    .map((x) => x.r);
+    .sort((a, b) => b.fit - a.fit || (a.r.dist ?? 9e9) - (b.r.dist ?? 9e9));
+  if (!fit.length) return [];
+  const maxFit = fit[0].fit;
+  return fit.filter((x) => x.fit >= maxFit - 0.01).map((x) => x.r);
 }
 
 function buildLeadRegex(qToks, aToks) {
-  const lead = qToks.filter((t) =>
-    !aToks.includes(t) && (t.length >= 3 || /^\d+$/.test(t)));
+  const lead = leadToks(qToks, aToks);
   const terms = new Set();
   for (const t of lead.slice(0, 4)) {
     terms.add(t);
@@ -325,6 +377,71 @@ function buildLeadRegex(qToks, aToks) {
   }
   if (!terms.size) return null;
   return [...terms].slice(0, 8).map(escRe).join('|');
+}
+
+/* query words minus the anchor's words — the 'kind + name' lead */
+const leadToks = (qToks, aToks) =>
+  qToks.filter((t) => !aToks.includes(t) && (t.length >= 3 || /^\d+$/.test(t)));
+
+/* locality the user named: the longest anchor candidate that has a
+   real distinguishing token ('mandir chittaranjan park' → the answer
+   must cover chittaranjan, not just any park). Kind-words inside the
+   candidate ('mandir', 'market') are dropped — 'mahadev park' covering
+   'park' must never satisfy a 'chittaranjan park' query. */
+function locToksOf(qToks, cands) {
+  for (const cand of cands) {
+    const toks = sigTokens(cand);
+    if (!toks.some((t) => !KIND_ALIAS[t] && !GENERIC_TAIL.has(t))) continue;
+    const loc = toks.filter((t) => !KIND_ALIAS[t]);
+    if (loc.length) return loc;
+  }
+  return [];
+}
+
+/* the no-overpass deep pass: per resolved anchor, ask the text
+   geocoders for '<lead words> <anchor>' — photon/nominatim steer by
+   the locality name and hand back the named things inside it. One
+   extra variant swaps each kind-word for its broadest alias so
+   'neelanchal dham sant nagar' also tries 'iskcon sant nagar'. */
+async function anchorGeoRows(anchors, qToks, aToksAll, bias) {
+  const lead = leadToks(qToks, aToksAll);
+  if (!lead.length) return [];
+  const re = buildLeadRegex(qToks, aToksAll);
+  const rx = re ? new RegExp(re, 'i') : null;
+  const jobs = [];
+  for (const a of anchors.slice(0, 3)) {
+    const variants = new Set([`${lead.join(' ')} ${a._cand}`]);
+    const broad = lead.map((t) => {
+      const al = KIND_ALIAS[t];
+      return al ? al[al.length - 1] : t;
+    }).join(' ');
+    if (broad !== lead.join(' ')) variants.add(`${broad} ${a._cand}`);
+    let first = true;
+    for (const v of variants) {
+      const query = v;
+      const tag = () => jobs.push(
+        engineSearch(query, bias).catch(() => []),
+        photonSearch(query, bias).catch(() => []));
+      tag();
+      if (first) jobs.push(nominatimSearch(query, bias).catch(() => []));
+      first = false;
+    }
+  }
+  const flat = dedupe((await Promise.all(jobs)).flat());
+  const out = [];
+  for (const r of flat) {
+    const near = anchors.reduce((best, p) =>
+      hav(p.lat, p.lon, r.lat, r.lon) < hav(best.lat, best.lon, r.lat, r.lon)
+        ? p : best, anchors[0]);
+    if (hav(near.lat, near.lon, r.lat, r.lon) > 5000) continue;
+    if (rx && !rx.test(`${r.name} ${r.sub}`) &&
+        nameSim(lead, r) < 0.4) continue;
+    out.push({
+      ...r, sub: `${r.sub ? r.sub + ' · ' : ''}near ${near._cand || near.name}`,
+      _deep: true,
+    });
+  }
+  return out;
 }
 
 /* ── the cascade ────────────────────────────────────────────────── */
@@ -371,8 +488,9 @@ async function search(q, bias) {
   ]);
   const engRank = rank(engRows);
   const top = engRank[0];
+  const locToks = locToksOf(qToks, cands);
   if (top && top._sim >= 0.85 && (top._lead || top._sim >= 0.99) &&
-      (top.dist ?? 0) < 25000) {
+      (top.dist ?? 0) < 12000 && coversAllToks(locToks, top)) {
     return done(engRank.slice(0, 10));
   }
 
@@ -389,41 +507,68 @@ async function search(q, bias) {
   const trio = await Promise.all(jobs);
   const merged = rank([...engRank, ...trio.flat()]);
   const m0 = merged[0];
-  const anchorMiss = m0 && anchorToks.length &&
-    !coversToks(anchorToks, m0) && (m0.dist ?? 0) > 8000;
+  /* a top row that doesn't cover the locality the user named is a
+     miss wherever it sits — a CP pastry 529m from the bias is still
+     19km from the shahdara they asked for */
+  const anchorMiss = m0 && locToks.length && !coversAllToks(locToks, m0);
   if (strong(merged) && !anchorMiss) return done(merged.slice(0, 10));
 
   /* 3 — anchor decomposition: resolve the trailing locality, then ask
      OSM (one union call) what named things sit near each candidate
-     anchor that match the lead words. */
+     anchor that match the lead words. Round-robin across candidates
+     keeps rival same-named localities in play (two Sant Nagars, three
+     Vaishalis) instead of letting the first candidate flood the pool. */
+  /* anchor selection by cluster vote: every resolved row votes for
+     the 2.5km cluster it sits in (one vote per candidate per cluster).
+     A locality two different candidates agree on beats the whichever
+     single the first candidate happened to rank first — the right
+     Shahdara and the EoK Sant Nagar survive flaky geocoder ordering. */
   const anchors = [];
-  for (const cand of cands.slice(0, 4)) {
-    if (Date.now() - t0 > SEARCH_BUDGET_MS - 2500) break;
-    const rows = await resolveAnchor(cand, bias);
-    for (const r of rows.slice(0, 3)) {
-      if (!anchors.some((p) => hav(p.lat, p.lon, r.lat, r.lon) < 1500))
-        anchors.push({ ...r, _cand: cand });
+  const liveCands = cands.slice(0, 4);
+  const resolved = await Promise.all(
+    liveCands.map((cand) => resolveAnchor(cand, bias)));
+  const clusters = [];
+  resolved.forEach((rows, ci) => {
+    const voted = new Set();
+    for (const r of rows.slice(0, 8)) {
+      let cl = clusters.find((c) => hav(c.lat, c.lon, r.lat, r.lon) < 2500);
+      if (!cl) {
+        cl = { lat: r.lat, lon: r.lon, votes: 0, rows: [], first: ci };
+        clusters.push(cl);
+      }
+      cl.rows.push({ r, cand: liveCands[ci] });
+      if (!voted.has(cl)) { cl.votes++; voted.add(cl); }
     }
-    if (anchors.length >= 3) break;
+  });
+  clusters.sort((a, b) => b.votes - a.votes || a.first - b.first ||
+    (a.rows[0].r.dist ?? 9e9) - (b.rows[0].r.dist ?? 9e9));
+  for (const cl of clusters.slice(0, 4)) {
+    const best = cl.rows[0];
+    anchors.push({ ...best.r, _cand: best.cand });
   }
   if (anchors.length && Date.now() - t0 < SEARCH_BUDGET_MS - 800) {
-    const pts = anchors.slice(0, 3);
+    const pts = anchors.slice(0, 4);
+    ctx.anchorPts = pts;
     const aToksAll = [...new Set(anchors.flatMap((a) => sigTokens(a._cand)))];
     const re = buildLeadRegex(qToks, aToksAll);
-    const pois = re ? await overpassNearAnchors(pts, 1600, re, 12) : [];
+    const [pois, geoRows] = await Promise.all([
+      re ? overpassNearAnchors(pts, 1600, re, 12) : Promise.resolve([]),
+      anchorGeoRows(anchors, qToks, aToksAll, bias),
+    ]);
     const poiRows = pois.map((r) => {
       const near = pts.reduce((best, p) =>
         hav(p.lat, p.lon, r.lat, r.lon) < hav(best.lat, best.lon, r.lat, r.lon) ? p : best, pts[0]);
       return {
         ...r, sub: `${r.sub ? r.sub + ' · ' : ''}near ${near._cand || near.name}`,
         dist: bias ? hav(bias.lat, bias.lon, r.lat, r.lon) : null,
+        _deep: true,
       };
     });
     const anchorRows = anchors.map((a) => ({
       name: a.name, sub: a.sub || a._cand, kind: a.kind,
       lat: a.lat, lon: a.lon, dist: a.dist, source: a.source,
     }));
-    return done(rank([...poiRows, ...anchorRows, ...merged.slice(0, 4)]).slice(0, 10));
+    return done(rank([...poiRows, ...geoRows, ...anchorRows, ...merged]).slice(0, 10));
   }
   if (anchors.length) {
     const anchorRows = anchors.map((a) => ({
