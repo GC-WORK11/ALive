@@ -204,15 +204,16 @@ A.screen('journey', {
       mode: null,            // 'live' | 'preview'
       follow: true,
       s: 0, sMax: 0,
-      t0: Date.now(),
       pos: null,
       watchId: null, watchTimer: null,
       raf: 0, simMul: 1, simLast: 0, simElapsed: 0,
+      liveAcc: 0, liveT0: 0,
       samples: [{ t: 0, dose: 0 }],
       sampleFloor: 0,
       bearing: null,
       done: false,
       offRoute: false,
+      simUsed: false,
       lastRev: { t: 0, s: -1e9 },
       revName: null,
       gotFix: false,
@@ -340,7 +341,7 @@ A.screen('journey', {
       A.map.puckMove(lat, lon, opts && opts.acc);
       if (S.follow) camera(lat, lon);
       // dose sample for the receipt curve — at most ~every 1.2s of ride
-      const elapsed = S.mode === 'preview' ? S.simElapsed : (Date.now() - S.t0) / 1000;
+      const elapsed = elapsedNow();
       if (elapsed - S.sampleFloor >= 1.2) {
         S.sampleFloor = elapsed;
         S.samples.push({ t: elapsed, dose: dose.at(S.s) });
@@ -359,10 +360,16 @@ A.screen('journey', {
       if (arrived) finish(true);
     }
 
+    /* ride clock: preview sim-seconds + live wall-seconds, added honestly */
+    function elapsedNow() {
+      const live = S.liveAcc + (S.mode === 'live' && S.liveT0 ? (Date.now() - S.liveT0) / 1000 : 0);
+      return S.simElapsed + live;
+    }
+
     /* ── live mode ────────────────────────────────────────────────── */
     function startLive() {
       S.mode = 'live';
-      S.t0 = Date.now();
+      S.liveT0 = Date.now();
       ui.flag.hidden = true; ui.speedFab.hidden = true; ui.gpsBtn.hidden = true;
       S.watchId = A.geo.watch((pos) => {
         if (S.done || S.mode !== 'live') return;
@@ -404,10 +411,12 @@ A.screen('journey', {
     /* ── preview mode — simulated, honestly paced ─────────────────── */
     function startPreview() {
       if (S.done) return;
-      if (S.mode === 'live' && S.watchId != null) {
-        A.geo.clearWatch(S.watchId); S.watchId = null;
+      if (S.mode === 'live') {
+        if (S.watchId != null) { A.geo.clearWatch(S.watchId); S.watchId = null; }
+        if (S.liveT0) { S.liveAcc += (Date.now() - S.liveT0) / 1000; S.liveT0 = 0; }
       }
       S.mode = 'preview';
+      S.simUsed = true;
       ui.flag.hidden = false;
       ui.speedFab.hidden = false;
       ui.nofix.hidden = true;
@@ -472,7 +481,7 @@ A.screen('journey', {
       if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
       clearTimeout(S.watchTimer);
 
-      const takenS = S.mode === 'preview' ? S.simElapsed : (Date.now() - S.t0) / 1000;
+      const takenS = elapsedNow();
       const coveredM = S.sMax;
       const frac = clamp(coveredM / route.L, 0, 1);
       const doseDone = dose.at(coveredM);
@@ -488,7 +497,7 @@ A.screen('journey', {
         km_plan: opt.distance_km ?? null, eta_plan_s: opt.eta_s ?? null,
         covered_km: coveredM / 1000, taken_s: Math.round(takenS),
         dose_ug: doseDone, dose_plan_ug: dose.total,
-        simulated: S.mode === 'preview',
+        simulated: S.simUsed,
       };
       A.store.set(STORE_LAST, rec);
       const hist = A.store.get(STORE_HIST, []);
@@ -538,7 +547,7 @@ A.screen('journey', {
             stroke="var(--accent-ink)" stroke-width="1.8" stroke-linejoin="round"/>
           <text x="${PADL - 4}" y="${PADT + 8}" class="jr-ax" text-anchor="end">µg</text>
           <text x="${PADL}" y="${H - 6}" class="jr-ax">0</text>
-          <text x="${W - PADR}" y="${H - 6}" class="jr-ax" text-anchor="end">${Math.round(tMax / 60)} min</text>
+          <text x="${W - PADR}" y="${H - 6}" class="jr-ax" text-anchor="end">${tMax < 90 ? Math.round(tMax) + ' sec' : Math.round(tMax / 60) + ' min'}</text>
           ${planY != null ? `<text x="${W - PADR}" y="${Math.max(10, planY - 3).toFixed(1)}" class="jr-ax"
             text-anchor="end">plan ~${Math.round(optDose)}</text>` : ''}
         </svg>`;
@@ -558,9 +567,9 @@ A.screen('journey', {
       /* verdict lines — only real cited comparisons */
       const vlines = [];
       if (dShown != null) {
+        const pctTxt = (p) => p >= 1 ? `${Math.round(p)}%` : '<1%';
         vlines.push(`you breathed ~${Math.round(dShown)} µg of pm2.5 on this ride`);
-        const pctWho = Math.round((dShown / WHO_DAY_UG) * 100);
-        vlines.push(`≈ ${pctWho}% of a day at the WHO 24h guideline (15 µg/m³, ~216 µg breathed)`);
+        vlines.push(`≈ ${pctTxt((dShown / WHO_DAY_UG) * 100)} of a day at the WHO 24h guideline (15 µg/m³, ~216 µg breathed)`);
       } else {
         vlines.push('no dose estimate came back for this option — nothing to total up');
       }
@@ -627,7 +636,8 @@ A.screen('journey', {
           if (!cel || !cel.isConnected) return;
           if (m != null && m > 0) {
             const dayUg = m * 14.4;
-            const pct = Math.round((dShown / dayUg) * 100);
+            const pctRaw = (dShown / dayUg) * 100;
+            const pct = pctRaw >= 1 ? `${Math.round(pctRaw)}%` : '<1%';
             // equal-breath minutes in today's average air
             const conc = opt.dose && opt.dose.avg_conc_ugm3;
             let eq = null;
@@ -637,7 +647,7 @@ A.screen('journey', {
             }
             cel.classList.remove('muted');
             cel.innerHTML =
-              `≈ <b>${pct}%</b> of a day breathing delhi's current average ` +
+              `≈ <b>${pct}</b> of a day breathing delhi's current average ` +
               `(${Math.round(m)} µg/m³ field mean now)` +
               (eq != null && eq >= 1 ? ` — like <b>${eq} min</b> in that average air` : '');
           } else {
