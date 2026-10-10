@@ -47,3 +47,7 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - BUG (integration): airmap tap-readout card leaks onto whereto screen (shared map pins/cards survive screen switch). Fix = whereto mount clears airmap's tap pin/card or airmap cleanup removes its overlay — check airmap.js teardown on hide.
 - BUG (search): Pawan Bakery Shahdara still wrong after 0d99cab — delhi_index Pawan Plaza rows short-circuit the cascade; anchor decomposition not reached. Nudged search lane w/ live repro.
 - admin lane ffb3fedb RUNNING.
+- 18:15: ALL 6 LANES DONE. deploys: da798351 (5 lanes) then 758d5f4c (all + admin + search fix). /app + admin mount live on prod+Vercel.
+- Search acceptance PASSED in node harness: Pawan Bakery → Shahdara cluster (Royal Bakery 77.2839, block gates, Hanuman Mandir, locality). Browser stale-cache was the earlier false-negative — always cmd+shift+r between commits.
+- Integration audit written: docs/lanes/integration-audit.md. Blueprint suggestion filed (macOS aws-cli venv + deploy recipe).
+- Remaining: memory sync, final user wrap, credential-rotation reminder.
