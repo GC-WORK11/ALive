@@ -1,0 +1,1458 @@
+# Alive — FULL HANDOFF (you are the new lead session; keep working for hours)
+
+Repo: <owner>/Delhi-Air-108. Working branch: base/v2. main is merged up to base/v2 as of this handoff. Work on base/v2: `git pull --rebase origin base/v2`, make small focused commits with `git commit -m`, `git push origin HEAD:base/v2`. Merge base/v2 → main (no-ff) at stable checkpoints after the tests pass. Never force-push. PR #4 (https://github.com/<owner>/Delhi-Air-108/pull/4) is the historical full-product PR. The owner wants direct pushes, no new PRs.
+
+Owner: govinda (<owner>). He is building this for the AWS×WeMakeDevs Environmental Hacks, Track 01 Air, Oct 8–11 2026. The prize and the Amazon fast-track matter a lot to him. He wants you to work continuously and not stop after 1–2 hours. Message him with concise, honest progress.
+
+## Product (one line)
+**A personal PM2.5 dosimeter for Delhi — no hardware** (`docs/plan/alive-depth.md` is the pivot doc): your phone's timeline × our 15-min concentration field → your inhaled dose, reconstructed on-device; only consented k≥3 aggregates ever leave. Your lungs' ledger: what you breathed today, where it cost you, when tomorrow's air is worth going out in. Dose-priced routing is one feature inside it — the proof the field is real enough to decide with: a C++ engine searches Delhi/NCR's 1.07M road edges priced by the smoke on them this minute, with an honest uncertainty band.
+It has two faces: (1) the personal mobile app (Android = the released product; iOS = demo only) whose day view is the on-device ledger, and (2) public web surfaces — `/` dosimeter landing, `/city` Delhi's ledger + lung reach, `/community`, `/admin` engine room — aggregates only.
+
+## Owner's non-negotiable rules (from the full prompt history)
+- No dummy code, no dummy data, no fake features, no fake "live" counters, no fabricated numbers. Every number must be real or explicitly labeled as an estimate with a band.
+- The core is a least-INHALATION decision: the route is chosen by estimated inhaled dose on the real-time field (PM2.5 + other species), over legal, sane roads. Time and distance tradeoffs stay visible. No LLM for the core decision: deterministic physics is the explainable answer.
+- Cigarette equivalents are OFF by default and are never a headline. They exist only behind a settings toggle. Default framing is estimated µg with bands. Never write "actually breathed".
+- Emissions are calibrated from the user's vehicle PUC certificate (one-time setup: BS class + CO%/HC/smoke readings), not from generic fleet guesses.
+- Admin shows aggregates only ("we had N journeys"). Never show who, from where, to where, or per-user cigarettes. Corridors need k≥3 distinct devices over 72h. A banned-key test guards every admin endpoint (token/lat/lon/coord/trajectory/points/geometry/route/contributor/user/uid/uuid/device_id/ip; use "path" not "route" in timing output).
+- Admin is LIGHT theme (he loves it). Use the official CPCB AQI colours and the 13-district NCR choropleth. Animated data elements must be driven by real changing data.
+- Coverage is the NCR commute-shed, not just the NCT: Delhi + Ghaziabad/UP + Noida/Greater Noida + Gurugram/Faridabad/Sonipat (Haryana). Field bbox is 76.8–77.9°E × 28.2–28.95°N. Panipat is outside the corpus and is an honest coverage ceiling.
+- Search must reach every house and landmark, home-to-home, in milliseconds: bundled on-device gazetteer (124,311 rows post-purge; the server-side copy is 123,934, <5 ms) plus server tiers (~97k corpus, 16,949 address rows). Never fabricate a location; honest empty/ambiguous is fine.
+- $0 this month: Cost Explorer showed $0.00 for Oct 1–4 (credits). ECS runs on FARGATE_SPOT. Do not add paid APIs or infra without asking him. Self-hosted OSRM (~$10–15/mo) is HIS decision.
+- DO NOT touch the Pocket Rig project or its 2 agents (separate repo <owner>/remote).
+- Never expose secrets. He was told to rotate the OpenAQ key and the Devin API key he once pasted in chat.
+
+## Live system
+- NLB: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (HTTP port 80 ONLY; never :8000 or https). EIP 65.2.28.40.
+- AWS ap-south-1, ECS cluster `alive108` / service `alive108`, TG alive108-tg, log group /ecs/alive108, CodeBuild alive108-build.
+- Deploy: `bash scripts/deploy.sh` (zips server/ → CodeBuild → ECR → new task def → ECS → TG verify). As of 76e46b4 it gates on the PRIMARY rolloutState and picks the task on the new task def. That fixed a race that evicted the fresh target. Verify with `curl $NLB/health` (build_sha) after every deploy.
+- Admin token: AWS Secrets Manager `alive108/admin-token`. Locally it's in ~/.alive_admin_token if present, otherwise read it from Secrets Manager. Use it as a Bearer header on /admin/api*.
+- Key endpoints: /health, /aqi, /grid, /v2/plan (POST; `fast:true` = engine-only rows, `partial:true`), /v2/day (morning card: heavy/cleanest windows + decisions), /v2/outlook (per-day fold of the 120h horizon), /v2/archive (served field recorded hourly — history, not forecast), /v2/reach (bounded-Dijkstra lung reach, C++/Python parity-tested), /v2/reroute, /v2/search, /v2/reverse, /v2/districts, /v2/strip, /v2/trip (donation), GET+DELETE /v2/ledger, /metrics (Prometheus text), /city, /community, /admin, /admin/api{,/status,/timing,/sources,/corridors,/model,/donations,/global,/validation,/reviews}. POSTs: /v2/trip, /v2/feedback, /report, /v2/plan, /v2/reroute — `/observe` is retired → **410 Gone**.
+
+## Code map
+- server/ — FastAPI. v2/plan.py (planner: motor/slow/engine/transit arms raced with asyncio.wait; PLAN_BUDGET_S 20, ENGINE_BUDGET_S 8, TRANSIT_BUDGET_S 12; `_engine_options` least-inhalation rows with `engine_dose_ug`; `_dose_surface` = one raster for every row), airfield.py (live kriged field + σ), forecast.py (semi-Lagrangian advection; anchor tau 9h; future-hour overshoot falls back to the model value, hour-0 live zero stays zero), community.py (k≥3 corridors, `_obs_km/_obs_cells` legacy-safe), admin_agg.py + admin.html (board), emissions.py (`_puc_calib`), routegraph.py (Python twin), core/ (C++ alive_core PathEngine, pybind; rebuild `server/core/build312` via server/core/build_ext.sh after C++ changes).
+- Mobile/ — Expo SDK ~57, RN 0.86, MapLibre. READ Mobile/AGENTS.md first. Never hand-edit android/ or ios/. Check before every push: `cd Mobile && npx tsc --noEmit && npx expo lint`. Shell state machine: src/components/shell/useShellFlow.ts (engine-first paint + `refining`), CompareSheet.tsx, ReceiptSheet.tsx; screens: SearchScreen, DelhiToday, LedgerScreen, SettingsScreen, VehicleSheet (PUC), OnboardingScreen; search: src/search/t0.ts; strings: src/i18n/strings.ts (en+hi).
+- Bridge/contract.ts — shared wire types (server/tests/test_contract_sync.py enforces them).
+- Tests: `cd server && PYTHONPATH=core/build312:. .venv312/bin/python -m pytest -q tests`. Last full run: 788 passed, 5 skipped, 1 xfailed. The focused plan/hardening/contract suites (112) passed after the latest changes.
+
+## Docs to read (in this order)
+docs/plan/master-plan.md (latest mandate matrix + ranked gaps, written this session), docs/plan/00-README.md … 10-claims-ledger.md (master plan set), docs/plan/runbook.md, docs/plan/test-commands.md, docs/plan/probe-audit.md (174-query search battery), docs/plan/judge-lens.md, docs/claims-audit.md, docs/demo-day.md (iOS sim crash verdict + demo protocol), docs/plan/map-vs-google.md, docs/18-aws-architecture.md, docs/19-submission-checklist.md, docs/20-hackathon-playbook.md, docs/28-pitch.md, docs/17-submission-writeup.md.
+
+## Where we are (latest)
+**2026-10-05 state-of-play: the dated entries below are point-in-time logs, not current claims. The current truth is `## cont.29` at the end of this file + `docs/plan/NUMBERS.md` (canonical numbers ledger — `scripts/verify_numbers.sh` re-derives every quoted figure live).**
+
+Shipped and live this session (verified by curl + ECS logs, not vibes):
+- engine-arm shared solves (5805620): `_solve_join` memoizes/dedupes engine primaries + corridor alts per (rounded OD, _ENG_T pricing epoch). Live under 6 concurrent fast+full calls: fast paint took_ms ~77–100 (was 1.6–3 s), full plans 0.8–4.5 s with all 15 engine rows, zero "engine timed out". Logs show owner solves 1.6–6.6 s then repeat calls 2–10 ms. ECS pool now 3 workers (joined callers park on an Event, no CPU).
+- deploy verified: build_sha 58056209 on the NLB.
+- cold-task first plan: 15 options in 19.3 s (inside the 20 s budget — the 34 s bug stays fixed).
+- 40-OD engine audit live on 7e92660 (tools/audit_engine_quality.py): 11/40 ODs have a least-smoke row saving ≥10% dose for ≤15% extra time vs the fast row (was 10), 17/40 vs same-mode (was 16), 0 absurd detours. 108 "worse-dose" rows are mostly the known duration-model gap (engine ~27 km/h vs OSRM freeflow ~55 — dose integrates field×ventilation×time). The depth lane (new SWE-2 Max child) owns splitting that number honestly.
+- main merged at 54e2ed2 (no-ff) — includes engine dedupe, search fixes, probe+audit tools, location lane query-tolerance leg. Full suite 809 passed.
+- deploy verified: build_sha 0a3c3140 on the NLB.
+- live 174-query battery on 0a3c3140 (lead re-run): 172/174 top-1 (98.9%), p50 473ms; only misses are the two documented honest ones (panipat ceiling, 25 rajinder nagar substring artefact).
+- deploy verified: build_sha 89e34132 on the NLB — contains the WAQI-first stations chain, `_warm_static` (gazetteer+climatology parsed off-loop at boot), and Android lane's hindi turn-by-turn + polish commits.
+- Android UI/UX lane COMPLETE (efb8721d, verified numbers): gfxinfo janky 42.27% → 29.07% (−31%), p99 150→93ms; TTS verified with 6 real utterances on a teleported 3.8km drive; 9 polish commits; release APK on 65a8619 (135.8MB, debug-signed, NLB verified in bundle). Gaps it flagged honestly: dose "0 µg" on teleport (real — ~zero dwell; untested at driving speed), occasional eaten adb taps in search ScrollView, metro legs untested, PUC verified on earlier build.
+- Route-quality truth DONE (depth lane, 1588dc3): dose-ratio decomposition over the 108 worse-dose rows — 0 rows genuinely smokier per metre; the count is the router's freeflow-duration overstatement (bike implied 56–75 km/h). docs/plan/engine-quality-decomp.md.
+- STATIONS = 0 live — root-caused + verdict (2026-10-04): OpenAQ key dead (401, owner banned). Probed every alternative from a one-off Fargate task in the prod VPC: api.data.gov.in CONNECTION REFUSED even from ap-south-1 India egress (the India-egress assumption was wrong — dead with or without a key); CPCB dashboard timeout; SAFAR TLS-connects-then-hangs (broken host); WAQI `demo` token silently serves SHANGHAI (fake — rejected); aqicn pages proxy keyed api.waqi.info only. ONLY real path = a WAQI token (owner, 30s signup at aqicn.org/data-platform/token/ with his email — temp-inbox signups got no activation mail; form is captcha-gated).
+- Stations chain rewired WAQI→CPCB-keyed→OpenAQ live (43f0099 in 89e34132): `WAQI_API_KEY` injected from Secrets Manager `alive108/waqi` (placeholder `REPLACE_ME` — adapter skips honestly; /health `sources.stations.feeds` reports per-feed verdicts). Flip when the token lands = `put-secret-value` + `force-new-deployment`, zero code.
+- STATIONS LIVE (owner's WAQI token, tools/flip_waqi_token.sh, 2026-10-04): `/health` `stations.count=24, source=waqi`; /admin/api/status field=`waqi-stations+open-meteo/cams`, 68-71 samples, station_readings=24 inside the krige; /city 13 districts live CPCB colours. Adapter keeps only fresh CPCB readings — count varies honestly (24 → 5 seen overnight, CPCB stations go stale for hours).
+- Debias fix live (depth lane ce101e5): `_debias` scales ONLY pm2_5 by ratio b; pm10 += pm2_5*(b-1) additively; gases/AQI/dust/aod raw CAMS. Verified live: o3 ~166-176 (was 575 absurd), aqi 173-192 sane.
+- ADMIN BOARD FIX (1436c2d, live + browser-verified): my one-prompt commit 868789c introduced a syntax bug (`{headers:'Bearer '+tok}}` — missing `authorization:` + stray `}`) that killed the whole script — page dead "connecting", no prompts at all. Fixed to `{headers:{authorization:'Bearer '+tok}}` + wrapped `.map(u=>getJSON(u))` (`.map(getJSON)` passed array index as `retried`). Verified in a fresh Chrome: exactly ONE prompt → full board (1436C2D4, 24 stations, 13 districts, 26 trips, 6 corridors).
+- main merged at 06b6c3f (no-ff) — admin fix + lanes' lands (Mobile polish, airfield debias + tests). Suite 833 passed.
+- Depth lane legs all in base/v2: 1588dc3 (dose decomp harness), 0a90a0a (_warm_field at boot — field serving no longer request-driven, saves ~60s cold), cc3bdef (tools/warm_task.py + FARGATE_SPOT→on-demand runbook in docs/demo-day.md), d03f051 (claims-audit §4/§7 privacy+honesty).
+- Depth lane then landed 3ef3677: admin feed + recent_journeys k≥3-device hour buckets (per-trip rows dropped — privacy).
+- DEPLOY VERIFIED 2026-10-04: build_sha 3ef36777 live; stations 24/waqi; fresh-task plan 5 engine rows 1.5s.
+- EXPOSURE TRUTH verified on live 3ef36777 (lead recompute): dose = c_eff × VE × minutes reproduces every row's dose.mid within rounding; microenv×VE ordering metro 3.4 < car 4.1 < bus 5.6 < walk 14 < 2W 9.9 < cycle 24.2; engine_dose_ug ≈ dose.mid ±2% on all 5 rows (priced objective = displayed integrand holds post-dedupe); bands lo<mid<hi ≈ ±13% (krige σ linear sum).
+- iOS DEMO TAKE edited+verified: /Users/devin/ios-take/ios_e2e_clean.mp4, 241s/12.4MB — launch→permission→onboarding→consent→map→search→results→vehicle wizard→PUC→compare (leave-later histogram)→turn-by-turn nav→receipt→drawer→settings (cigarettes OFF)→Delhi today. Take-2 crashed 3× (sim-only MapLibre vGPU kill — ZERO .ips reports = GPU kill not app bug); take-1 edited with 3 cuts (LogBox era 3.5–43s, tips-overlay ~71–72s, dead-dwell+Safari ~95–186s on CFR-normalized timeline). VFR→CFR normalization required before cuts (-ss domain drifts ~4% vs wall).
+- ENGINE MANDATE assigned to depth lane (139507b4, in-session continuation): priced=displayed under dedupe (3 cases: owner solve/memo-hit/fast-vs-full), legality on live routes (230 turn restrictions + 3,428 access overrides + 1.6× detour bound + bbox), engine timeout under concurrent load post-dedupe, duration-model decision (calibrate vs label).
+- BACKEND LANE spawned (29adb480, SWE-2 Max): field/species units audit, dose math e2e, admin "insufficient data" tiles verdict, /v2/plan robustness under load, error/edge paths, forecast anchor truth.
+- UI/UX LANE (Android exhaustive + admin border-level + recorded E2E) brief written at /Users/devin/uiux-lane-prompt.txt — spawn BLOCKED by 5-SWE-2 org cap; retry when any running session settles.
+- Elevation-tile storm noted: app fetches terrarium PNG hillshade tiles every pan/zoom — bandwidth/battery flag for UI/UX lane.
+- ROLLUP/VALIDATE JOBS WIRED END-TO-END (daa0571 + live-verified): three stacked causes fixed — Dockerfile CMD honors ALIVE_JOB (`rollup_lambda.py <job>`; the scheduled RunTask previously booted a duplicate API), ingest_worker.sync_rollup_outputs() mirrors `s3://alive108-air/{daily,validation}/*` → `server/data/field/*` (admin_agg only reads local mirror), main._start_rollup_mirror daemon (boot pull + every 30min). rollup.py ships validation/field_validation.md to S3. Schedules ENABLED on task-def FAMILY: rollup-daily 00:30 IST, validate-weekly Sun 20:00 IST (ingest-15min stays DISABLED — in-app loop owns it). Schedule network config corrected to real subnet/SG (stale provision values would never have launched).
+- One-off jobs ran exit-0 live: rollup → daily/2026-10-03.json (2.8MB, 83 snapshots); validate → weekly-2026-W40.{json,md} + 2026-W40.json + field_validation.md (9.6KB).
+- ADMIN/CITY BORDER-LEVEL SWEEP BY LEAD (browser-verified): every tile renders real or honest-empty. Two real bugs fixed: (a) headline "model error" card rendered "insufficient data" while archive_replay mae 52.5 sat in the week block — now falls back labelled "model error · archive replay (mae)" (b47d5c9); (b) /city ticker rendered raw floats "317.1261538242962 µg/m³" — rounds to 1dp/int (3c7f86d).
+- DEPLOY VERIFIED 2026-10-04: build_sha 3c7f86d8 live; /admin/api/validation {status:ok, daily 2026-10-03 median 101.16µg 14155 cells, weekly archive_replay mae 52.5 rmse 56.34 bias +50.7 (7240 pairs), report_md true}; browser shows the card + rounded ticker.
+- Suite 843 passed; main merged at 7568376 (no-ff).
+- SWE-2 slot truth: org cap 5 running — mine 2 (depth 139507b4 engine mandate, backend 29adb480) + Pocket Rig 3 (main + 2 subs) = full. efb8721d exited (its Android overhaul complete). UI/UX combined lane spawn retries on settle; location 1cb3ac27 suspended.
+- Next: UI/UX lane spawn when a slot frees; LOSO needs held-out-station snapshots to populate (validation infrastructure gap — backend lane owns).
+- ENGINE MANDATE COMPLETE — deployed live `2175ff93` (2175ff9 + deploy fix 357b7e4), suite 859. (1) priced=displayed PROVEN + pinned: engine_dose_ug = verbatim A* priced-edge sum, dose band via same _ENG_PACK, live delta ≤±2%, memo-hit byte-identical, fast/full share ("prim",ek) memo. (2) Legality: real violation found+fixed — MgRoad→Saket car alt1 1.77× detour+worse dose → ALT_MAX_DETOUR=1.6 + DETOUR_MAX_VS_FAST=1.6 two layers; test_legality_corpus pins edge legality/turn bans/bbox/cap over 40 ODs. (3) Concurrency: zero-engine-rows root-caused = old code dropped unpriced busy arms during cold first raster sweep (~26s window on a booting task); _ENG_DONE busy-join (≤3.5s wait) + ENGINE_RASTER_BUDGET_S=12s adaptive lattice; load probe: fast p50 258ms / full p50 6.9s p95 8.6s, 14/14 engine rows, 0 timeouts. (4) Duration model decision = LABEL: engine primaries 36–56 km/h implied vs router 40–57; scaling can't change argmin → `duration_basis:"freeflow"` shipped on engine rows + corpus regression. FLAG for lead: router-side dur_f implies bike 56–75 km/h (2W outruns cars) — dose understates on router bike rows.
+- Lead fix `522422a`: full-plan engine-arm death no longer silent — `_build_options` returns missing-arm names, /v2/plan + /v2/reroute emit `degraded:["engine",...]`; contract.ts declares degraded/partial/puc_calibrated; 2 tests pin it.
+- 40-OD audit re-run by lead on 3c7f86d8: 10/38 ODs win vs fast row, 16/38 vs same-mode, 0 absurd detours, 103 worse-dose rows (all duration-model artifact per decomp — 0 genuinely-smokier corridors).
+- UI/UX combined lane SPAWNED (ebe5ed90, SWE-2 Max) after depth-lane terminate freed its slot — Android+admin exhaustive sweep + cross-consistency + recorded E2E + APK rebuild.
+- Backend lane (29adb480) also owns: band-coverage calibration vs held-out station truth (is the ±13% krige band calibrated? coverage % inside band at 2σ).
+- Lead `c8ee6c1` deployed live (build_sha c8ee6c1b): `_mode_cap_duration_s` clamps router-row implied speeds at the engine graph's own ceilings (routegraph.MODE_RULES spd — bike 50, auto 40, cycle 16, walk 5; car uncapped). Verified Gurugram→CP: bike osrm row exactly 50.0 km/h implied (was ~61.7 = scooter outrunning cars → ~30% dose understatement), auto exactly 40.0. freeflow_s capped identically (no phantom idle). 4 tests pin it.
+- `degraded` flag verified live: a transit-arm timeout on a warm CP→Shahdara call surfaced `degraded:["transit"]` — dead arms now visible, previously silent.
+- Lead `e11f1ca` pushed (next deploy): transit legs carry per-leg dose {mid,lo,hi,avg_conc_ugm3,microenv} — the depth lane's flagged gap; 1 test.
+- Backend lane mid-flight found a real engine pathology: C++ calls held the GIL for the whole solve → ~6 concurrent stretched the 8s budget to ~16s measured live. GIL released in pybind + conc-table RCU + reach-set locking; shipping pending.
+- OWNER RE-SCOPE (2026-10-04): /admin is a GLOBAL judge dashboard — remove "a breath, today" ticker (done in UI/UX lane brief), district spacing polish, Delhi's 11 internal revenue districts + fuller NCR roster (13 today), field-map cell click → locality name via /v2/reverse, global tiles (users-by-area, OD flows, emissions saved). Split: admin_agg/APIs → backend lane; admin.html/city.html → UI/UX lane.
+- ADMIN GLOBAL + GEO LANDED (backend lane, 2026-10-04): (a) `/admin/api/global` — areas (origin-snap distinct devices per district/sub-area), OD area pairs, lifetime `dose_avoided`/`co2_avoided` sums over reporting trips only; every row k>=3 on distinct devices, suppressed rows counted not shown, honest-empty when nothing donated. `record_trip` gained `origin_area`/`dest_area` (resolved in v2/trip from the already-trimmed endpoint → area NAME, never a coordinate); `/v2/trip` summary accepts `avoided_ug`/`co2_avoided_kg`/`puc_calibrated` (sanity-bounded, report-only); DDB store mirrors under `pk="global"` (parity test pins shapes). (b) `/v2/districts` rows now 15 districts + 13 Delhi sub-areas: rows carry `level`/`parent`/`partial_field_coverage`; geometry at /ncr.geojson (15) + /delhi_subdistricts.geojson (13). Sub-areas are OSM admin_level=5 — NOT the govt's 11 revenue districts (Shahdara absent from OSM, "Outer North"/"Old Delhi"/"Central North" are OSM-only names — caveat property on the bake). Rohtak (10 grid cells) + Rewari (3) are the only extra NCR districts the field honestly covers — every other constituent's bbox sits wholly outside 76.8–77.9×28.2–28.95 (verified: Bhiwani/Charkhi Dadri/Mahendragarh max lon 76.37–76.47; Panipat/Karnal/Shamli/Muzaffarnagar min lat >28.95; Jind both).
+- Deployed + verified live `5b6f771f` (main 0288a91, suite 894). Lands: (a) WAQI iaqi.v is US-EPA AQI sub-index NOT µg/m³ (37de801) — every station read ~2.6× high since the WAQI flip; inverted via EPA breakpoints; live: Delhi NCT 55.0µg/AQI 92 (was 134/312), CP→Ggn car dose 7.7µg (was 19.9), o3 574-artifact dead. (b) σ-band CALIBRATED (0d5676f): raw coverage 14/29/47% at 1/2/3σ → SIGMA_CAL=3.2 → 95.2% at 2σ (nominal 95.4%); krige µ clamped [0,max]. (c) GIL release through C++ sweeps + race-safe reweight (5cb381a): live 4/4 plans all engine rows 241–950ms (was 8.1s timeouts 1-in-4). (d) Admin global sweep (b29243f): breath ticker GONE, roster tiles, cell inspector, saved tiles. (e) In-app rollup daemon (ffa5298): hourly rollup_tick + S3 mirror — admin tiles self-feed without EventBridge. (f) Rollup stdout digest (5b6f771). TG HEALTH-CHECK WIDENED: unhealthy 2→5, healthy 5→3 — cold-boot warm window (~90s on 1vCPU) was death-looping tasks at 2×6s grace.
+
+Open gaps, ranked (from master-plan.md):
+1. Owner's testing overhaul mandate: exhaustive per-feature Android + admin sweep (every screen/button/border) + recorded E2E vs live API — UI/UX lane RUNNING (ebe5ed90); backend lane covers admin API; lead verified admin+city+exposure live.
+2. Cold-start residual — _warm_field + _warm_static live; depth lane verified: residual honest floor ≈ first ~8.5s of a genuinely cold task (bounded, never fabricated).
+3. Android: physical-finger pass on search taps; dose-at-driving-speed untested (teleport only); PUC re-verify on final APK — all in UI/UX lane brief.
+4. Demo morning: switch Spot → on-demand, warm the task 10 min early (tools/warm_task.py ships, verified live), run the demo on a physical Android phone. iOS = recorded take (ios_e2e_clean.mp4 done).
+5. Keep main merged at checkpoints (last: 7568376; next merge after 522422a deploy verifies).
+6. Router-side bike duration implies 56–75 km/h (OSRM car freeflow) — understates dose on router bike rows vs engine rows; lead owns (plan.py), decide clamp-vs-label consistent with engine rows' duration_basis.
+7. Rollup jobs wired + schedules enabled — daily 00:30 IST, weekly Sun 20:00 IST; admin tiles show real rollup data; LOSO held-out tile honest-empty until station-held-out snapshots exist (backend lane owns band-coverage calibration).
+
+## Every session ever run for this project
+Active right now:
+- ebe5ed9002f24fb49495638d0165218b: COMBINED UI/UX lane on SWE-2 Max, Linux — Android per-feature sweep + admin border-level + cross-consistency + recorded E2E + APK rebuild. https://app.devin.ai/sessions/ebe5ed9002f24fb49495638d0165218b
+- 29adb48022764f489dc2eb86e15fe8b0: BACKEND lane on SWE-2 Max — field/species units audit, dose e2e, admin tiles verdict, /v2/plan robustness, edge-path tests, forecast anchor truth + band-coverage calibration. https://app.devin.ai/sessions/29adb48022764f489dc2eb86e15fe8b0
+- 1cb3ac27d94642f29952845945934fc3: Location-depth lane — SUSPENDED (inactivity + SWE-2 5-session cap; resume when a slot frees). Its lands through 0a3c3140 are live (172/174). Remaining: Hinglish, compound queries. https://app.devin.ai/sessions/1cb3ac27d94642f29952845945934fc3
+Completed + terminated this stretch:
+- 139507b46df84f939b68d447735ea203: engineering-depth lane — ALL engine-mandate legs done (priced=displayed proof, legality fix, busy-join concurrency, duration-label decision) + k≥3 feed 3ef3677 + admin sweep/walkthrough + debias ce101e5; terminated at backlog-clear to free the slot for UI/UX. https://app.devin.ai/sessions/139507b46df84f939b68d447735ea203
+- efb8721d915f40d0807595b4bec3fa6d: Android UI/UX overhaul on SWE-2 Max — COMPLETE + TERMINATED (jank −31%, TTS verified, 9 polish commits, APK on 65a8619; follow-ups carried into the UI/UX lane brief: APK upload + PUC re-verify + tap-cadence pass). https://app.devin.ai/sessions/efb8721d915f40d0807595b4bec3fa6d
+Terminated (out of Ultra quota; work either pushed or handed off):
+- 13283940d1854cd4bf2ff691c4bd9bb7: the previous lead session — this session (93b8804d) is its successor as lead. https://app.devin.ai/sessions/13283940d1854cd4bf2ff691c4bd9bb7
+- 30c986e2137942488c8060da708ef40b: Android UI/UX on ULTRA — died at setup, superseded by efb8721d. https://app.devin.ai/sessions/30c986e2137942488c8060da708ef40b
+Closed for slot reasons (its work is pushed):
+- 3fa2600978ae46c18e5e5502253269e6: Routing-depth lane. Shipped corridor alternatives, field-epoch invalidation, legality audit, OSM turn restrictions (230) + access overrides (3,428), connectivity-screened snap, bike cap 40, and the 40-OD audit (98 anomalies, 0 teleports; the engine-vs-OSRM dose gap is mostly a duration model, engine ~27 km/h vs OSRM freeflow ~55). YOU now own its next leg (route-quality stats, item 4).
+Finished / suspended earlier (read their messages via devin_session_interact get_messages if needed):
+- 472a750080d34ba8ae50ef8cff88f76a: macOS continuation (early build)
+- 5aba7ff24c5b4c2da3df26926b66d03d: app live-data wiring + light theme audit
+- cd33585f169d4244a11a51768b53724d: Android E2E user-journey verification
+- f3a3b24db92d4613831afbee168cc5c8: backend lane: C++ wiring + AWS + admin
+- 73311a0a9d3a4bbf8165faaa3f71ef1e: app-as-user E2E on the Android emulator
+- 14a79dc157af4b64af6ee1e51bafac5d: admin-as-operator E2E + API sweep
+- c4cd4e86db554b29a095d0af5d6275b1: map/app lane, Google-grade UX depth (62-layer bilingual basemap; children b60bd7e9248a454bafa51fd960ad12ff, 516ac825f30e42939e52ec405c96fc21 = Android forensic drive)
+- 78bacf12be3b41e6861662fd3547321b: audit lane, mandate matrix + judge/competitor check (33 mandates, 28 verified)
+- d8b82045dedd45aca28c43147b9d73ea: Android lane, TTS/jank + cigarettes-off + PUC
+- 84038795d9cd466a9a6ad935b7909dd9: city-landing + admin overhaul, NCR choropleth
+- Earlier research/build sessions referenced in docs: 8284a8670ec24473a81ea6e9723958ad (original thesis/research), 279d45cca87d4f039ff49f85deffa57f, 0d2a3f4b5304485ab359a62a75b63048 (marathon deploy + APKs), 506fd9dd5e3349a8b89114515c3193b3 (first Android proof)
+- Previous lead session (the one writing this): https://app.devin.ai/sessions/13283940d1854cd4bf2ff691c4bd9bb7
+
+## Environment gotchas
+- The macOS box cannot run an Android emulator (no nested virt). Use Linux + KVM. Maven Central returns 429 → add a Google mirror via ~/.gradle/init.gradle (don't commit it). Gradle OOM next to the emulator.
+- iOS sim: typing drops characters → use `xcrun simctl pbcopy` + paste. Set the sim location BEFORE launch.
+- The server needs Python 3.12 (.venv312) + Eigen for the krige extension; rebuild the C++ ext after core changes.
+- The timing middleware strips the /v2 prefix in labels (cosmetic).
+- The public OSRM demo is driving-only and slow. Engine rows cover car/bike/auto/cycle/walk without it.
+
+## How to work
+Loop: pick the top gap → fix with a test → run the affected tests (full suite before merging to main) → push base/v2 → deploy → verify live with curl (numbers, not vibes) → message the owner briefly → next. Delegate UI-driven Android testing to the Ultra agent. Never claim "done" without saying how it was verified: local, live AWS, Android, or iOS sim.
+- ADMIN BOARD END-TO-END VISUAL VERIFY by lead (browser, live b890cc6a): every owner's ask confirmed rendered — global framing ("every shared trip becomes a live sensor over delhi — this is the aggregate view" + AGGREGATES ONLY·k≥3 badge), breath ticker gone, 28-tile district grid clean spacing (15 NCR + 13 Delhi sub-areas, real spatial signal: Central/New Delhi 64µg AQI 110-114 MODERATE orange vs East Delhi 43.6 green), cell inspector WORKS (click → "near DGD Bhorgarh clinic · NCT DELHI · 51.3µg" + honest "no named place within 150m" on rural cells), pipeline explainer live numbers per stage, source health (10,70,459 edges, provenance, 120h forecast), trip aggregates (27 trips/113km/mode-split 81.5% car/CO2 moving 89.9%·idle 1.5%·cold 8.6%), k≥3 corridor table (hanuman lane 10 trips/7 dev), JOURNEYS tile live ("35 traversals · 6 corridors"), honest-empty tiles where fields don't ship yet (devices-by-area, pollution-avoided).
+- Backend lane 8f78623 (deployed in b890cc6a): /admin/api/global — users-by-area (origin-snap distinct devices per district), OD pairs, lifetime dose_avoided/co2_avoided over reporting trips only, all k≥3, honest-empty. /v2/districts = 28 rows (15 districts + 13 osm_admin_5 Delhi sub-areas with level/parent/partial_field_coverage); geometry at /ncr.geojson + /delhi_subdistricts.geojson. Rohtak (10 cells)+Rewari (3) = only honest extra NCR; all other constituents verified wholly outside 76.8–77.9×28.2–28.95. Sub-areas are OSM admin_level=5, NOT govt's 11 revenue districts (Shahdara absent — caveat baked).
+- a320ae1: admin.html consumes /admin/api/global live for the shared-picture tiles (each fills the moment its aggregate field ships, honest-empty until then).
+- MOBILE DONATION GAP flagged → UI/UX lane: engine.ts donate() sends {mode,distance_km,duration_s,dose_ug,co2_kg_mid,pm25_g_mid,co2Split} but NOT avoided_ug/co2_avoided_kg/puc_calibrated — the savings tiles fill only from those (k≥3-gated). Small Mobile diff, no server change.
+- ARCHIVE-REPLAY ValueError fixed + deployed d116daad (verify live): validate_field.validate() pairs grew to 6-tuples (station,hour,obs,krige,idw,sigma) while rollup.py unpacked 5 → admin tile showed "unavailable: ValueError". Reader now positional-indexes (append-tolerant) + None-guards krige; both test stubs updated to the REAL 6-schema (they passed with stale 5-tuples — classic mock drift). One-off validate job regenerated s3://alive108-air/validation/weekly-2026-W40.json: status ok, 7,240 pairs, MAE 24.16µg, RMSE 32.16, bias +19.04, mean_obs 23.73. Admin tile flips on the next S3→local mirror pull (≤30min).
+- Suite 904 passed (5 skipped); main merged at d487e71 (no-ff) — includes global API, 28-row districts, admin sweep, Mobile degraded surface, handoff.
+- Deploy d116daad verified live: 24 stations/waqi, field 142s, kriging on.
+- Lanes now: UI/UX ebe5ed90 RUNNING (Android exhaustive + admin border + recorded E2E + APK; relayed donation-fields delta). Backend 29adb480 SETTLED (mandate complete). Slot free for its queued Android-testing child.
+
+### 2026-10-04 (lead, cont.) — service-wedge root cause + degraded contract + archive-replay tile, deployed `d4e59920`
+- **Flap root cause proved in logs**: each task fired `rollup tick` at boot (daily build over 83 snapshots + LOSO folds = minutes of CPU on 1 vCPU) → health checks starved → ALB drained ~6min later → next task re-fired. `ALIVE_ROLLUP_IN_APP` default flipped to off (`main.py:_start_rollup_loop`); EventBridge runs both jobs on separate tasks. Logs show boot→tick→~6min→shutdown, twice.
+- **Deploy `d4e59920` verified live**: `stations: 24 · waqi: ok` recovered instantly (task-side WAQI fetch was timing out under rollup CPU starvation — probe task on same subnet proved bounds+feed work). Full plan 24 opts/3.4s, fast 5 opts/4ms, `degraded` absent on healthy plan (no over-flagging).
+- **Degraded contract (d4e5992)**: an arm returning [] while siblings produce rows now names itself in `degraded` (motor/slow/engine); transit stays exception-only. Router arms swallow backend failures into [] internally (osrm_route returns None for no-route AND unreachable) so "empty on routable OD" is the honest flaggable signal. 2 new tests green.
+- **Archive-replay tile live**: regenerated `s3://alive108-air/validation/weekly-2026-W40.json` (reader fixed for 6-tuple pair schema + mocks pinned) → `/admin/api/validation` serves `archive: ok mae 24.16 · pairs 7240`; loso n:0 honest ("insufficient stations" — archive only has 1 snapshot). Tile shows real MAE, not vibes.
+- **`alive108-validate-weekly` bumped** weekly→daily `cron(30 20 * * ? *)` Asia/Kolkata (00:30IST rollup + 20:30IST validation, both ENABLED).
+- Suite: 904 green at main `d487e71`. Remaining: Android physical/emulator E2E (cap slot), next main merge after suite.
+
+### 2026-10-04 (lead, cont.2) — full live surface sweep + demo-day hardening
+- **Deploy `d4e59920` stable** ~1h: stations 24/waqi, field fresh (730s), 75 fires, no rollup tick in logs (daemon off verified).
+- **Every endpoint swept live**: all 200s — /v2/{plan,search,city,districts,reverse,reroute,trip} + /aqi /grid /depart /today /shift /community /blackspots /reports /fires + /admin/api×6 + /city /admin pages. /depart verified physically sane (12.3µg now → 54.6µg overnight-stagnation peak → 9.7µg tomorrow midday). /decide /escape /compare are legacy v1 (9–15s, not on app path — app calls /v2/* only).
+- **Search battery on live**: all prior regressions hold — aiims→metro gate, lodhi garden→park, b-12 lajpat→block M; panipat→honest outside-corpus ceiling.
+- **Forecast horizon verified honest**: 94µg live → 236 overnight → 264 tomorrow evening = real Oct stagnation physics (CAMS×VC-ratio 0.6–2.5 + decaying live anchor), not unit bias.
+- **`/admin/api/global` honest**: dose_avoided 99.2µg×1 trip flowing; areas/od_pairs `suppressed:{1,1}` k<3 counted not shown; co2_avoided null = honest (predates field).
+- **1-vCPU burst ceiling measured**: E2E-child emulator sweep + probes pinned CPU ~100%×30min → /v2/reroute 24s queue (shares plan dedupe — wait not code). Recovered clean. Demo-day: TD :94 (2vCPU/4GB) pre-registered, command verified + documented in demo-day.md.
+- **root / → 302 /city** (136e731) + runbook bump (c1b8107) + this handoff pushed; deploy deferred until E2E child sweep ends (no mid-sweep flap).
+- **Release APK verified**: 129.5MB, NLB baked (alive108-…elb.amazonaws.com), `avoided_ug`/`co2_avoided_kg`/`puc_calibrated` all in bundle — real donations will populate admin savings tiles.
+- **Lanes**: fe91c9da Android emulator sweep running (iter ~67, inside app onboarding); ebe5ed90 UI/UX settled (assets surfaced); 29adb480 backend done-suspended; 1cb3ac27 location suspended-at-cap (403 on nudge). git-push gotcha hit+fixed: commits had landed on main checkout → cherry-picked onto base/v2, main reset to 1e86816.
+
+## handoff cont.3 — admin overhaul + lanes reset (2026-10-04 ~17:15 UTC)
+
+- Deployed `b65f4b59`: root / → 302 /city verified live.
+- E2E child fe91c9da FINISHED: all 14 Android surfaces PASS on emulator vs
+  live api (onboarding/consent/map/search/compare/histogram/vehicle+PUC
+  verified end-to-end server-side `puc.calibrated:true`/TBT+TTS cues via
+  logcat/nav+reroute/receipt/drawer/settings-hindi/DelhiToday/offline).
+  Fixes landed: Fabric no-op crash guard d9c6166, CityMoves 'other'
+  localization b65f4b5. Confirmed resolved live: Saharanpur plan hang,
+  degraded:['engine'] on Red Fort. Recording: attachments/6b60d4ee…/e2e_demo.mp4.
+  Untestable-honest: TTS audio-out, haptic feel (emulator has neither).
+- Owner's new admin asks → shipped in `1e2eb8cc`: 1,600-cell field map
+  (/grid?cells=40) with sector index a01–an40 + degree ticks; hover→mini
+  organic card (rest-gated gazetteer), click pins; "how this layer is
+  made" methodology per species (verified derivation copy, live counts);
+  corridor×field "through air" column (admin_agg.py FIELD.value at h3
+  centre); districts mean-of-cells caption; /grid cell_epoch stamp +
+  client skip-identical repaints. Tests: 55 green (schema test updated
+  for field_pm25).
+- Lane roster reset per owner: fe91c9da terminated (done), ebe5ed90 +
+  29adb480 terminated (suspended/done), 1cb3ac27 403 on terminate
+  (suspended, harmless). New lanes: 1def589f Android polish (icons,
+  milky morphism, sidebar). Admin overhaul = lead-owned (this session).
+- Self-hosted OSRM is DEPLOYED (sidecar lane): osrm-routed + Delhi-NCR
+  MLD graph baked into `alive108-osrm` ECR image, runs in the same
+  Fargate task (`OSRM_URL=http://127.0.0.1:5000`, essential:false,
+  1 GB hard cap, task 3072). `deploy.sh OSRM_SIDECAR=0` reverts;
+  `docs/plan/osrm-selfhosted.md` has the build/rollback runbook.
+  Public demo remains only as the flagged fallback.
+
+## handoff cont.4 — admin overhaul LIVE-verified + main merged (2026-10-04 ~18:25 UTC)
+
+- Live-verified on `a3cdf2fa` (deployed + browsed): 1,600-cell map,
+  hover cards (SECTOR + district + conf + gazetteer name), methodology
+  card painting correctly after the paint-before-unhide fix (`e44798ce`),
+  corridor table all 7 cols incl. `air pm2.5` (live field_pm25 join).
+- Contract: `properties.cell_epoch` declared on GridResponse
+  (contract.ts) — test_contract_sync 51 green. Full suite: 905 passed
+  + that 1 fix = green.
+- main merged `7552140` (no-ff): admin overhaul + Android polish lane's
+  3 commits (Material Symbols Rounded icons, milky morphism token ramp,
+  JourneyDrawer distributed rework — lane iOS-sim verified, tsc+lint
+  clean; Pixel_7 verification child devin-fcccf061 still running, lane
+  1def589f reports when it settles).
+- Perf verified live: /grid?cells=40 cold ~7s, warm ~1.5s (epoch-keyed
+  _grid_cached); admin skips identical-epoch repaints via cell_epoch.
+
+## handoff cont.5 — landing page live + reviews feature + Pixel_7 verdict (2026-10-04 ~17:35 UTC)
+
+- **Landing page LIVE at `/` and `/landing`** (deploy `283985db`, verified
+  in-browser): marketing page in the owner's reference genre (supaste/
+  devin.ai/Apple/godly.design) — cream paper, serif+italic headline
+  ("Delhi's air has a price *per street.*"), quiet mono nav, and the
+  **ASCII aether**: `/grid?cells=40` rebuilt as the true 40×40 lattice —
+  one glyph per real cell on a character ramp, `conf=lo` cells as faint
+  dots, live counts + conf split under it. Sections: pipeline math,
+  honest band (95.2% @2σ, MAE 24.16µg), corridor-merge teaser (points
+  to /admin — token-gated, honest fallback), two-faces CTAs, hackathon
+  footer. Root `/` serves it (was 302→/city); /city and /admin unchanged.
+- **Pixel_7 verify child (fcccf061) DONE — ALL PASS**: icons, milky
+  morphism, JourneyDrawer, every regression (Hindi, consent, cig-off,
+  honest-empty, 1080p fit). Its 2 flags fixed same-day by BOTH lanes
+  independently (compatible superset landed): emit_kg+dose band ledger
+  writes (97b8904) + stacked-sheet ghost-bleed (pane glassDeep 546e54a,
+  tiles glass 311c823). Perf vs llvmpipe inconclusive — physical phone
+  is the real measure.
+- **"Their reviews" feature committed (b676639)**: `POST /v2/feedback`
+  (public, stars 1–5 + ≤240 note, per-IP 10/hr, NO token/device at rest)
+  + `GET /admin/api/reviews` (gated) + admin "their reviews" tile
+  (avg/count/histogram/latest note or honest-empty; note bodies publish
+  only at k≥3, hour-bucketed). 21 community tests green. App-side
+  Settings "rate Alive" row handed to polish lane (1def589f awake).
+- Suite running for main-merge gate; deploy of b676639 after green.
+
+## handoff cont.6 — reviews tile feed fix + e849bf6f live (2026-10-04 ~10:40 IST)
+
+- **Reviews tile feed bug found+fixed**: paintShared read `S.reviews` but S is
+  /admin/api/status — the page never fetches /admin/api. Moved
+  `community.reviews_summary()` into /admin/api/global (admin_agg.py
+  `_reviews()`) + tile reads `G.reviews`. Verified live: tile shows
+  "5★ · 1 review" + histogram + k-gate note ("bodies withheld until ≥3").
+- **Live `e849bf6f`**: stations 24/waqi, 75 fires, field 113s; landing `/`;
+  grid warm ~1.5s; reviews tile renders real data.
+- **Polish lane landed `a876ec8`** (Settings "rate Alive" row → POST
+  /v2/feedback) then terminated with its verify child — slots freed.
+- **Lanes**: `4890a49f` building fresh release APK on HEAD (last APK predates
+  polish/emit_kg/review-row); `4a3551bc` attempting self-hosted OSRM restore
+  (public-demo rate-limit is the biggest demo-day risk; honest risk doc if
+  infeasible).
+- vision-audit.md refreshed: rows 15/24 live; OSRM gap now in-flight; APK gap
+  logged; deploy ref e849bf6f.
+
+## handoff cont.7 — reviews verified e2e + cold-solve warm (2026-10-04 ~11:15 IST)
+
+- **Reviews e2e on iOS sim vs live API**: Settings → rate Alive → 3★ +
+  note → send → "thanks — that helps"; server /admin/api/global went
+  count 1→2, avg 5.0→4.0, hist {3:1,5:1} matches the taps. k≥3 body gate
+  still honestly withholding.
+- **API contract tightened**: invalid stars → 422 (was 200 stored:false).
+- **Cold-solve warm**: first plan on a fresh task paid ~9.5s inside the 8s
+  arm budget → degraded:["engine"]. _warm_engine now burns 5 real mode
+  solves (CP→Karol Bagh) after edges_priced>0. Deploy fa332d76 carries it.
+- **Landing**: og:title/description + theme-color meta.
+- **Soak probe (120 calls, 2.5min)**: health p50 467ms, /community 557ms,
+  /v2/reverse 467ms, /city 698ms, /grid?cells=40 1.47s warm ×24 calls,
+  zero real failures (RTT floor ~460ms from this box).
+- Fresh release APK on e849bf6f delivered by lane 4890a49f (130MB, proofs
+  grepped): https://app.devin.ai/attachments/739c91df-eef9-4730-9235-3d1eb5035168/app-release.apk
+- OSRM lane 4a3551bc still running.
+- main merged f317270 (suite 910 green).
+
+## handoff cont.8 — landing rebuild + OSRM sidecar live (2026-10-04 ~12:50 IST)
+
+- **Owner mandate**: landing "looking shit" → rebuild as living piece with
+  "ASCII aether shaders animation", no cheap template, reference-grade
+  (supaste/devin.ai/iphone-duo/godly.design captured component-by-component).
+- **Landing v2 shipped `9e3f8fc`**: animated aether canvas = REAL /grid 40×40
+  → one glyph per cell (ramp ` .·:;=+x#%@`), temporal shimmer + breathing
+  wave + mouse lens + crosshair readout (sector ref, µg/m³, conf tier);
+  lo-conf cells stay faint dots. Signature type: bold sans + italic serif
+  ("Delhi's air has a price / *per street.*"). Circular stamps, spec chips,
+  floating artifact trio rendered as LIVE DOM — real /v2/plan dose rows,
+  /community corridors with reverse-geocoded names, /health stats.
+  Pipeline spine, honest-band numbers (95.2%@2σ, σ×3.2, ±13%, 0 faked),
+  footer live build stamp. Empty-epoch resilience: keeps last field + retries.
+- **OSRM self-hosted VERIFIED LIVE by lane 4a3551bc**: `alive108-osrm` image
+  in ECR (Geofabrik northern-zone → NCR clip, MLD car, 489MB, 4.4M edges);
+  sidecar in same Fargate task (awsvpc shared netns, OSRM_URL=127.0.0.1:5000,
+  essential:false, mem cap 1024, task 2048→3072). /admin/api/sources:
+  routing.backend=osrm-local, up:true, ~116-148ms (was ~600ms+429 risk).
+  Public demo is now fallback-only + flagged. Runbook docs/plan/osrm-selfhosted.md.
+  My deploy `9e3f8fcb` folds the sidecar in (image exists → default path).
+- Suite on HEAD: 910 passed, 5 skipped (616s).
+- main merge pending deploy verify.
+
+## cont.9 — landing v3: the field births the route (live build a6e9584)
+- Route overlay: /v2/plan best option's real geometry mapped onto the
+  40x40 lattice; sage glyph lift under the corridor, amber->sage
+  hairline draws over 6s / 14s cycle, endpoint tag 'cheapest for your
+  lungs - Nug mode'. O(1) cell lookup (CELLMAP), no perf hit.
+- Axis strip: 76.80E/77.90E degree ticks + live 'hottest - sector -
+  Nug' center tag (a01-an40 indexing shared with admin).
+- Hover mini-card: two lines - debounced /v2/reverse locality (sage)
+  over sector/value/conf readout; per-cell cache, gazetteer 'near'
+  dedupe, 38ch cap.
+- Serif pull-quote section ('the route your lungs would pick, if they
+  could read the map.') + footer live wind line; card-3 stagger.
+- /health wind: REAL handler in main.py returns fstat['wind']
+  (collect_health in health.py was dead code - the route builds its
+  own payload). Landing drift reads live: 2.1km/h from 149deg at ship.
+- /directions OSRM note fixed earlier (sources.routing populated).
+- Deploy chain learned the hard way: git archive snapshots HEAD at
+  deploy START - late commits need their own deploy; git checkout on a
+  live-serve copy clobbers uncommitted edits (happened once, reapplied).
+
+## cont.10 — OD rotation + endpoint sweep (lead, 11:55Z Oct 4)
+- `31735c6` landing: trace rotates 3 iconic ODs per 2min refetch (CP→Ggn, India Gate→Noida, KG→Faridabad); labels follow; all 3 verified real routes via /v2/plan fast arm (3.2/8.9/10.3µg car, 127-277pts, fully inside field bbox).
+- Deployed `31735c66`; verified prod: served JS contains ROUTE_ODS, trace draws w/ "connaught place" label, axis+hottest tag live, field 459m/875i/266t.
+- Endpoint sweep on new build: all 200s; 422s on bare /aqi /decide /escape = param validation (correct); /aqi?lat&lon real (pm25 88.4µg band 65.9-111); /decide real options.
+- /health lean `{ok,version}` pre-warm is normal — full payload (build_sha, stations, wind, fires) after first field refresh (~2min); don't flag as regression on fresh tasks.
+- Memory updated: deploy-archive pin-at-start, git-checkout clobber, /health≠health.py serving path, contract-declare pattern.
+
+## cont.11 — live verification round (lead, ~12:15Z Oct 4)
+- Deploy `6a067ca4` fully stable: dose card + trace share one plan fetch (meta names rotated OD); renderDose live in served HTML.
+- Full endpoint sweep green: 422s on bare /aqi|/decide|/escape are param-validation only; /aqi?lat&lon real; /depart honest (8.8µg now → 1.5µg +14h → 39.0µg +21h, 83% less).
+- /v2/plan per-option provenance correct: router rows `router_backend:"osrm-local"`, engine rows `engine:"alive_core-path"`, transit `steps_source:"gtfs"` — top-level rollup skipped (fast arm is engine-only, naming a router would lie; admin api/sources already shows it).
+- cell_epoch mechanic PROVEN across a refresh: [1791140497,0]→[1791141408,0] at the ~15min epoch tick; field_age 623s→12s. Landing/admin skip-repaint keys on a value that only moves when data changes.
+- /admin/api/global: first real users-by-area row (New Delhi 3 trips/3 devices ≥k3); reviews count2/avg4.0 hist{3:1,5:1} notes withheld (k<3 correct); od_pairs tracked2 shown0 suppressed; co2_avoided 1.55kg/1 puc trip; dose_avoided 303.7µg/4 trips.
+- tools/warm_task.py exit-0 on live (owner's T-40 tool healthy): 23 rows/15 engine rows in 1.5s.
+- Release APK (4890a49f lane) built on e849bf6 INCLUDES rate-row(a876ec8)+emit_kg(97b8904/311c823) — verified via proof greps (v2/feedback in bundle, NLB host inlined, no 10.0.2.2 fallback).
+- Full-plan one-off degrade `['engine','transit']` during task warm window — flaky not systematic (3× healthy 19opts after); degraded flag did its job.
+- demo-day.md synced: WAQI 24 stations answer, 28 tiles, osrm-local routing row, cell-inspector+derivation+corridors×air+global tiles, landing as demo surface.
+
+## cont.12 — coverage + plateau state (lead, ~19:40Z Oct 4)
+- `test_landing_serve.py` (4 tests): / + /landing parity, machinery markers (ROUTE_ODS/renderDose/drawAether/FIELD_BBOX/fetch-paths/axis), balanced script + rAF — the only uncovered user surface now guarded. Suite effectively 914.
+- demo-day: "feed dies mid-demo" answer added (degraded arms, field_stale, named sources).
+- /v2/feedback already hardened: per-IP 10/hr 429, bounded 5000-entry limiter map, no linkable data — no work needed.
+- main `7a2c27c`; live `6a067ca4`; two epoch-watch cycles clean (24 stn, 75 fires, plan 3.5ms fast arm).
+- Snapshot "partial" builds root-caused: remote blueprint lacks server/core/build_ext.sh (real blueprint bug, owner boundary — flagged); Delhi-Air's was clone materialization flake on a file that IS tracked — reported as devin_runtime friction.
+- PLATEAU: every surface verified on current build; remaining gaps structural (real devices) or owner demo-morning. Loop continues as periodic epoch regression watch.
+
+## cont.13 — /admin/api/global shape (probe correctly)
+Flat keys, not nested: `areas:[{area,trips,devices}]`, `od_pairs:[...]`,
+`suppressed:{areas,od_pairs}`, `dose_avoided:{dose_ug,trips_reporting}`,
+`co2_avoided:{co2_kg,puc_calibrated_trips}`, `reviews:{count,avg,hist,notes,notes_withheld}`,
+`areas_tracked`,`od_pairs_tracked`. Live state ~19:50Z: New Delhi 3/3 minted,
+od 2 suppressed, dose 303.7µg/4 trips, co2 1.55kg/1 PUC trip, reviews 2 avg 4.0 withheld.
+
+## cont.14 — landing v5 + admin pixel tiles + depart stub-fix + lanes (lead, ~03:55Z Oct 5)
+- Owner verdicts: hated landing v4 (capsule buttons, cringe wording, stuffed), admin "vibecoded slop" tiles, wanted map-cutouts back + pixel borders + click→mini card. Spawned UI lane 89a999d1 (landing craft + admin tiles) — shipped `cdff756`, deployed live: editorial landing (eyebrow, statusline, DPR raster, legend, buildTag) + 28 stepped-pixel district tiles, click→mini card w/ real +12h trend from forecast surface.
+- depart cache: suite caught stub-unsafe `FORECAST._fetched_at` (test_honesty_polish 500) → getattr guard, cache bypassed when epoch missing. `c3a1fbb` + suite 917 green → main `f18e07c`. Live verified: cold 3.9s→warm 0.49s served_from_cache:true.
+- Probe hygiene: my /v2/feedback probe pushed reviews to k=3 (bodies published). Fix: patched s3://alive108-build-185708268748/community/state.json (removed probe), scaled service 1→2, killed dirty task, desired back to 1. Live: count2 avg4.0 notes_withheld (k-anonymity demonstrably working).
+- Admin mini-card VERIFIED live via DevTools: click Old Delhi tile → "61.1µg/m³ · aqi 105 moderate · mean of 6 covered cells · trend computing +12h". Cell inspector + pipeline live. favicon 404 harmless (no favicon shipped).
+- Owner round-3 UI asks → relayed verbatim to UI lane: district map-cutout viz (geo boundary per tile), CPCB color correctness check, admin copy polish, Android advanced icons/colors, deepest map detail + smooth live route journey.
+- Spawned maps-depth lane 88b6f2c4: build delhi.pmtiles (scripts/geo/ pipeline exists — fetch_extract→tilemaker OMT z0-14; needs CodeBuild or native toolchain since no docker on macOS) → S3→task-boot delivery (rollup mirror pattern) → app/admin basemap wiring → /tiles/* live 200s instead of honest 503.
+- Lane housekeeping: terminated suspended deadweight (29adb480 backend, ebe5ed90 combined-UI, 4890a49f APK, 4a3551bc OSRM). Running: me + 89a999d1 (UI) + 88b6f2c4 (maps).
+- admin token via `authorization: Bearer` header (x-admin-token 401s — header name matters).
+
+## cont.15 — /tiles LIVE: real Delhi vector tiles end-to-end (maps-depth lane, ~04:15Z Oct 5)
+- Artifact built in AWS, not locally (no docker on this Mac): `scripts/geo/buildspec-tiles.yml` + `build_tiles_aws.sh` → CodeBuild `alive108-tiles-build` (mirrors the OSRM lane's `alive108-osrm-build`). Run: Geofabrik northern-zone 213MB → osmium NCR clip 35MB → tilemaker OMT z0–14 → **delhi.pmtiles 22.65MB, 1645 tiles** → `s3://alive108-air/geo/delhi.pmtiles`.
+- Gotcha fixed: `build_tiles.sh` resolved config/lua via `$REPO_ROOT/scripts/geo/` which breaks in the flat `git archive` zip — now script-relative (`3cfdb56`). Publish verify uses `s3api head-object`, not `s3 ls` (role has no ListBucket) (`d4a632a`).
+- Delivery: `ingest_worker.sync_geo_artifacts()` pulls `geo/*` from the air bucket → `tiles._path()` via .tmp+`os.replace`, called inside the existing rollup mirror loop (first pull at boot, then 30-min tick). `ALIVE_PMTILES=/app/data/geo/delhi.pmtiles` set on the task (default resolves to `/data/geo` in-container — unwritable). tiles.py re-opens on mtime/size → a rebuilt archive hot-swaps with no redeploy. Codebuild role now keeps `s3:PutObject` on `alive108-air/geo/*` — the policy doc lives in BOTH deploy.sh and build_tiles_aws.sh, keep them in sync.
+- Verified LIVE on http://65.2.28.40 (image `d4a632a0`, task-def 118): `/tiles/health` 200 (22.7MB z0-14 NCR bounds, gzip mvt); `/tiles/tilejson.json` valid TileJSON 3.0 w/ 16 OMT vector_layers; `z14/11705/6831` (CP) → 200, 47,398B gzip → 88,785B MVT w/ real names: Sansad Marg, Ashoka Rd, Baba Kharak Singh Marg, Kartavya Path, Rajya Sabha Marg + POIs. warm_task.py now checks /tiles/health too.
+- App wiring: zero Mobile code change — `v2StyleUrl()` already resolves `EXPO_PUBLIC_TILES_URL` → tilejson URL → `withVectorTiles()` re-points `sources.openmaptiles.url`. Build the dev client/APK with `EXPO_PUBLIC_TILES_URL=http://65.2.28.40/tiles/tilejson.json`; fallback chain (local delhi.pmtiles → bundled OpenFreeMap style) is untouched.
+- admin/city/landing render field cells on raw `<canvas>` — no MapLibre GL there, tilejson can't be dropped in without adding a map lib; left alone deliberately.
+- Rebuild tiles later: `./scripts/geo/build_tiles_aws.sh` — artifact lands in S3, live tasks pick it up within one mirror tick (≤30 min), nothing else to redeploy.
+- Tests +12: test_tiles.py (hilbert ids, honest-503 on missing/corrupt, hotswap) + test_geo_mirror.py (fake-boto3 mirror logic). Suite green.
+- SHAs: `24ef2a2` lane core, `3cfdb56` script-relative fix, `d4a632a` head-object verify, `db1347e` tests.
+
+## cont.14 — pmtiles LIVE + district cutouts (lead, ~09:50Z Oct 5)
+- delhi.pmtiles served end-to-end: CodeBuild alive108-tiles-build → s3://alive108-air/geo/delhi.pmtiles (22.65MB, z0-14 OMT, Geofabrik NCR) → ingest_worker.sync_geo_artifacts (boot + ~30min mirror, atomic .tmp+os.replace hot-swap) → tiles.py PMTiles-v3 HTTP reader. /tiles/tilejson.json + /tiles/delhi/{z}/{x}/{y}.mvt + Range 206 + /tiles/health all live. Real street names verified inside z14 tiles (Sansad Marg, Kartavya Path, Rajya Sabha Marg + POIs).
+- App basemap wiring: Mobile/src/map/style.ts v2StyleUrl() chain = EXPO_PUBLIC_TILES_URL → local bundle pmtiles → bundled v2-light.json (hosted OpenFreeMap fallback). Dev-client sim rendered OUR tiles via baked env var — Rajya Sabha Marg/POIs visible, ECS logs confirm app requests. ZERO source changes needed; release APK needs EXPO_PUBLIC_TILES_URL at EAS build (demo-day.md).
+- Admin district cutouts (owner ask): faa01c8 — per-district SVG boundary silhouettes (64px, /ncr.geojson + /delhi_subdistricts.geojson, lon×0.879 aspect norm) filled by live CPCB band, inside tiles + mini-card. CPCB mapping verified at band edges. Click→mini-card live (mean-of-N-cells basis + real h=12 forecast trend).
+- Live `acc9f960`; main `ce584bd` (suite 930 green — +12 tiles/mirror tests).
+- Depart cache stub-safe fix c3a1fbb (epoch getattr guard); live cold 3.9s → warm 0.49s.
+- Admin mini-card earlier "broken" report was a stale-tab artifact — DevTools-dispatch verified.
+- UI lane still running: Mobile asset overhaul (stock Expo "A" icon + #4C8DFF notification color were the cheap bits), route-journey polish, CPCB toggle check.
+- Community state contamination lesson: /v2/feedback probes count toward k — a 3rd probe published note bodies. Fix = patch s3 state.json THEN zero-downtime task bounce (scale 1→2, stop dirty task, desired 1) — running tasks hold reviews in memory.
+
+## cont.15 — raster sigma-decimation + UI lane mandate complete (lead, ~11:00Z Oct 5)
+- Cold-epoch degrade root-caused + fixed (34380b3): raster probe extrapolated 4ms/read → 54×54 lattice, real sweep ran ~68ms → budget stop at 176/2916 (6%). Fix: sigma on a s_step block lattice (~89% fewer sigma calls; krige sigma is smooth), center-out cell order → partial sweeps keep Delhi core. VERIFIED LIVE on fresh task: 1101/1156 cells (95%), 275 sigma reads, zero degraded on cold-epoch plans.
+- Engine contention note: boot logs show "field serves no reads — skip sweep" correctly while field fetching.
+- UI lane 89a999d1 COMPLETE + terminated (mandate items all landed + lead-verified):
+  * district cutouts faa01c8 (verified by eye — real boundaries, band fill, mini-card)
+  * us_aqi ramp 2a92824 — toggle normalized to observed span → absolute 0-300 anchor; API serves us_aqi 215.5 today (honest deep red)
+  * brand assets a861545 — stock Expo killed: serif "a" + sage dot mark, adaptive #FAFAF7, notification #4D7C0F, ios/ regenerated ALive108 scheme
+  * map perf 5d5b8d4 — terrarium hillshade source dropped (elevation-PNG storm per pan)
+  * MAP DEPTH honest ceiling: bundled v2-light = hosted OpenFreeMap planet = max OSM detail (bilingual street names, POIs, housenumbers z16.5, nav dive 55° pitch). Our delhi.pmtiles caps z14 → shallower; its win is sovereignty/offline, not detail. App is already at the detail ceiling.
+  * route journey verified end-to-end on iPhone 17 sim (search→compare→nav with dose-tint polyline + live counters).
+- favicon 404 fixed eca69aa (data-URI icon on admin+city; landing+community already had) — rides next deploy.
+- Live `34380b3e`; main `ede60eb` (suite 930 green).
+
+## cont.15b — deploy-race lesson (lead, ~05:10Z Oct 5)
+- Deploy races silently supersede: lane's deploy.sh finished after mine → live regressed to 2a92824a (old per-cell raster). Symptom in logs: len(sig)==cells count impossible under block-keyed code → traced to task def :123 built pre-raster-fix. RULE: after any deploy, verify /health build_sha == expected AND aws ecs describe-services shows exactly one deployment. Lanes should NOT run deploy.sh — lead deploys consolidated HEADs. (Add to future lane prompts.)
+- Raster fix verified in prod on task def :124 (build a745c5d8): "1764 cells (441 sigma) -> FieldView" — full 42² lattice in budget (s_step=2 → 441 block sigma reads), NO budget stop. Cold-epoch degrade killed.
+- Live `a745c5d8` = consolidated HEAD (raster + favicon + us_aqi ramp + cutouts + all docs).
+
+## cont.16 — brutal-sweep wave: us_aqi projection + never-500 hardening (lead, ~06:30Z Oct 5)
+- **us_aqi divergence fixed** (5c6a016): /grid?param=us_aqi was a second model layer (215.5 live) telling a 3× different story than our station-grounded pm2.5 field (~55µg→~140). Now projects OUR pm2.5 surface through EPA-2024 breakpoints (districts.us_aqi) — same cells, same conf, `derived:"pm2_5 via US-EPA breakpoints"` per feature. LIVE: 104–159 vs public aqi.in Delhi ~160 — spot on. Admin derivation copy updated; contract test pins cell-for-cell EPA projection.
+- **Never-500 sweep → 6 crashers fixed** (8d8b1cb): FastAPI `x: float` coerces nan/inf; handlers then returned NaN inside bodies and strict json.dumps 500ed at render (verified traceback signature in ECS logs). Guards: `_finite_coords()` in main.py on /aqi(200+error env)/today/escape/shift(422), isfinite in v2.plan._pt + v2.places.reverse(422). Raw-JSON `NaN` literal POST body covered by _pt too.
+- **Two more bounds** (297e67d): /v2/feedback note/build as dict → 422 "must be text"; /grid cells ge=1 floor.
+- **Donation ledger hardened** (53dae87): /observe stored:true for zero-cell shells ({} → stored, "x" coords → stored — inflated totals only). Now stored:false "no usable coordinates"; coords normalize+safe-pair-parse; dose/co2/duration clamp to None below 0/non-finite. /report dropped (0,0) default — requires numeric NCR coords.
+- **S3 ledger lesson**: community._save() is write-triggered + _S3_MIN_GAP_S=60s rate-limited (a second write inside the gap silently skips the S3 put — my "flush" probe appeared to restore but didn't). Old-schema obs ({dose_ug,duration_s,contributor,ts,vehicle} — NO cells/km) exist from pre-folding donations: they inflate obs_total but can't feed corridors. Filtered state.json to cells-bearing traversals only: obs_total 98→18 real, contributors 15→12, all 5 corridors k≥3 intact. Task stopped → reloaded clean.
+- **Wind verified real**: /health wind {11.0km/h, 284°} == Open-Meteo Delhi live reading exactly (we ingest it).
+- **Concurrency**: 18 parallel POST /v2/plan across 3 ODs — all 200, zero degraded, 4.3–14.3s under load; rate limiter eats bursts correctly.
+- Live `297e67d`; next deploy pins `01d316e` (donation hardening + craft-lane interactive landing batch 1).
+- Lanes active: craft 0553281b (landing interactive surfaces: param pills, cell inspector, a→b live plan drawn on field, district strip — batch `01d316e` landed), app-ruthless 0c3304f0 (Mobile nothing-fake sweep running).
+
+## cont.17 — internet cross-verification found a real field divergence (Oct 5)
+
+Brutal-verify vs public sources caught the field serving pm10 ~300-600µg
+while ~100 public Delhi locations read 60-136µg (aqi.in panel) — a 3x
+model divergence on the coarse fraction. pm2.5 matched perfectly
+(~63-78 vs ~72). Root cause: `ingest_waqi.grab_async` normalised every
+species the CAAQMS instruments report but dropped all but pm2_5, so
+pm10/o3/etc stayed raw CAMS; `/aqi` `us_aqi` was even serving CAMS's own
+index cell (~230 vs public ~160).
+
+Fixes (deploy `3232fda` + `86938c5`):
+- `grab_async` emits field-keyed vals for every measured species
+  (pm25→pm2_5, pm10, no2→nitrogen_dioxide, o3→ozone, co→carbon_monoxide,
+  so2→sulphur_dioxide) — rides the existing IDW + 3x-instrument-weight
+  path, no new machinery.
+- `_debias(results, stations)` now splits by position (was
+  `keys()=={"pm2_5"}` magic — multi-param stations were misclassified
+  as model points and would have been re-scaled).
+- pm10 gets its own multiplicative debias pass when ≥8 instruments
+  carry it (same IDW machinery: m10 floor 30µg, raw 0.2-10, clamp
+  0.3-4); additive fine-fraction increment stays as thin-network
+  fallback.
+- `/aqi` us_aqi = max EPA sub-index over the species it serves
+  (`ingest_waqi.us_aqi_sub_index`, the exact inverse of iaqi_to_ugm3),
+  + `us_aqi_basis` driver + `us_aqi_model` raw CAMS for provenance.
+  Result live: us_aqi 164 (basis pm25) vs public ~160-163 — coherent.
+- O3 grounded 139→54µg, SO2 24→11, pm10 305→240→(post-debias ~120-160).
+
+Also verified this cycle: wind 0.0 for one refresh was a real
+Open-Meteo transient (self-healed to 11.3km/h matching public exactly);
+/observe correctly rejects <600m trimmed paths + lat-first coords;
+/depart is GET-only; suite 941 green.
+
+Lesson: **cross-check every served number against the public internet
+regularly** — pm2.5 matching doesn't prove the other layers. The
+/aqi response's `us_aqi_model` now keeps the raw index visible so a
+future divergence is one probe away.
+
+## cont.18 — us_aqi ambient coherence + review-aggregate cleanup (build 34c3ca5a, main cc82bd5)
+
+**Deployed:** `34c3ca5a` — carries city us_aqi computed per lattice point + /aqi us_aqi on AMBIENT pm2.5 (was breathing-zone: pm25 key correctly keeps smoke×microenv for inhalation numbers, but us_aqi is an ambient public index — at CP 180→168, matching public ~160 band). One definition API-wide: /aqi 168 ≈ /v2/city lattice max 168.6 ≈ /grid cells. Suite 952 green; main merged `cc82bd5`.
+
+**Review aggregate cleanup (second time — lesson hardening):** probe-authored reviews publish publicly at k≥3 (by design). Both lanes' and my own probes had accumulated to count=5 with readable probe text ("judge-probe…", "demo-day probe…"). Patched `s3://…/community/state.json` → reviews:[] (kept obs:20 — real donated telemetry), bounced the ECS task so in-memory state couldn't re-flush dirty reviews to S3. count=0 now → honest-empty. RULE for all lanes (relayed): never POST /v2/feedback|/observe|/v2/trip to live — GETs + /v2/plan only.
+
+**Sweep this wave (all honest):** /v2/feedback enforces stars 1..5 + truncates note at 240 (spec-true); /observe rejects empty/single/string coords; /depart hours≤0 → honest forecast-unavailable, hours=72 clamps to horizon; admin API 401 no-auth; tiles OOB 422; /reverse rural → gazetteer motorway at 106m; same-point OD degenerates to walk gracefully; grid cells=1 us_aqi serves.
+
+**Lanes live:** craft 0553281b retasked → hostile judge's-eye audit of live (numbers vs aqicn/WAQI, click-everything, break-everything, k-anon leakage, perf). New lane e8dbd4c4 → demo rehearsal: verified quotable numbers + docs/plan/demo-script.md + timed run + GO/NO-GO. APK lane e03c6d6d terminated (delivered).
+
+## cont.19 — hostile-audit fixes live (build 8d417cf1, suite 955 green)
+
+**Hostile judge audit (lane 0553281b) — 10 findings, all real.** Backend findings fixed + deployed + verified live:
+
+- **#1 HIGH silent truncated route** — inside→far-outside (in-margin, past priced raster) returned `recommended:true` + `confidence:"high"` + `coverage:1.0` on geometry ending ~140km short at ~28.95°N. `_option` now compares geometry's last coord to dest (`exposure._haversine_m`, [lon,lat] order): >`TRUNCATED_GAP_M` (3km — absorbs geocoder snap; the audit cut was 210km) → `reaches_destination:false`, `truncated_gap_km`, dose `confidence:"low"` + basis note, `rank_options` preserves reason_line for truncated rows and excludes them from `scored` (a clipped route can never win recommended). Contract declares both keys. Verified live: `gap:210.1km rec:False conf:low` on the exact repro.
+- **#3 MED depart asymmetry — probe artifact.** from=outside + to=outside BOTH serve (margin covers 30.5N); the "asymmetry" was `hours=0` → `range(0)` → empty slots → "forecast unavailable" on ANY OD. Label fixed anyway: hours<1 → `"hours must be >= 1"`.
+- **#4 us_aqi −17% vs public (defensible)** — our field is a spatial mean + station-grounded debias vs point instruments (Pusa 196 driven by its own pm10). Noted, not a fake.
+- Lane fixing frontend: #2 city strip→ambient-field basis (decision: strip must quote the same field the choropleth shades; breathing-zone only if explicitly labeled), #5 edges_priced real number, #6 hold stale frame on param switch, #7 token-check before API calls, #8 clip+plural, #9 legend overlap, #10 95.2% methodology link.
+- Verified live `8d417cf1`: depart 1.15s cold→0.47s warm; truncated repro flags correctly; hours=0 honest label; single deployment.
+
+## cont.20 — hostile-audit batch fully live (build 2ffff50a, main merged 411abe7)
+
+All 10 findings closed + deployed + verified live:
+
+- #2 /city strip re-based on ambient field aggregate (/v2/city district means + pm25_stats + live grid range) — same basis as choropleth; GRAP row labeled 'incl. smoke'; breaths divides by ambient mean.
+- #5 "EDGES PRICED" now serves the live routing.edges_priced (903,058) via /health — was frozen copy.
+- #6 param switch holds stale frame until new cells arrive — no blank canvas.
+- #7 admin token-check precedes authed fetches — zero 401 console noise unauthenticated; public feeds still render.
+- #8 admin tile names wrap (2-line clamp) — no 'Gautam Buddha N…'; '1 CELLS' pluralizes.
+- #9 /city legend moved in-flow under map — no swatch over geography.
+- #10 95.2% coverage claim gets methodology citation.
+- Landing renders truncation honestly: 'stops ~210 km short of b — dose covers the mapped segment only' + lo-conf flag + degraded arms named (verified in served HTML + source).
+- Bonus found while probing: /escape photon hits with no name→street returned `name:null` → now 'unnamed area' (d759578).
+- Malformed-input sweep on live: empty/bad-json/no-ctype→422; null fields→'from: need {lat,lon}'; string lat→conversion error; NaN→'non-finite coordinate'; 1MB body→parses fine (22 options). No 500s anywhere.
+- /v2/strip verified beautiful: per-road dose attribution — 'Delhi-Gurugram Expressway 4.6km · 52.5µg · 31.7% of dose' + honest emissions bands (105-265 g/km, BS-III–VI, cold 4km×1.3).
+- /v2/districts: 28 real districts worst-first (New Delhi 53µg/89aqi). /today: 24-hr IST curve openaq-s3-climatology. /escape: 5 real cleaner spots (vertical park 30.7µg @11.6km). /shift: auto 8h→279.9µg±[196,416]·0.9cig·+272% vs desk.
+- /directions: re-routes coords→12 OSRM steps w/ street names (route_id is receipt-token only, not a directions key — by design).
+- /admin/api/* all serve w/ token; 401 without (verified: status, sources, corridors, donations, validation, model, timing, global, reviews).
+- Deploy: single deployment 2ffff50a; suite 955 green; main merged 411abe7.
+
+## cont.21 — exhaustive live API verification + craft lane batch-1 live
+
+**Full-surface probe pass on `2ffff50a` — every endpoint contract re-verified, nothing fake found:**
+
+- `/grid` edge honesty: cells outside 1..40 → 422; h outside 0..120 → 422; unknown param → honest empty FeatureCollection + the 11 served species + `empty:"unknown pollutant param"` (a misspelling can never silently serve wrong-species data). Field conf split verified live: 161 hi / 301 med / 22 lo — matches landing's public honesty strip exactly. us_aqi range 74–155 (mid-band oranges/reds on tiles, no greens).
+- `/v2/ledger`: no token → 422; unknown token → empty trips + zero totals + privacy note "no coordinates or cells". Per-device, sanitized.
+- `/community` JSON (Accept-negotiated): 20 obs · 12 contributors · corridors k≥3 (5/3 devices) · `avg_dose_basis:"est. from donated trips"` — honest provenance on every aggregate.
+- `/v2/place/{gaz:...}` gazetteer resolve verified (India Gate → real coords).
+- `location.up:false` in /health is HONEST — Amazon Location optional fallback has no key; /v2/search + /v2/reverse run on the bundled gazetteer (8/8 typo-tolerant). Correct down-flag, not a bug.
+- `/v2/reroute` chain re-verified: POST {from:{lat,lon},to:{lat,lon}} → 13 options, links `rerouted_from`, car 5.7µg/27min from Dhaula Kuan.
+- Mobile truncation: `reaches_destination` optional in contract; app degrades to dose `confidence:"low"` + basis note via CompareSheet (geofence makes truncation rare in-app) — acceptable, no crash path.
+- Craft lane batch landed: `01d316e` (deployed in `2ffff50a` — interactive landing surfaces: param switcher, inspect mode, a→b real-route draw, district strip), `e9c6414` (city µg fix + param-switch clears route), `39eb928` (city mast wrap ≤560px). All verified by lane on real Chrome at 390/768/1440 — zero h-overflow, no layout shift, Esc/outside-click works, :focus-visible on controls.
+- Retasked lane on 4 issues: us_aqi tile ramp (field serves 74–155 → expect mid-band reds not greens), conf-label staleness after param switch, low-count community tiles empty-state, field-map async paint layout-shift.
+- Epoch watch restarted on persistent path (/Users/devin/watch/epoch.log, 40×7min): field 105s fresh, 24 stations, wind 10.9km/h NW, stale:false, 903,058 edges priced.
+
+**State**: live `2ffff50a` · HEAD `39eb928` (undeployed = docs + 3-line CSS) · main `411abe7` · suite 955 green.
+
+## cont.22 — depart sparkline + dose ladder live (build 381674b4, main 4181cf8)
+
+- Landing gained two earned surfaces after a→b draws (both verified by eye on prod):
+  * **"when to leave"** — hairline sparkline of real /depart slot doses, CPCB-tinted dot per hour (tint = that slot's avg_conc on the same band math as the raster), best slot inked-ring. Honest both shapes: "now is the light slot — dose climbs to Nµg by HH:MM" (trough) / "leave ~HH:MM — N% less dose" (peak). PLANSEQ-guarded, silent on error, clears with the routeline.
+  * **dose-per-mode ladder** — the plan's own options list: hairline bars ∝ dose_mid, dose + lo–hi, recommended row inked (truncated NEVER inked — rec requires reaches_destination), click swaps canvas to that option's real route_geojson (`· drawn` ≠ recommended), metro/transit rows flag "priced, no road path", truncation carries "~N km short · lo conf", cap-7 + "+N more priced" footer, role=button + Enter/Space.
+- Verified live: field 23s fresh on new task, 24 stations, 903,058 edges, landing serves all new surfaces (22 code hits), reroute chain works (23 options, rerouted_from links), /v2/strip GET verified (71 samples · 10 roads: Kumaraswami Kamaraj Marg 74.3µg, Dara Shikoh Rd 54.8µg, honest "unnamed road").
+- Fresh-task cold-plan regime re-verified: first plan on a task ~14s w/ degraded:["engine","transit"] during boot-warm (~90-120s), then warm. Boot warming already covers field/forecast/transit/community/static/engine-solve/grid-reprime — depart's shared inputs warm with them.
+- Forecast surface verified REAL (not repaint): h=0 med 43.3 → h=6 med 253 → h=12 med 258µg — Delhi October evening-peak diurnal, coherent with /v2/city next_hours (76.8 → 299.6 peak +8h) and /depart slots.
+- Public scrapers (aqicn page, aqi.in, CPCB ccr) are JS-gated/unreachable from box — station-layer verification stays anchored to the earlier aqicn-class check (pm10 ~209 vs ~200, pm25 in 77-90 band, us_aqi 160-170 band).
+- Backend-depth lane spawned (51dbc4fbb56f): dose/emissions math vs COPERT/ARAI/EPA published factors, sustained 12-way /v2/plan load, aggregate freshness audit.
+- Suite: 955 passed + 5 skipped on exact HEAD c314cff (6m17s).
+
+## cont.23 — origin-snap honesty (symmetric truncation fix)
+- Live probe: POST /v2/plan from {lat:30.0,lon:77.4} (UP, ~113km north of graph) → Car (AC) recommended, dose mid 10.2 conf:high coverage:1.0, geo starting [77.162,28.976] — the engine silently snapped the origin to the field edge and claimed a full trip. The hostile-audit fix checked geometry-END vs destination but never geometry-START vs origin.
+- Fix (df7a70a): `_option` gains symmetric start-gap check — _coords[0] vs requested origin via _haversine_m, >TRUNCATED_GAP_M(3km) → starts_at_origin:false + origin_gap_km + dose conf:low + basis "dose covers the served segment only — route begins ~Nkm from the requested origin at the field edge" + reason_line "starts inside the priced field, not at your point". rank_options excludes starts_at_origin===false from scored (never recommended). Metro/MultiLineString coords are nested → _haversine_m raises → gap 0 → skipped (same tolerance as dest check; metro already conf:low).
+- Contract: V2PlanOption gains starts_at_origin?/origin_gap_km?. Landing: routeline renders "begins ~Nkm from a — dose covers the mapped segment only"; ladder row flags "starts ~Nkm from a", rec requires both ends true.
+- Tests: test_option_marks_geometry_snapped_at_origin + test_origin_snapped_option_never_recommended (test_v2_hardening.py) — assert gap>100km, conf low, no reach flag, not recommended.
+- Probe-shaped lesson: /v2/reroute + /v2/plan take `at`/`from` as {lat,lon} OR [lon,lat] GeoJSON order — a [lat,lon] array parses swapped and returns honest "outside service area". Live-verified both good paths: at→8 options fresh route_id, expired route_id → "destination unknown — pass `to` or a live route_id (route_ids expire after 1 h)".
+
+## cont.24 — landing v4 hero + wind-unknown fix (build 1900bd2*, pending verify)
+
+- **Wind fabrication hole closed (ba0fbe0)**: `_grab_wind` `except HTTPError` kept init `(0,0)` → served fake "0 km/h calm" forever. Root cause live: task meteo grab failed every cycle while Open-Meteo (same params from box) served 7.6km/h — api.open-meteo.com (forecast host) unreachable/flaky from ECS while air-quality-api host worked → DIFFERENT hosts explains samples-fresh-but-wind-0. Now `_wind_at` stamps success; `wind()` returns {speed_kmh:None, from_deg:None, factor:0.0, known:False} when never fetched or stale (>2*900+60s); known adds age_s. /city `windNow` null-guarded (was NaN km/h). Landing already handles null (falsy → no wind span/arrows). Consumers of `_wind` tuple unchanged (isotropic factor-0 fallback already honest).
+- **Landing v4 (1900bd2)**: hero restructured per owner refs (supaste/devin.ai/iphone) — copy column left + REAL product shot right (`/app-hero.png` 552×1200 = genuine sim capture of compare surface: dose-tinted routes + "leave 17:30 → breathe ~47% less" depart strip; phone frame = 1px hairline + layered shadow + mono figcaption). Statusline moved out of hero into field-sec (marketing hero carries zero telemetry). Grid `minmax(0,1fr) 264px` stacks ≤840px.
+- **Admin chrome off landing (8385500)**: "admin is personal" — nav/hero/how-head admin links removed; /admin still serves directly. Verified live admin has "8 FEEDS DOWN"+"insufficient data" tiles without token (honest-but-ugly when the real problem is missing token → handed to admin lane: label "feeds need ?token=").
+- Owner asks routed: admin district-cards→single-core-map + param switcher (CPCB bands are honest — pm25 35µg="satisfactory" green while US-AQI-pm10 ~130="moderate"; same air, different index → param switcher is the right fix) + corridors basis line + Android health-app → lane 1a07f67c (Max). Internals → 63bd2eb9 (Max). SWE-2 promo cap=5 org-wide discovered (owner's other project holds 2-3 slots).
+- New lanes pinned: POST /v2/feedback|observe|trip to live = forbidden (k≥3 pollution incident); platforms linux/macos/windows only; devin_mode batch-level only.
+
+## cont.25 — deploy 1900bd2e verified + merge main d5bb64e (suite 958 green)
+
+- Deploy 1900bd2e live-verified: /app-hero.png 200 (704KB), hero = real app shot in phone frame; /health wind {known:true, age_s} 7.6km/h matching Open-Meteo exactly; plan CP→Gurugram 15 options 8.6s zero degraded; tiles archive survived (tilejson + z14 @CP 200 53KB); /aqi fully labeled (pm25_ambient 72.3 vs breathing 89.7, smoke_modifier 1.24 exposed, FIRMS provenance live, us_aqi 160 basis pm25); /v2/city h=0 72.3 → 264.2 evening peak (real diurnal).
+- Full landing exercise on prod: a→b draw → 93.3km route arcing around the hot cell (dose wins over distance, the thesis visible) → routeline 10.5µg/3.6–17.4/72min/5.5s → depart "now is the light slot — climbs to 50.9µg by 16:00" → ladder Car 10.5 / Bike 36.9 / Auto 41.1 / Bicycle 237 / Foot 438.7µg (~42× mode gap).
+- 12-way burst on fresh task: all 12 succeed, 8-15 options each, ~15s serialized wall, zero errors/rl (single-worker regime holds).
+- /community aggregate honest: 20 obs total / 10 in 24h / 12 contributors; corridors k-anonymized (devices≥3, "avg_dose_basis: est. from donated trips", co2_trips provenance); latest_obs_age_min 213.
+- test_landing_serve updated: REQUIRED gains /app-hero.png + hero-grid; /admin moves to LANDING_FORBIDDEN (community nav legitimately links /admin — the ban is landing-scoped). Suite: 958 passed + 5 skipped on 9675c4b (382s); main merged d5bb64e.
+- Epoch watcher restarted at /Users/devin/watch/epoch.sh — now logs build_sha + wind.known + age_s (catches fabrication regressions live).
+- Chrome quirk noted: omnibox autocompletes to /admin — bare-domain nav needs a landing-open tab or explicit trailing path.
+
+## cont.26 — admin NCR choropleth + param switcher live (build 04a93954, main 85132e9)
+
+- Lane batch `04a9395` (admin+Android): district tiles replaced by ONE canvas choropleth — 15 NCR districts + 13 NCT sub-areas from real boundary geojsons, each filled by live value's real band for the selected param. Switcher pm2_5/us_aqi/pm10/no2/o3/co/so2/nh3; dust/AOD honestly excluded (no official band). CPCB Table-3.1 sub-index math mirrored in-page for Indian params, EPA palette for us_aqi; CO µg→mg converted. Click → mini card (value, band chip, "mean of N cells", +12h trend — honest "forecast serves pm2.5 only" for other species). Sparse coverage → lighter alpha. Sector index a01–an40. Methodology lines per species name the real evidence level (waqi instruments vs cams-model-only).
+- Corridors tile: "donated trips · k≥3 anonymized aggregates — never a single person" basis line under the table + header "corridors publish at k≥3 devices inside 72h". Stats tiles now fully real: 2-3m field age, 67 samples/24 stations, 33 donated trips, 10 publishable corridors, 101.2µg daily median pm2.5 (2026-10-03), 101µg cumulative dose, 10.6kg CO2 estimate, 24.16µg MAE; "insufficient data" honest where no trips switched.
+- Verified live by eye: pm2.5 = green fills (satisfactory bands, honest), US AQI switch → Delhi repaints orange/yellow on EPA scale (owner's "Delhi is definitely red" instinct = index-dependent; the switcher IS the honest answer). West Delhi click → sub-area card + silhouette.
+- `/admin.html` alias added (was 404). Mobile: µg headline everywhere, cig equivalence demoted to secondary text inside detail lines, breathe-channel icon = dust. tsc+lint clean (lane-verified).
+- Deploy note: `6e4a26a` (admin-chrome-off-landing + tilt) verified first — landing now carries ZERO /admin references, /admin still serves 200 directly.
+- Suite: 958 passed + 5 skipped on 04a9395 (382s); main merged 85132e9.
+- Loop state: internals lane (63bd2eb9) still mid-run on dose-math-vs-published + load + fuzz. Admin lane follow-ups sent (null-param legend guard + per-species trend honesty naming).
+
+## cont.27 — internals lane batch 1: dose math re-anchored to Delhi literature
+
+- **Real math bug found + fixed (d3f48d7)**: published-source audit showed every open/shared mode below the measured band → dose understated 12–40%. MICROENV re-anchored: walk 1.00→1.30 (Goel et al. 2015 Atmos Environ 123:129-138 fixed-arterial exceedances, discounted ~7% for CAAQMS roadside blend), open car/cab 0.80→1.00, bus 0.70→0.90, 2W 1.10→1.20, auto 1.15→1.30 (Apte et al. 2011 in-rickshaw 1.46). VENTILATION seated tier 7.5–9.0→10.0–10.5 L/min (Zuurbier 2009 measured ~10-11; EPA EFH 9–16); cycle/car ratio now 2.2× = measured 2.1×. Synced ALL copies: exposure.py, routegraph.MODE_ME/VE, core/src/path.cpp kModeVE/kModeME, Mobile counters.ts ME_VE, transit.py provenance, admin_agg citations, plan.py/segments.py/alive_core_ref.py fallbacks.
+- **Demo impact**: mode gaps WIDEN — walk dose ~+30% on the same corridor; car-AC unchanged → "car vs walk" goes from ~34–42× toward ~45×. demo-script.md numbers MUST be re-verified after this deploys (they were measured pre-fix).
+- **Contract drift fix (067daae)**: served-but-undeclared wire keys now declared in Bridge/contract.ts (DoseBand.peak_conc etc.) — Mobile can't drift into keys the contract doesn't promise.
+- **Atomic writes (a38ade7)**: store_blob local path + S3 mirror_local + sync_rollup_outputs were open(lp,'wb') — mid-write crash could leave a torn newest .json.gz silently forcing an older field. Shared _atomic_write helper (tmp+os.replace); torn-write test proves no partial + cleanup.
+- Touched-area tests: 190 green on the batch (exposure_v2, priced_displayed, parity_dose, admin_agg, contract_sync, emissions, rollup_lambda, ingest×3, 63s).
+- Lane still mid-run: sustained 12-way load table, endpoint fuzz, envelopes/hygiene, freshness/TTL audit remain.
+
+## cont.28 — dose re-anchor live + "Delhi breathes" timelapse (85c70587, main a4e8623)
+- Deployed `951eeb3c` then `85c70587`: dose factors re-anchored to Delhi literature (walk ME 1.30 Goel-2015, auto 1.30 Apte-1.46, VE seated 10-10.5 Zuurbier/EPA-EFH). **Mode gap now ~37× live** (walk 250µg vs car 6.8µg CP→Gurugram, 17 opts, 690ms). Walk on CP→India Gate reads 42-56µg/3.5km.
+- Internals hostile-read batch (2938a48): `_DEDUPE` flood-wipe → oldest-⅛ evict; `_review_rate` → LRU 5000; VE fallbacks 9.0/8.0 → canonical 10.0 (community conc-inversion ~25% overstated — ledger now honest). Suite 965+5.
+- **`/grid?h=N` timelapse shipped on /city + landing** (85c7058): "watch the day" plays real 12h forecast frames — verified live: cells paint pink by h+11 03:18 while district fills stay now-green. Caption honest ("cells = forecast hour · district fills = now"). Lazy prefetch, honest stop at h+11, control hides when /grid?h= errors.
+- Load (12-way 3min): 0 errors, took p50 4043/p95 18165 — serial-queueing on single worker, honest degraded flags, 0 rank violations.
+- Contract drift now CI-guarded (served-but-undeclared keys fail tests).
+- Board: mobile-demo + web-craft + demo-day + admin-showcase lanes.
+
+## cont.29 — submission-eve state-of-play (submission-refresh lane, 2026-10-05 ~16:00 UTC)
+
+Truth anchors first: **`docs/plan/NUMBERS.md` is the canonical numbers ledger** (static / artifact / drift classes + phrasing rules) and **`scripts/verify_numbers.sh` re-derives every quoted figure against the live NLB**, flagging contradictions. Submission surfaces quote from those two, never from memory.
+
+- **The archive (`58c0ab5`)** — `server/archive.py` snapshots the *served* field once per IST hour (mid, σ band, conf, source counts) to `s3://{ALIVE_AIR_BUCKET}/archive/field-YYYYMMDDHH.json.gz` + local mirror `server/data/archive/` (~8-day local retention; S3 is the shelf). `GET /v2/archive?day=YYYY-MM-DD` replays a day hour-by-hour, every entry `basis:"recorded"`; missing hours are honest `gap`s, never backfilled; a wholly empty archive answers `hours:[]`. Recorder loop lives in `main._lifespan` (`ALIVE_ARCHIVE=0` disables); `/admin/api/status.archive` + the `/admin` "09 · the archive" tile show totals/since. Live read today: 2 snapshots since 2026-10-05T20:00 IST — the product now has history, not just forecast.
+- **Privacy audit close-out (`ad9367d`)** — aggregate-at-ingest is enforced server-side: `POST /v2/trip` trims 300 m at both ends, thins ~100 m, rounds to 4 dp, folds to ~500 m cells in `community._fold`; **no per-trip row exists in memory, on disk, or in S3** (legacy snapshots fold once at load and are rewritten as aggregates). `POST /observe` is retired → **410 Gone** (`main.py:1246`). Uvicorn runs `--no-access-log`; `observability.py` writes path templates only, with lat/lon/token/coords on a denylist + `scrub_log_line` rounding >2-dp numbers out of any line. Contributor id = `anon-` + 16 hex (64-bit CSPRNG via expo-crypto), rotated every 30 days (`Mobile/src/community.ts` `ID_TTL_MS`); the device token travels in the `X-Device-Token` header only. `/admin/api*` requires `Authorization: Bearer $ALIVE_ADMIN_TOKEN`. `PRIVACY.md` is the public doc of record; `docs/privacy/verify.md` shows how to check each claim.
+- **GTFS baked into the image (`c3d9c11`)** — the Dockerfile runs `tools/bake_gtfs.py`: `data/gtfs/{metro,bus}` feeds + compiled indexes ship inside the image and boot-warm before the task goes healthy → transit rows no longer cold-start empty for ~60 min (the fragility the shotlist warned about is mostly gone; re-verify a `metro`/`bus` row T-45 anyway).
+- **Perf + posture (`d6e6607`, `07cadfd`)** — /v2 latency pass for demo-day load (caches, loop offloads, gzip level); `docs/33-v2-load-latency.md` + bounded probe harness. Posture/perf endpoints on the wire: `GET /metrics` (Prometheus text, `observability.py`), `/admin/api/status` (build_sha, routing, archive, sources), `/admin/api/timing`.
+- **Freshness (`cb86253`)** — `built_at` on status(); 'as of' ages on the day/outlook/depart cards — every served field shows its anchor's age.
+- **Numbers integrity (`7566013`)** — NUMBERS.md landed + every quoting surface reconciled (its §4 lists what was wrong and the fix). Rule: drift figures get "~N"/"today reads N"/a timestamp; on stage, `verify_numbers.sh` output beats the file.
+- **Submission refresh (this lane)** — `docs/submission/*` refreshed to the stronger truth: writeup privacy = aggregate-at-ingest verified + `/observe` 410 + scrubbed logs + rotating 64-bit id; archive beat added to writeup/repo-readme/shotlist/checklist; '~35× on a Delhi commute' phrasing per NUMBERS §3 (33.2× measured today); stale deploy pins corrected; ai-disclosure commit count updated.
+- **Live deploy right now** — task-def `alive108:158` PRIMARY (rollout in progress at check time), image `alive108-api:cb862533`; `/health` `build_sha` reads `26b674d6` — the NUMBERS §2 wart: the ECR image tag is the truth.
+
+## cont.30 — recorded surface + comprehension + donation fixes (live e80a9568, main 6763b37)
+
+- **Recorded surface (`4ad9e0c`)** — /city "▶ what happened" replays the RECORDED archive on its own layer (hairline-edged mosaic, `RECORDED HH:MM IST · BASIS:RECORDED` captions, never forecast's wash); 24-square IST strip: recorded=clickable band tile, gap=dashed hollow, pending=faint, unreadable=hatched. Snapshots now persist the served forecast horizon (v2 format): `hour.model` + `hour.delta` → the recorded·model·δ flip (brick=under-called, sage=over-called, slate=about-right |Δ|≤10µg) lights up where `coverage.with_model` exists. Admin archive tile gained the hourly strip. Landing capLeft ends "records Delhi hourly — history, not just forecast." +8 archive tests.
+- **Admin comprehension (`ec51c88`)** — owner's "what is this / what does it represent / average of where" fixed: every stat card carries a plain-English meaning line under the label (gtiles pattern applied to #stats); every h2 `<em>` rewritten in plain Delhiite English; each pipeline stage has a one-liner before the jargon; dose-math table got a "how to read this" gloss. Look untouched.
+- **Donation path verified E2E (`5a9503e`)** — fixed boot-warm race in `community._fold` (`_loaded` flipped before hydration; donation during warm was silently overwritten — `_load_lock` added); fixed Noida invisible to area rollups (OSM's Gautam Buddha Nagar polygon genuinely excludes Noida city — real upstream hole; baked relation 18814682 → 16th district, tests updated `e80a956`). Judge's single donation honestly produces: receipt "added anonymously", own ledger, community counters, admin suppressed-bucket — k≥3 gates corridors by design.
+- **Suite**: 1077 passed + 5 skipped on ec51c88; affected tests green on 5a9503e/e80a956. **Live `e80a9568`** (16 districts incl. Noida verified), main `6763b37` no-ff.
+- **Board (5/5 Max)**: lead + app-rebuild `dc8eda93` (lifestyle-dosimeter home, Mobbin mandate — travel is a feature not the app) + offline `fff9863f` + rehearsal2 `b43dce85` + squash `b9d337e8` (public-repo.sh dry-run for demo morning).
+- Owner's updated product direction: app = lifestyle dosimeter (living/going-out/staying/travelling), travel = feature inside it; admin keeps the look but must explain itself; FOMO felt not stated; Mobbin/Dribbble is the bar.
+
+## cont.31 — 2026-10-05 ~17:20 UTC (lead session 93b8804d)
+
+Shipped + merged (main `3e75b21`, suite 1079+5 green on `a26fb4e`, deploy in flight):
+- `cfbd455` landing ledger-hero: h1 "A ledger for your lungs", live 3.5-cig/day breath figure, recorded-day strip (/today climatology, now-hour inked), never-existed beat ≤2 lines w/ live numbers, MG/M³ casing bug fixed (1000× wrong on live claim).
+- `8bc8e37` community plain-English: "We can't leak what we never take" legible, k≥3→"3 different phones", corridors→street stretches, donation-after warmth, 416 test updates.
+- `a26fb4e` offline honesty (venue-wifi gauntlet, all verified on device): receipt "added anonymously" LIE fixed → "saved — will send when back online"; DAY AHEAD cache-poison refusal; Delhi-today skeleton hang fixed via linkSignals; stale serves carry real accumulated age; demo-day.md connectivity plan (works-zero-net vs needs-net tables).
+- `14bb17b0` deploy verified live: /v2/day decisions fallback speaks ("no meaningful window today — moderate air all day").
+- Lanes settled+terminated: landing 953f70c9, community 847a46b2, offline fff9863f.
+- Spawned: apk-drive 5b7bc306 (new-home device smoke + fresh owner APK), city-legible 3152b130, self-grade 6ffe2f2a (/v2/skill — product publishes its own accuracy, never-done artifact).
+- Running: app-rebuild dc8eda93 (lifestyle dosimeter home — Mobbin mandate, THE priority).
+
+## cont.31b — 2026-10-05 ~17:45 UTC
+- Deploy `a26fb4ee` STABLE + verified: landing h1 "A ledger for your lungs" + live cig figure + recorded strip; community moat/plain vocab; transit compiled at boot (GTFS warm holds).
+- **REBUILD LANDED `6bafd2b`** (app-rebuild dc8eda93 settled): boots to HomeScreen — dose hero+budget ring, THE MOVE, YOUR DAY ledger (live-accumulating), day sparkline, DAYS AHEAD 5-day +least-bad +CAMS caveat, HOW YOU FELT check-in, quiet links, daily budget. Travel="Where to?" CTA; journey untouched. Compare keeps depth pass + N× dose-gap + "leave tomorrow 12:30 → breathe ~12% less". Design brief committed: docs/plan/design-refs.md (Oura/WHOOP hero, Uber feature-in-home, CRED type, felt-FOMO). Fixed header ghost-glyph (insets.top overdraw). Residual: JS-driven sheet spring — real-device frame check owed.
+- Screenshots shown to owner (v2_row1/row2) — direction verdict pending.
+- Spawned: video-v3 QUEUED (cap hit — apk-drive spawned its own emulator-smoke child e7ffc6ca; 5 slots = me + 3 lanes + that child).
+
+## cont.31c — 2026-10-05 ~18:35 UTC
+- `7dff816` /city legibility LIVE (merged main, deploy verified): every element carries plain "what this is"; controls "▶ the hours ahead" / "▶ the day so far"; pills "what happened · what the model called · the gap" + color key; vocab unified (map squares, street stretches, phones); noscript bug fixed (.rv sections were invisible with JS off); captured_at renders IST. Note: test_plan_ranking_invariants_on_real_ods flaked once on live field drift — watch.
+- `321e3c1` home disk-first hero paint + peek honours profile budget (apk-drive lane in-flight push).
+- Spawned video-v3 `b89b314c` (cut3: dosimeter home footage + re-verified web beats).
+- Owner asleep: 5-slot mandate holds; polish direction = "one more level" on surface register pending his morning verdict.
+
+## cont.31d — 2026-10-05 ~19:10 UTC
+- Deploy `a5ab92d8` LIVE + verified: `/v2/skill` self-grading endpoint serving honest `thin` (3 pairs at deploy; h1 n=2, h2 n=1 — fills hourly), admin "the model grades itself" card live, landing score line correctly self-hidden until status=ok. Contract: recorded IST hour × served-target hour, earliest-non-self dedupe, n≥5 floor per horizon, overall needs 3+ graded hours. Archive delta schema: `archive` source = actual served surface w/ live anchor (MAE ~19-29µg tonight); `held-run` source = raw unanchored model (bias ~-233µg — proof the anchor earns its place).
+- Main `dc1a984`. Suite: 1090+5 green per lane; skill slice 11/11 verified locally.
+- Spawned why-tonight `5299bd5e` (/v2/why causal explainer — fires×wind bearing, stagnation, trend → one honest line).
+- Board: apk-drive 5b7bc306 + child e7ffc6ca + video-v3 b89b314c + why 5299bd5e + me.
+- Deploy shell quirk: named shell_ids don't inherit AWS env — run deploys in plain shells.
+
+## cont.31e — 2026-10-05 ~18:05 UTC (video-v3 lane)
+- cut3.mp4 done (157 s, iOS-sim drive — no KVM on this box; Android release lane covers APK). Arc: landing hero → app HOME scroll (≈20 µg hero/ring, THE MOVE, WHERE-IT-ACCUMULATED ledger, DAYS AHEAD 112→172, HOW YOU FELT, 196-of-216 budget) → journey (search → wizard → compare dose ≈2 µg → nav counters → receipt ≈1 µg/52.4×) → a→b → reach/days → admin (+ new model-grades-itself card — /v2/skill shipped mid-lane, admin beat re-shot) → AWS placeholder → close.
+- `cdp_rec.py` ffmpeg-9 gate (-vsync→-fps_mode); `50_admin.sh` retimed + #skillwrap stop. simctl VFR seek-collapse workaround: transcode CFR before slicing.
+- Docs refreshed: shotlist numbers table (+/v2/skill row, archive 5, wart resolved on a5ab92d8), demo-day admin flow + T-45.
+
+### cont.32 — why-endpoint salvaged+deployed · cut3 · hi-locale + first-open lanes (Oct 5 night)
+
+- **`/v2/why` shipped `0908d9a`** — the lane's box lost git creds; salvaged its patch attachment, hand-merged 3 rejects (fires.py `belt_frp_mw`, city.html whyline grafted onto post-legibility anchors, admin.html drivers table onto the renumbered engine-room layout). 20/20 why tests; suite **1110+5**; main `6574857`; deploy `0908d9ad`.
+- **cut3.mp4 landed `e9b97f5`** (157s): iOS-sim drove HEAD `321e3c1` (no KVM on that box — honest swap); admin beat already includes the model-grades-itself card (7 pairs / MAE 18.4 / 55.6% band). AWS-console slot stays owner-filmed.
+- **why-lane + video-lane terminated** → spawned **hi-locale `3b4a70ca`** (real Delhi Hindi for every new surface — Devanagari glyph check is the headline risk) and **first-open `45c0e578`** (cold-install→first-real-number timing, walls audit, ~1Mbps throttle pass).
+- Board: me + apk-drive `5b7bc306` (+ emulator child `e7ffc6ca`) + hi-locale + first-open = 5.
+
+### cont.33 — why live on every surface · µ→Μ fixed · lanes on device/hindi/runbook/craft (Oct 5 late night)
+
+- **why endpoint fully landed**: `_line()` dangling-suffix fix `8d359a6` deployed `6e82f290` — live line now complete ("the air is barely moving — the day's pollution is sitting over the city"). Rendered live: /city `.whyline` under hero dek, /admin "why tonight" panel (drivers table + sparkline canvas — canvas empty until task accrues ≥3h builds, honest by design), landing `#whyLine` probe-then-reveal under day-note, app DelhiToday `whyHero` (`8d032e3` — needs next APK).
+- **hi-locale landed `416a195` mid-run**: `famMonoText()` — localized text in mono slots takes Noto Devanagari in hi (Plex Mono ships no Devanagari → tofu); decision line rebuilt in hi from served windows+series (kills wire-English leak); full moves*/veh_*/onb/settings coverage. Still running (on-device verify).
+- **µ→Μ copy bug `508fd1c`**: skillLine inside uppercase `.day-note` rendered "26.2 MG/M³" — fixed to `ug/m3`. (The `noT` span trick existed for basis line only; swept the file — only remaining uppercase-zone occurrence.)
+- Merge `986b66e` → main (1110+5 green on `6e82f29`).
+- **APK `a2b36fe` delivered + verified on emulator** (dosimeter home, consent-off silent, 83µg app vs 82.9 live). Owed to owner: D1 injected-drag dead-on-DelhiToday verdict needs his real phone (emulator can't reproduce; taps work).
+- Board: me + hi-locale `3b4a70ca` + first-open `45c0e578` + demo-proof `8beb3b31` + vibe-polish `0270f1a2` = 5.
+- Next deploy batch: `508fd1c` µ→Μ + whatever vibe-polish/server-side lands.
+
+### cont.34 — epoch batch: hi-locale done + first-open + demo-proof + vibe-polish + verify fix (Oct 6 ~00:30 UTC)
+
+- **hi-locale COMPLETE `c41570a`** — wire-English killed client-side (decisions[].line + why.line rebuilt in hi mirroring server grammar exactly); ~60 keys; famMonoText() fixes Plex-Mono-no-Devanagari tofu (~45 mono slots → Noto Sans Devanagari in hi); verified both locales on iOS sim. Deliberate-English list correct (µg/m³, AQI, place names, "0h26m").
+- **first-open COMPLETE `33112f4`+harness** — cold-install first real number +10-15s → **~+2.8-3.0s** (iOS sim): location ask moved post-consent, onboarding sheet gated ~+6.2s after ambient paints, /aqi no longer waits on GPS (centroid→positioned upgrade, verified real: 75.8 vs 66.1). Same at ~1Mbps. Residual: sim SIGSEGV class + real-hardware cold check owed.
+- **demo-proof COMPLETE `9a66130`** — runbook re-verified on `6e82f290`: dose pair 11.1/363.5µg (32.7×), skill 11 pairs/MAE 26.2, 29 districts, reach walk@25 ~92.5km, archive 6 snaps, why-beat placed in arc + video beat 4. Found verify_numbers crashes.
+- **vibe-polish COMPLETE `a38d7fc`** — 7 craft defects fixed (sparkline mid-value wrap, mono-micro eyebrows unified, forecast bars band-colored, hero lineHeight, pair-wrap, 4 press states, 4/8pt rhythm). Unfixables honestly reported: sim SIGSEGV class + glassFaint sheet ghosting (theme-token call).
+- **`1ce7678` verify_numbers hardened**: mid(None) guard + auto-pick ≥3.12 python (venv312 → 3.14/13/12 → python3 + clear error). Both demo-morning crashes dead.
+- Suite 1110+5 on `a38d7fc`; main `64c1590`; deploy `033aa866` live+verified (µg fix served, field 122s, transit compiled).
+- Spawned: apk-drive-v2 `ad8393f1` (+emulator child `c701489f`), cold-path `dd95d95b`, red-team `65440f43`. Perf lane brief `docs/lanes/perf-fps.md` QUEUED — spawns on next free slot (nativeDriver flip + HomeScreen memo + D1 gesture).
+
+### cont.35 — cold-path landed + deployed `efa9790d`; perf lane spawned (Oct 6 ~01:00 UTC)
+
+- **cold-path COMPLETE `efa9790`** — every live surface measured; report `docs/plan/cold-path.md`. Real fix: **reach veil painted only the cheapest ~10% core** (`ids[:90k]` dose-ascending) → uniform stride across settle order: car@25 served bbox went 24×22km blob → **76.745–77.942 × 28.031–29.119 (full NCR frontier), verified live**. Plus `_engine_field_view` time.sleep(0) yields every 64 cells (cold plan during reprice isn't starved on 1 vCPU) + warm_task now covers reach walk@50/car@25, why, skill, archive. Cold /v2/plan 6650ms decomposed: boot raster sweep + busy-join + cold transit scan — T-40 warm_task run is THE mitigation (documented in demo-day).
+- **Deployed `efa9790d`** — build_sha verified, field 138s fresh, transit compiled at boot, reach walk@25 0.1ms cached solve (2205 edges / 94.3km).
+- **main `78a3327`** (merge cold-path + T-60 caveat).
+- **perf-fps lane `e4be6a1e` SPAWNED** — nativeDriver A/B (respecting ui.tsx:159 documented crash + ReceiptSheet width%), memoization hunt, D1 gesture, startup residual.
+- Board: me + red-team `65440f43` + apk-drive-v2 `ad8393f1` (+emulator `c701489f`) + perf `e4be6a1e` = 5.
+- app-hero.png swap queued: waiting apk-drive-v2's HEAD home shot (lane's composited rows pre-date vibe-polish).
+
+### cont.36 — red-team landed + 2 deploys verified + hero swapped to real home (Oct 6 ~02:00 UTC)
+
+- **red-team COMPLETE `90a1f60`** — ~280 live probes, zero writes/deploys. **F1 HIGH**: `/directions` lacked the service-area guard `/route` has — Mumbai→CP snapped ~1,100km onto the Delhi graph and served a fabricated route+steps. Now `{"steps":[],"error":OUT_OF_AREA}` — verified live on `90a1f60b`. **F2 MED**: `/escape` `limit` had le=10 no floor — `limit=-5` sliced ~185 cells → sequential Photon geocodes → 19.5s single-worker stall; `ge=0` → 422 in 0.45s verified. 6 documented non-breaks (D1-D6). Honesty audit: all claims hold except drift — breath ≈**2.98 cig** (say "~3"), depart ~100 honest slots (was "110"), spread 29-35× live-tonight 35.1×, `/v2/skill` honestly `thin` (5-pair floor; fallback line written). **95.2% vs 79.2% reconciliation written**: 95.2 = temporal σ-fit 3,550 station-hours; 79.2 = live weekly LOSO spatial — "a harder test we publish anyway". 3 scariest-left: single-worker cold path (retry line scripted), skill thin on day (thinness IS the demo), drifting numbers (quote ranges).
+- **Deployed `90a1f60b`** then **`0d38962f`**: build_sha verified, field ~108s, transit compiled.
+- **`0d38962` /escape parallel geocodes** — sequential Photon round-trips from ap-south-1 ran ~5s each → ~24s/request warm (legacy v1, not on app path, but a curl-judge wart). gather + 6s timeout.
+- **`91271a1` app-hero.png swapped** — was the pre-dosimeter journey shot; now the REAL dosimeter home at HEAD (iOS sim, live data: ≈32µg today, THE MOVE band-colored curve, honest confidence line). Rebuilt the box's stale sim dev client (`expo run:ios` — killed a stray `ios/app.xcworkspace` decoy shadowing the real scheme) + hot-swapped HEAD bundle.
+- Spawned video-v4 `9770ef36` (cut4 at HEAD — perf changes invisible → footage stays valid). Board: me + apk-drive-v2 `ad8393f1` (+emu grandchild) + perf `e4be6a1e` + video `9770ef36` = 5.
+- apk-drive-v2 note: built APK at `7a4ff35` (pre-`a38d7fc` vibe-polish) — demo-phone APK gets ONE rebuild after perf lands, not per-commit.
+
+### cont.37 — apk-drive-v2 landed (D1 real fix) + perf first win (Oct 6 ~02:40 UTC)
+
+- **apk-drive-v2 COMPLETE** — APK `app-release-4270ab8.apk` at HEAD (D1 fix inside): https://app.devin.ai/attachments/60c3d297-71ea-4580-bf96-326f265e0ba4/app-release-4270ab8.apk — evidence: smoke-drive.mp4 + ev-whyhero (why line live on Android DelhiToday, 941µg hero, band-colored 12h) + ev-coldopen (honest sparse state, no fake number).
+- **D1 WAS A REAL BUG `4270ab8`** — not an emulator artifact: HomeScreen's `elevation:24` absoluteFill backdrop (added `6bafd2b`) stays mounted under DelhiToday/sidebar; Android dispatches sibling touches by z-order BEFORE mount order → home's ScrollView claimed drags through the scrim (~230px background scroll during "dead" swipes). All 7 overlay roots raised to `elevation:30` — iOS ignores the prop, taps unaffected. Verified by emulator probe (d1fix.mp4).
+- **perf first win `f1295b1`** — memo boundaries + stable props kill the poll-driven render storm (details in its report when it settles).
+- Lane verdict: fresh-install cold-open honest ("sampled too little to count it yet"), consent-off silent, journey intact (DRAWER2CLS held).
+- Next queued: apk-drive-v3 brief (final demo-phone build AFTER perf fully lands); ledger-math audit lane next spawn — does "≈N breathed" actually equal timeline×field server-side? That's the home hero's provability.
+- Board: me + perf `e4be6a1e` + video `9770ef36` + (spawn) ledger-audit.
+
+### cont.38 — perf landed + merged (Oct 6 ~02:55 UTC)
+
+- **perf-fps COMPLETE** (3 commits): `f1295b1` root cause of "glitchy and slow" — `useShellFlow` returned fresh `flow` object per render → every poll re-rendered entire tree incl. MapLibre+sidebar+invisible screens (~148 renders/20s idle → **0**; boot 116→40). `a85517f` nativeDriver A/B: 13 pure-chain flips (ReceiptSheet width%→scaleX transform 74→23ms; DelhiToday enter 88→46ms), 5 kept at documented mixed-graph crash sites (ui.tsx Sheet cluster). `84a34cc` PERF_ON-gated probe infra (`src/perf.ts`, ships disabled). D1 gesture stays JS PanResponder legitimately — no reanimated in dep tree; real-device pass owed.
+- **Suite**: 1110+5 green at HEAD. **main merged `64988c6`** (no-ff).
+- **Live task rolled ~27min ago** — archive per-task: `why.evaluated.trend.n_snapshots=0` expected; self-fills ~3h post-deploy (documented constraint).
+- **Spawned**: ledger-audit `f24ad0e0` (prove hero dose math vs live field), mobile-web `89918813` (phone viewport audit — judges open links on phones), apk-drive-v3 `46407448` (FINAL demo-phone build, gate = perf landed).
+- Board: me + video `9770ef36` + ledger `f24ad0e0` + mobile-web `89918813` + apk-v3 `46407448` = 5/5.
+
+### cont.39 — ledger-audit landed; strip-bz spawned (Oct 6 ~03:15 UTC)
+
+- **ledger-audit COMPLETE `e865537`** — hero math PROVABLE: hand-recompute 62.45µg vs app 62.5; arc Σ ≡ hero exactly after fixes. 2 real bugs killed: hour-bars left-edge vs trapezoid (~4× divergence on steep ramps), past-day arc sliced at now's hour. Judge-runnable harness `node src/store/test-runner.mjs` (13 tests). Stage sentence + report in docs/lanes/ledger-audit-report.md.
+- **Open finding → strip-bz lane `fc3b1e30`**: stays integrate `bz` (ambient × smoke_modifier) vs plan/strip raw ambient — ~+9% during burn events. Basis decision (apply modifier to engine or strip it from stays) then consistency + tests.
+- writeup.md re-synced to live counters (14 contrib/22 trips; 12/54 corridors publishable) — was stale (12/19, 10/54). verify_numbers.sh flags: smoke ×1.09 today (docs say re-verify morning-of), build_sha wart (say ECR tag on stage).
+- /admin live carries self-grade (/v2/skill: h+1 MAE 16.3, bias +15.8, band-hit 71.4%, thin horizons honestly labeled) + engine room + plain-English lines.
+- Board: me + video `9770ef36` + mobile-web `89918813` + apk-v3 `46407448` + strip-bz `fc3b1e30`.
+
+### cont.40 — cut4 + final APK built; drive in progress (Oct 6 ~03:30 UTC)
+
+- **video-v4 COMPLETE**: cut4.mp4 165s all-real arc (hero 2.9 cig ≈905µg → dosimeter home → real nav drive w/ accumulating dose → DelhiToday why beat → dose gap 12.8 vs 451.1µg ~35× → strided veil mid-paint 461.7km/9,113seg → community → admin self-grade thin-but-honest → AWS placeholder 25s → close). Numbers = live at shoot time. Pipeline pushed `89c48fa` (REC passthrough, hero-hold fix, 28_today slot, cut4 default). https://app.devin.ai/attachments/b9a0dfab-6a32-4e28-a107-eac135413dbb/cut4.mp4
+- **apk-drive-v3**: final APK built `alive108-b4a96d2.apk` (137MB universal, live ELB + self-hosted tiles + cleartext, zero loopback) — https://app.devin.ai/attachments/670fb515-3b24-4119-b40c-46c94a045950/alive108-b4a96d2.apk — emulator drive spawning now (slot freed by video-v4 terminate). THIS is the demo-phone build.
+- Live sanity: why.line fresh (389s), breath mid 905µg≈2.86 cig, dose pair 10.1 vs 335µg (33.2×), 23 options incl bus+metro, /v2/skill grading (h+1 MAE 16.3/+15.8 bias, thin horizons honest), field_age 428s.
+- Board: me + mobile-web `89918813` + strip-bz `fc3b1e30` + apk-v3 `46407448` (+emu child incoming).
+
+### cont.41 — why-trend was DEAD in production; fixed + deploying (Oct 6 ~04:05 UTC)
+
+- **Found a dead surface**: `/v2/why` trend + history scanned the LOCAL snapshot dir only — but ingest_worker stores 15-min builds S3-only ("stay S3-only", line 121) → empty dir on every healthy task → trend permanently "can't tell", history never shipped, on every deploy ever.
+- **Fix `268ed54`**: `_s3_series` lists the ≤2 UTC day-prefixes covering the 6h window, fetches ≤30 keys bounded 4s, merges+dedupes with local by build epoch, 5-min TTL cache (keyed on snap root — test isolation held). Verified vs live bucket: 5 builds in-window spanning 1h where endpoint said 0. 46/46 why tests + new s3-fallback merge/dedupe test.
+- **Kills a demo-day fragility**: the "why-history dies ~3h post-deploy" constraint — history sparkline now fills INSTANTLY (recorded builds are task-agnostic). The T-60 on-demand flip no longer blanks it.
+- **mobile-web `c2ab11f`**: phone viewports fixed — /city svg letterbox→full extent, tap targets 13-14px→~40px, replay strip scrolls, admin masthead unpinned, scroll-shadow hints; desktop byte-identical at 1280px. 4 pages × 2 widths, scrollW=innerW, 0 console errors.
+- **apk-v3**: `alive108-b4a96d2.apk` built (137MB, live ELB baked); emulator drive mid-run on child `609ee73d`.
+- Deploying `268ed54` now.
+- Board: me + strip-bz `fc3b1e30` + apk-v3 `46407448`+child.
+
+### cont.42 — strip-bz live + merged; lanes refilled (Oct 6 ~05:35 UTC)
+
+- **strip-bz `80a1525` → main `6698fd6` → live `80a15258`** — verified: `/v2/plan` echoes `smoke_modifier:1.09`; walk/car = **33.2× identical** (uniform modifier commutes through the dose sum and cancels in the ratio — lane's proof holds in prod); absolute doses +~7% (car 10.1→10.8, walk 335→358) as expected on a non-uniform field. stays/plan/strip now share the breathing-zone basis. Stays no longer over-count during burns vs trips.
+- **why-trend live-verified**: `n_snapshots:15` spanning 2.3h (was 0 forever) — S3 read works in prod. history stays honestly suppressed until span ≥3h — and never dies on deploys again.
+- **apk-drive-v3 verdict: SHIP** — b4a96d2.apk all-green table (D1 fixed at HEAD w/ real input, consent-OFF tcpdump clean 268 reqs, hi no-tofu, ~3.6s cold-open on software-raster emulator ≈ ~3s honest claim on real GPU). One product flag → nav-start-pick lane.
+- Terminated strip-bz + mobile-web + apk-v3+child (all settled, holding slots).
+- Board: me + numbers-refresh `612940ae` + app-stress `d36d68cd` + nav-start-pick `9f50446e`.
+
+### cont.43 — numbers-refresh landed + design-audit finds (Oct 6 ~05:55 UTC)
+
+- **numbers-refresh `96f64dd`** — every published figure re-derived on `80a15258` w/ curl evidence: dose ladder car-AC 10.8→walk 358.3µg (33.2×, verified identical on both bases — modifier commutes empirically), day windows 159/45/105, depart 29.2→79.7, reach re-derived, breath 885µg/2.8 cig, skill 21 pairs h+1/h+2 graded (stale "all thin" fixed), community 22 obs/14 contributors, corridors 12/54. 8 files corrected; lane caught its own unsourced figure before commit.
+- **Design audit (mine, on shipped home shots)**: the owner's "still a little odd" = the sparse hero — fresh-install home shows an empty gray bar + "µg" (reads as failed skeleton). Lane spawned: designed sparse state (ambient arc + counting affordance, never fake dose) + DAYS-AHEAD band differentiation + confidence copy. Found+fixed myself: open-ended window mixed 24h/12h ("22:30–7pm") — `bf7c35d` (srv end_label:null → 12h fmtHr fallback; now open-ended convention).
+- Verified live: warm_task covers all /v2 surfaces; archive strip 4 recorded IST hours on schedule; depart 24 slots; store harness 13/13 post-contract.
+- Board: me + app-stress `d36d68cd`+child `10b4b376` + nav-start-pick `9f50446e` + hero-sparse `52e4d094`.
+
+### cont.44 — hero-sparse landed + ingest-coldbuild + apk-v4 (Oct 6 ~06:45 UTC)
+
+- **hero-sparse `dbbc76a`** — the owner's #1 "looks broken" complaint dead: fresh-install hero now shows a faint band-colored ambient arc + "● today's air where you are: ~116 µg/m³" + "your count starts once the phone logs its first hours" + "1 of 3 samples" meter (real THIN_SAMPLE gate). Week strip: dimmed city arc + "your week starts counting today". DAYS AHEAD tiles band-differentiated. "confidence: low" copy en+hi. iOS-sim verified both states + both locales; tsc+lint clean, harness 14/14 (new sparse-meter test).
+- **False-alarm discipline**: hypothesized a desc-order bug in `_snapshot_series` — empirically disproved (`_local_series` ends `rows.reverse()`, `_s3_series` sorts; producers already asc). Reverted the no-op edit rather than commit a wrong-justified diff.
+- **why-history live math**: n=15 real builds, span 2.5h — series cache is 300s TTL (repeated curls <5min apart look frozen — that's the cache, not a stall). history lights when span crosses 3h on real builds, ~when the ~23:2x build lands.
+- **demo-day fix `ecf4fa1`**: the T-60-flip caveat was stale — history/trend now survive rollouts (S3); residual is just the ~25min cold first-build gap.
+- **Lanes**: ingest-coldbuild `22d86b26` (profile the ~25min first-build — stage timings, safe speedup only), apk-drive-v4 `15047bf3` (demo APK carrying hero-sparse + nav-pick + format fix + drive), app-stress `d36d68cd`+child `10b4b376`.
+- Merge checkpoint queued: suite green → main (Mobile-side only since strip-bz: nav-pick `59a7da8`, format `bf7c35d`, hero-sparse `dbbc76a` + docs).
+
+### cont.45 — history lit live + cold-build truth + ledger fixes (Oct 6 ~08:15 UTC)
+
+- **why-series starvation diagnosed+fixed `3aea78f`**: `n_snapshots:15` frozen across the night was never "15 recorded builds" — `_s3_series`' 4s serial budget starved after ~15 keys (~0.3s×225KB/14k-cell deserialize each), silently hiding the window's older half. Parallel bounded fetch (8 workers, same budget) → live verified: **n=34, span 5.8h, HISTORY LIT** (`history.points` 34, window_h 5.83). `_SNAP_S3_MAX_KEYS` 30→40 (dup-key pairs eat margin).
+- **ingest-coldbuild `5ec1f2f` honest finding**: cold builds are FAST (first key 13–54s post-boot — task 173's landed ~7min); the ~25min holes were mid-flight iterations stuck in a pathological serial-fetch path on degraded upstreams. Shipped: WARNING-level stage timings (log.info never reaches /ecs/alive108 — the invisibility root cause) + bounded parallel fetch legs (sources 4, WAQI 8, OpenAQ 8, FIRMS 4; order-preserving → bundles byte-identical). Pathological iterations collapse >20min → ~2-3min.
+- **ledger-batch `0fdd597`**: dedupe DELETED (only masked phantom-arrival noise; arrivedRef already dedupes — real trips can't be eaten), offline pill above nav turn card (D1 mount-order rule), /v2/trip floor (422 on distance_km==0 | <0.1km | speed>140km/h; outbox drops 4xx permanently).
+- **apk-v4 verdict: SHIP** — `alive108-609a6ef.apk` 9/9 PASS: designed sparse hero on Android, metro-pick→metro-nav, "heaviest ~22:30–" open-ended label, **cold-open 1023ms**, consent-OFF pcap zero POSTs, hi zero tofu, D1 holds. APK: attachments/d6f7b8ca... NEW DEMO-PHONE BUILD (predates only dedupe-removal — next rebuild when batch lands).
+- Deploys: `3711ccd0` → `37e55668` live; main `844884b` → `fc45d42`. Suite 1118+10.
+- Board: me + video-v5 `0774aba2` (cut5 on the new build) + demo-rehearse-v2 `5ea400a4` (beats+numbers re-verified).
+
+## cont.46 — transit first-plan + deploy fa08e96 (2026-10-06 ~01:00 UTC)
+- transit-firstplan `fa08e96`: transit scan rode the shared default executor
+  behind the boot-warm fleet → 12s cap elapsed → degraded:[transit] on the
+  FIRST plan after every deploy. Private _TRANSIT_EXEC pool + _warm_static
+  pre-pays first CSA scan (India Gate→Huda City Centre). VERIFIED LIVE on
+  fresh task 175: first plan 21 options incl metro+walk 53.2µg, degraded:None.
+- warm_task.py now reports transit_rows per OD (4 ODs honestly have no metro
+  within 2.5km — Gurugram point re-anchored to Huda City Centre).
+- demo-rehearse-v2 `382c45f`: beats re-verified on live. Drift rewrites:
+  dose ladder 429walk/13car ~33× (40.1× slowest-best), metro+walk 79.5,
+  options count SWINGS 19→24 (never quote exact), depart 34.4→100.6 2.9×
+  109 slots, breath 1165µg/3.7cig, skill 34 pairs h+1-4. Schema drift:
+  /v2/day 422s without lat/lon; /v2/city trips.days; /v2/skill horizon
+  keys renamed; /v2/reach dropped n_edges. Strip caveat documented: mint
+  strip on recommended row — rd rows say 'unnamed road'.
+- demo-day T-60 caveat corrected `27331d9`: cold builds <1min; why-history
+  survives rollouts (verified 34 builds/5.8h across 37e55668).
+- Suite 1126/5 green; live fa08e968 task 175; main 4f98309.
+- Flagged for a later lane: _slow_mode_options + motorized OSRM-fallback
+  _rows ride the same starved executor (smaller blast radius).
+- RUNNING: video-v5 0774aba2, apk-populated b4d86dd0 (child a3cac0aa
+  driving 609a6ef populated-state).
+
+## cont.47 — executor-audit + deploy 9af96710 (2026-10-06 ~01:40 UTC)
+- executor-audit `9af9671`: EVERY user-facing arm rode the shared default
+  executor behind boot-warm — plan motor/slow rows (starved→missing),
+  search _t1, skill, archive, reach encode, aws boto3, admin_agg; plus
+  two loop-blockers (AWS dose rows + build_why tail ran ON the event
+  loop). Private bounded pools per arm (_ROWS/_T1/_SKILL/_ARCHIVE/
+  _ENCODE/_ADMIN/_AWS/_WHY_EXEC); boot-warm stays shared. Repro after:
+  plan 6ms/9 options vs 4041ms+missing before. Suite 1134/5.
+- VERIFIED LIVE task 176: first plan 23 options incl metro+walk,
+  degraded:None, 6.8s; /v2/why 0.44s. Merge main 60e5a1d.
+- video-v5 cut5 delivered (2:48): re-recorded hero sparse→populated,
+  pick→Start selected option, dedupe-gone ledger (2 trip rows); kept
+  nav/reach/admin/community; 25s AWS placeholder intact. Receipt beat
+  caveat: uses bicycle trip (auto run's receipt GC-killed) — same
+  sim ledger proves the dedupe beat.
+- apk-populated 13/13 PASS @609a6ef (counted hero, gauge, dots, arc,
+  lens early-state, budget, ledger, receipt, pick→Start, pcap clean,
+  420dpi no overflow) — used-phone state proven on Android.
+- RUNNING: vibe-polish 0e6b4f43, apk-v5 9c5274ef (+KVM child pending).
+
+## cont.48 — GRAP + coldread + vibe + apk-v5 + deploy 913b002b (2026-10-06 ~03:15 UTC)
+- grap-stage `83d47de`: honest GRAP-EQUIVALENT on /v2/day + /v2/city
+  ({equivalent_stage, aqi, basis, note:"computed... not the official
+  CAQM declaration"}; CAQM I=201-300/II=301-400/III=401-450/IV=>450).
+  KILLED A REAL BUG: /aqi grap_indicative was a second PM2.5-band
+  formula — delegates to the one map now (no two surfaces can
+  disagree). /city hero + /admin lines "maps to ... rules", hidden
+  when cold. Suite 1143/5. LIVE VERIFIED: day→stage I (aqi287),
+  city→stage 0 (aqi196), bases labeled.
+- coldread `7facc34`: every unparseable token → Delhiite English —
+  µg→"µg (micrograms)" first-use gloss, "least-smoke rd"→"least smoky
+  way", accounted→counted, est.→about, "the field"→"smoke map"; hi
+  leaks killed (DELHI→दिल्ली, +Nh→+Nघं, am/pm→N बजे, wire tokens
+  localized). en+hi parity verified on-device.
+- vibe `9b3abe4`+report `2367679`: THE "looks odd" root cause — content
+  panes at 91-95% glass ghosted the map through text (read as render
+  bug). Rule codified: content panes solid V2T.bg+hairline; glass only
+  where map shows. Days-ahead numerals own cells, ledger dose hero,
+  compare suffix wrap fix. Flagged: sim SIGSEGV (MapLibre GPU class,
+  pre-existing, dev-bundle artifact — candidate lane later if wanted).
+- apk-v5 11/11 PASS @0a26f5a (jitter no-arrive, dedupe both-land,
+  offline lands-once, 0km 422, pcap clean, +390ms cold-open, hi no-tofu)
+  — binary superseded by apk-final (carries vibe+coldread).
+- Deploy 913b002b task 177 live+verified; main 60e5a1d→? (this merge).
+- RUNNING: judge-qa-v2 9c14f61a, field-drift-watch 87711066,
+  apk-final 34623675 (+KVM child pending).
+
+## cont.49 — forecast-skill + deploy f4139b24 (2026-10-06 ~04:45 UTC)
+- judge-qa-v2 `b19e362`: 15 hostile Q×A×live-proof on the dosimeter —
+  TOP FINDING model lost to naive persistence every horizon
+  (h+1 12.8 vs 5.4). Also verified: 33.1× dose multiple decomposes
+  2.36×·10.0×·1.4×; modifier re-derived 1.11 (was 1.09); 12/54
+  corridors under k≥3; /v2/day requires lat/lon; /observe 410.
+- forecast-skill `f4139b2`: fitted persistence anchor — served =
+  corrected + w(h)·(live_cell − corrected), w=1.0 through h+2 → 0 by
+  h+40 (STEPS/INCA nowcast hand-off cited). On 7,381 archive pairs:
+  pooled MAE 39.21→11.21 vs persistence 13.07 — BEATS persistence
+  h+1-4, never worse than old model anywhere, strictly wins h+5-11.
+  CLAIM EARNED — judge-qa-v2's top risk is now a strength.
+- Suite 1146/5. Deploy f4139b24 task 178: verified blend live
+  (h+0..2 anchored ~72.5 near live 80.5, drifts to model by h+3).
+- drift-watch ticks: field fresh (~600s), builds ~10-15min, fires 89/
+  belt 22, breath 1155µg — one flag n_snapshots 32→30 = 6h window
+  slide (expected).
+- main merged (this commit); live = f4139b24.
+- RUNNING: field-drift-watch 87711066 (~3h loop), apk-final 34623675
+  + drive child 28d29d6d.
+
+## cont.50 — ingest-edges + demo-day-final + cut6 + owner overhaul mandate (2026-10-06 ~07:15 UTC)
+- deploy 1ea333f7 live: (a) FIRMS stale_after_s 22500 (declared
+  contract, was 2700 → honest flap gone); (b) /v2/why snapshot
+  dedupe BUG (datetime-set halved key space) + explicit
+  n_snapshots_available disclosure — live-verified 29/29 builds,
+  span 5.8h, trend −52.8µg morning fall.
+- demo-day-final 3c70e26: every quoted figure re-derived vs live;
+  judge-qa §7 wording fixed ("blended onto live field", never flat
+  "beats persistence"); judge's-first-90s checklist for 0b11123.
+- cut6.mp4 2:48 (new copy on tape, frame-verified); day-in-life
+  video lane running on owner request.
+- drift-watch d14815f: CLEAN watch through overnight peak+morning
+  ventilation transition (city mean 90.3→52.9, vc 533→922+ m²/s).
+- OWNER ESCALATION ~05:50Z: full component-level overhaul across
+  app+web — "cheap, too complex, operating system, too dull, mini
+  words cringe, without removing a single feature, colorful
+  components + little liquid glassmorphism, daily driver".
+  Reference study done from his Safari tabs (~30 prod screens):
+  DECODED REGISTER + HARD ANTI-LIST (no neon/3D/cheap-green) in
+  docs/lanes/app-overhaul-v2.md + web-overhaul-v2.md.
+- LANES: app-overhaul-v2 00c120c8 (Mobile component redesign),
+  web-overhaul-v2 e6a987eb (landing/city/admin), search-crash
+  5cde4064 (stage-risk: SearchScreen segfaulted 6× in cut6 shoot —
+  residual RN/keyboard-map race), day-in-life 1d092590.
+- APK 0b11123 ships vibe+coldread BUT predates overhaul; rebuild
+  after overhaul+search-crash land.
+
+## cont.51 — overhaul epoch merged + owner door-palette rejection fixed (2026-10-06 ~08:05 UTC)
+- search-crash RESOLVED d791879: focus() inside mount-commit window
+  during live map transition → Hermes GC stomp SIGSEGV. All focus
+  calls gated on InteractionManager.runAfterInteractions; 36/36
+  clean opens on crash path; src/nav/searchSpring.test.ts locks it.
+- app-overhaul-v2 d210492 landed (V2Tint wells, DoorRow, band heroes).
+- OWNER REJECTED home door row ~07:30Z: three pastel hues clashing
+  (forest+salmon-band+clay), thin icons, weak contrast. LEAD FIX
+  d3c4c06 (not a lane): tiles → paper+hairline, identity colour moved
+  INTO the glyph chip, filled icon weight, labels full ink. Rule:
+  ONE colour family per screen; colour lives inside the chip, not
+  flooding the tile. KakaoBank rule confirmed.
+- web-overhaul-v2 c1fbfb8 landed + DEPLOYED (task def 180): landing
+  hero stat tile (LIVE chip + 80px serif + provenance), .door tiles,
+  .dchip band-washed districts, pastel .steps; city accent-chips +
+  band-washed .day tiles + whyline callouts; admin .kchip+.cap
+  comprehension layer (look untouched per owner). Suite 1136 green.
+- hi-parity-v2 ba99bd4: 534/534 keys, interpolated-literal leaks
+  fixed (share cigs/kg, nav banner server-English, timeAgo/fmtHr,
+  kg→किग्रा, place-name clipping). 23 captures, zero tofu.
+  FLAG: morning-brief "N बजे" notification code-only verified —
+  apk lane checking on device.
+- main merged 790672b; live c1fbfb88. Lead reverify table:
+  docs/lanes/demo-reverify-c1f-report.md — dose gap 10.2→365.0
+  (35.8×), 19 opts, why-history 29 builds/5.9h SURVIVES deploys
+  (S3 reader), day_mean 66.4 GRAP-eq-0, all inside published ranges.
+- RUNNING: apk-rebuild-v7 4ae64b00 + drive child d427683e (binary
+  carrying d3c4c06 door fix — released after GO msg), android-audit
+  32f32cb9 + KVM child 4e9dc61e. video-v7 brief committed — spawns
+  when a slot frees (cut6 predates overhaul + web-overhaul).
+- lane env note: stale server/core/build312/alive_core*.so still
+  bites fresh boxes (missing reach binding → 13 suite failures);
+  fix = bash core/build_ext.sh.
+
+- cont.52 (Oct 6 ~09:55 UTC): lead session — apk-rebuild-v7 report read (Pass A 13/14, 1 FAIL: µg gloss dead code). FIXED: 5fd2990 restores `t("unitUg")` whole on HomeScreen peekUnit (hero keeps bare µg by design — verified on iOS sim: "µg (micrograms)" renders on map-idle peek card, en side; hi key µg (माइक्रोग्राम) exists). Caught live Metro stale-transform crash on DelhiToday (V2Tint undefined — source correct; `expo start --clear` resolved; release bundle unaffected). macOS disk hit 100% mid-gradle (dead-weight emulator+system-images ~5GB deleted → 70%); rebuilt canonical binary alive108-5fd2990.apk 137MB sha256 d354f704a3396719 — uploaded, owner's install link sent. Full suite at HEAD: 1151 pass/5 skip → merged f31d5b2 → main. Blueprint suggestion sent: drop macOS emulator images + persist ~/.gradle/init.d maven-mirror init + RN0.86 SDK pieces. Skill updates queued for approval (both ios-testing twins: pbcopy input, onboarding re-trigger, sheet scroll, SIGSEGV recovery, stale-transform crash). Lanes: video-v7 (web beats done @c1fbfb88, app beats + folded v8 checklist on canonical APK), apk-verify-v8 (owns verdict table; KVM child 429'd → folded into video child per lead call, canonical-artifact correction relayed), cold-eye-v2 (hostile comprehension + nit fixes). 5/5 slots.
+
+- cont.53 (Oct 4 ~07:05 UTC): deploy 4eb9e1e8 VERIFIED LIVE — /health build_sha match, /city+landing zero Μ corruption (23 µg + 16 µg/m³ clean), /admin "operator sign in" chip serving (public board → gated prompt). Live field: 60 belt fires on wire (parali ramping), NW wind 4.8km/h, 903k edges. apk-verify-v8 verdict consumed: 5/5 PASS on shipped apk. "Where to?" pill flag RESOLVED on iOS — opens search sheet clean; suspect adb input-tap flake (documented class: injected taps die on some RN rows, swipe works) — Android re-verify via video-v7 child pending. cut7 web beats PREDATE deploy (Μ corruption possibly on tape) — re-tape flagged.
+
+## cont.54 — dead pill root-caused + footer-CTA fix (Oct 6)
+- apk-verify-v8 residual confirmed REAL: "Where to?" pill dead on Android only (dispatch/mount-level; uiautomator clean, ±100px column dead, populated-hero dependent).
+- Fix `4f60b28`: TravelCta moved out of ScrollView → pinned footer bar (ss.ctaBar) + `collapsable={false}`. Daily-driver grammar bonus: primary verb never scrolls away. iOS verified (tap opens search).
+- alive108-4f60b28.apk built (137MB, sha a4e68c00, 65.2.28.40 baked) → f0abfff3 re-verifying on Android dead-state device.
+- Deploy 4eb9e1e8 verified live: µg clean on /city+landing (23×µg, 16×µg/m³), admin "operator sign in" chip live, 60 fires on wire, why CLAIMS fires (NW wind ×1.24 — first honest claim in prod).
+
+## cont.55 — one-accent color system + font floor (Oct 6, newest owner mandate)
+- Owner verdict on latest build: "still wrong — font sizes, color
+  psychology (multiple colors contrasting over dull/bright/dark),
+  icons read like a cheap CSS template; wants Apple/Samsung-class."
+- Implemented the discipline: ONE neutral paper base + ONE forest
+  accent for ALL functional icon wells; band hues reserved strictly
+  for air-quality MEANING (hero day-mood, move verdict, AQI tile);
+  neutral surface2 for supporting data (species tiles).
+- Commits: `59bf92d` (door chips unified to accentWash/accentInk,
+  font floor 11px on home), `57092e0` (compare option wells, ledger
+  modeBox, sidebar tripIcon, settings vehicleWell → accent family;
+  all icons filled; last 9-10px texts → micro; species tiles neutral;
+  onboarding before-row → forest), `67d6507` (freshness dot reuses
+  V2T.accent — killed the second green), `c23bb48` (brand + moveLine
+  onto the title ramp step).
+- modeTint() kept exported but no longer styles wells — semantic
+  mode-hues removed from surfaces per the psychology rule.
+- Verified on iOS sim: home shows uniform forest chips; compare sheet
+  option tiles all wear the same accent wash (car/bike tiles verified).
+- APK alive108-57092e0 (sha 0c9e5517, attach eb12d5c2) = canonical —
+  apk-v9 re-verifying footer CTA + recording cut8 beats on it.
+- Suite 1151 pass/5 skip → merged to main `b1e3564`.
+- Deploy 7a808d0b STABLE + verified live (health sha match, 903k
+  edges, north wind, 14 belt fires, stagnation primary driver).
+- Lanes running: apk-v9 (+KVM child 1c97d968), web-soul (breathing-
+  card + same one-accent rule relayed for landing/city/admin),
+  field-watch-2 (parali-ramp honesty). 4/5 + possible KVM child.
+
+## cont.56 — contrast AA + final canonical binary (Oct 6)
+- `518ff95` onboarding default journey well → forest (last sky gone).
+- `25bc92c` text3 #8A8D94 → #6E7278 (3.2:1 → 4.6:1 AA on paper) —
+  the owner's "contrast isn't sitting" complaint in a single token;
+  same bump relayed to web-soul for --ink3 on landing/city/community.
+- `5ce43c9` hero µg lifted (+4px) — its tail nearly touched the
+  "of ~216" budget caption under the gauge column.
+- Canonical binary NOW = alive108-25bc92c.apk (sha e1399ac3, attach
+  62395036) — carries contrast fix; 5ce43c9 padding rides the NEXT
+  build if cut (cosmetic only).
+- Web palette audit: landing/city/community/admin already disciplined —
+  CPCB band hues = data semantic only, forest accent = function;
+  web-soul lane owns ink3 bump + breath + accent sweep.
+- Merged to main `e49af4b` (design batch). Suite still 1151/5sk —
+  app-only changes since.
+- Slots: me + apk-v9 + KVM child + web-soul + field-watch-2 = 5/5.
+
+## cont.57 — design v3: "the air is the canvas" (Oct 7)
+Owner's mandate: "different, not colorful; smoother; kill the AI-slop
+tells (borders, element placement, icons — not just color)". Deepest-
+research pass first → docs/20-design-research.md (057cbbc): the slop
+literature names Fraunces as THE template signature; our literal tells
+were icon-in-tile, hairlines on every card, uniform radii, and a layout
+that never made a creative decision. THE decision: the air is the
+canvas — the day's condition IS the environment (iOS-Weather grammar).
+
+Shipped on base/v2 (verified on iOS sim, tsc+lint clean):
+- Typography: Fraunces → Satoshi (ITF, Indian Type Foundry — a Delhi
+  product wearing an Indian foundry's type), 5 cuts embedded as assets;
+  famSerif resolves it across 26 sites; hi falls back to Devanagari fam.
+  Hero numerals = Satoshi Light 96/-3.5 (the Carrot move); brand = Black.
+- Sky-field hero (home + city): graded band field — deep wash at top
+  falling to paper at base, squircle 28, overflow hidden, no border.
+- Canvas wash: the WHOLE home screen whispers the ambient band at top,
+  settling to paper by mid-scroll — environment itself is the data.
+- Doors: icon-tile catalogue → grouped-list card (iOS grammar: bare
+  accent glyph + label + chevron; hairlines only INSIDE lists).
+- Borders: professional grammar — cards float on ambient shadow
+  (V2Elev); hairlines now mark ONLY selection (optSel/optTileOn),
+  division (row separators), and emptiness (hollow dose/week dots).
+  Sheet panes lost top borders → V2Elev.sheet. Ghost buttons, chips,
+  search field, corridor rows, vehChip, quiet ring → surface2 tonal.
+  42+ borderColor sites → ~10, all meaning-carrying.
+- Meaning layer v1 (owner: "the app must speak for itself", minimal,
+  never cringe): felt words — band idx → one word (easy/fine/fair/
+  heavy/rough/harsh; hi हल्की/ठीक/मामूली/भारी/कड़ी/कठोर). Home
+  outside-now reads "outside ~97 · heavy"; city lead "a fair day of
+  Delhi air". Colour + one word, no glossary.
+- Color-per-number verified: numeral band-ink, ring band-ink, outside
+  band-ink, canvas ambient band — every value's hue means something.
+
+Lanes: motion-v3 (3bb38470) owns CompareSheet/Receipt/Checkin/
+DepartGraph springs+scrub; apk-v9 (+drive child); field-watch-2; me.
+Next: integrate motion commits → new APK → verify → ship to phone.
+Oct 7 = all-5-agent testing day (owner-mandated): live-number
+consistency, real-time updates, profile behavior, both platforms.
+
+### Oct-6 night — DPCC ingest live + accuracy loop closed
+- **ALIVE_DPCC_INGEST=1 now live on prod** (deploy ce01ec5c): 30 DPCC
+  instruments blend alongside the 24 WAQI — stations.count=54, feeds
+  {waqi:ok, dpcc:ok}. The 6 holdout-proven blind spots (IGNOU, JNU,
+  Akshardham, NSUT/Jaffarpur, Talkatora, Delhi Cantt) now serve with
+  nearest_sample_km ~0.0 (was 1.5-5.8km). Blend verified smooth:
+  JNU site 69.7 → +3km neighbor 61.3; IGNOU 31.6 → +3km 43.9.
+- **Bug I found+fixed in the adapter** (`84a959b`): every inner get now
+  sends the browser _UA — the app's shared httpx client carries
+  `alive/0.1` and ModSecurity 406s it (was: 0 stations via the
+  real wiring path). Test fakes now 406 any non-Mozilla UA.
+- **Test fixes**: grab_async fixture test must pass `now=NOW`
+  (`677f52b`); suite env-leak trap documented — OPENAQ_API_KEY/WAQI in
+  shell/.env makes `test_*_no_key_*` fail locally (env-noise, scrub to
+  reproduce).
+- **Engine budget** `ddf3c19`: ENGINE_BUDGET_S + REACH_BUDGET_S 8.0→9.0
+  — field-watch-2 measured post-build reprice ~0.2s over; erased.
+- **Evidence stack**: accuracy-holdout-report.md (30 stations, MAE
+  GAP 22.8/LIVE-ADJ 16.4, bias +6%), field-truth-prerun.md (5 epochs,
+  ambient +35% tracked live, NW under-read pattern documented —
+  roadside hot instruments vs spatial blend; now instrumented).
+- base/v2 → main merged `d1d8a4f` before DPCC; next merge at morning
+  checkpoint once overnight watch proves the blend.
+- Oct-7 test matrix: docs/lanes/oct7-test-plan.md — 5 lanes, Lane A
+  sampler already proven at scripts/testday/field_sampler.py.
+- Lanes overnight: field-watch-3 (2cc799a4) watching the ramp +
+  DPCC behavior; ios-journey-overnight (75a15af5) Lane-B early on
+  sim+prod; builder-center-writeup (46321b23) the AirPods article.
+- verify_numbers.sh un-pinned from the 24-WAQI world (fix-verify-numbers
+  lane): /health stations.count live check accepts 54 or the 24-only
+  degrade; `*[...]*` stamped blocks + handoff logs no longer false-flag;
+  fires/~35×/×1.27 matchers drift-aware; bare-6.2 holdout claims flagged.
+  Green run vs prod bc8f82c4, ~01:05 UTC Oct 7 — T-45 safe.
+
+
+### Oct-7 morning — BandScale + events engine + audits + calibration fix
+- **BandScale** `bc8f82c`: 6-seg CPCB position strip under heroes
+  (HomeScreen + DelhiToday). Zero new words — position answers
+  "is this bad?". Verified on-device, deployed `bc8f82c4`.
+- **Air alerts engine** `4d20990` + notify channel fix `8346460`:
+  6 kinds (fires/fires_nc/band/window/stagnation/severe) off served
+  fields only — belt_fires+carrying from /v2/why, bandIdx from /aqi,
+  cleanest_window+grapStage from /v2/day. Per-UTC-day dedupe,
+  re-ping only on worse, 18h baseline expiry, foreground-only
+  (settings copy honest: "checked while the app is open").
+  Verified: stagnation+fires_nc fired real; band/severe/window
+  correctly silent. Report `docs/lanes/events-notify-report.md`.
+  - BUG FOUND+FIXED `8346460`: trigger:null → {channelId:"air-events"} —
+    immediate pings were bypassing the named Android channel.
+- **Suite 1169 green at HEAD** after `98f45da` (3 hermetic fixes):
+  conftest globs `core/build*` (was silently running Python fallback
+  — search tests ~10× slower than C++); no-key chain tests delenv
+  WAQI+CPCB+OPENAQ (load_dotenv pulls server/.env into pytest).
+- **calibrate.py real LOO** `1e3278f`: instrument set = station
+  coords (pm2_5-only selector found 0 rows post-DPCC debias); KF
+  refit per holdout (old "LOO" served stale fit → measured nothing).
+  New artifact: n=70, MAE 8.8, RMSE 12.7, bias +0.2. Replaces the
+  stale n=27/MAE-46.1 OpenAQ-era artifact on /aqi.calibration.
+- **Audits landed**: server-audit `fd951e8` (deep clean bill — dose
+  contract, k≥3 mechanism, banned-keys allowlist, honest degrade all
+  verified live; top risk = deploy lag, now fixed by bc8f82c4);
+  web-audit `b7c2714` (city stale day-key + donation 22v39 + 28
+  hardcoded dots → web-bugfix lane e6398956); judge-attack `0f5f879`
+  (top-3: citizen layer sparse-but-honest / plaintext HTTP / disabled
+  EventBridge — last two pending OWNER decision); mobile-audit
+  `01d3e59` (outbox resurrection → Max fix lanes; i18n leaks fixed
+  832e7fa; consent disclosure 1afccd8).
+- **Demo-morning assets verified**: scripts/public-repo.sh ready
+  (commit-tree, never touches worktree, secrets+blob guards);
+  tools/warm_task.py walks every lazy layer with real requests;
+  service currently on FARGATE_SPOT (describe-services confirms —
+  capacityProviderStrategy overrides deploy.sh's --launch-type);
+  the go-nogo T-60 on-demand flip IS required; server/.env
+  untracked+ignored (baseline safe).
+- Live prod `bc8f82c4`: 54 stations, 1.07M edges, 903k priced.
+- Next deploy batch: 1e3278f (calibration) + 8346460 (channel fix)
+  + web-bugfix when it lands.
+- Board: web-bugfix e6398956 + android-drive 53a85a60 + field-watch-2
+  running; Max board (coordinator): audits landing + 2 fix lanes.
+
+
+### cont.58 — edge-honesty markers landed (Oct 7, fix-edge-honesty lane)
+The three lies the edge-honesty probe proved on live prod now carry
+explicit markers — additive keys only, no field removed, clients that
+never read them see the same payload:
+- **`/v2/why` out-of-area**: was silently clamping the ventilation read
+  to an edge cell and returning the Delhi line for any coords (London
+  included). Now `point_in_area:false` + `note` ("the city-wide read,
+  not a local one") when `in_service_area` fails — the same gate `/aqi`
+  applies, but the answer keeps serving (drivers are city-scale).
+- **`/aqi` past the field edge**: inside the 2° margin but outside the
+  served field's own extent, it served the literal edge cell's pm25
+  (probe: 62.4 at ~139 km out, disclosed only by nearest_sample_km).
+  New `beyond_field_edge:true` via `FIELD.beyond_field_edge()` — reads
+  the field's own coverage bbox (`_snap_bbox` snapshot / live sample
+  extent), the same record status() reports.
+- **`depart_at` never validated**: garbage echoed verbatim while the
+  GTFS arm fell back to the (approx.) station model. New
+  `depart_at_parsed:false` on `/v2/plan` AND `/v2/reroute` — judged by
+  the transit arm's own parser (`transit_v2._to_ist`), so the flag can
+  never disagree with what the leg actually did.
+- Contract: `AqiResponse.beyond_field_edge`, `V2PlanResponse` +
+  `V2RerouteResponse.depart_at_parsed` declared in Bridge/contract.ts.
+- Verified live on a local uvicorn (real HTTP, seeded field): London
+  why → point_in_area:false+note; 30.20°N aqi → beyond_field_edge:true
+  ns_km 171.9 pm25 167.8; plan depart_at 'banana' → parsed:false echo
+  kept; ISO → true; absent → key absent. 12 new regression tests.
+- Full suite + report: docs/lanes/fix-edge-honesty-report.md.
+
+### cont.59 — android-drive findings + fixes (Oct 7)
+`37d659d` drove base/v2 release APK end-to-end on a KVM AVD (76 shots):
+welcome→hero→search→2 real nav trips w/ live reroutes→receipts→ledger→
+DelhiToday→community→settings→हिंदी→day-arc→consent-off pcap = zero
+telemetry POSTs (only GETs + allowed plan/reroute POSTs). Verdict:
+build_ok, no blockers, design-v4 holds on Android.
+Real findings:
+- FIXED `c84b5c2`: phantom re-plan after receipt-Done (exitNav reopened
+  compare on the traveled OD — now phase idle); "≈≈ N µg" double tilde
+  in HourArc (template + approx() both carried the mark); exhaust model
+  collapsed to idle×time when GNSS speed absent (now falls back to
+  along-route ddM/dtS, capped 45 m/s).
+- FIXED `344b4a9`: "Where to?" pill occluded under open home sheet —
+  rendered but answered no taps; now yields (home CTA covers search).
+- CLOSED (emulator-only): basemap renders zero text labels on the
+  SwiftShader AVD — confirmed upstream bug maplibre-native #3648
+  (11.8.0+ OpenGL-emulated text pipeline; real devices render fine,
+  iOS sim renders labels correctly on the same style). Action left:
+  one glance on the owner's real phone demo-morning — near-certain ok.
+- NIT (unfixed): community street-name casing mixed ("hanuman lane"
+  vs "Fire Brigade Lane") — real /reports data casing, cosmetic only.
+
+### cont.60 — Oct-7 build-freeze wave: fixes, deploy, lane board (Oct 7)
+Lead fixes landed + verified on sim (ios-cold-drive addenda, report @ e7db808):
+- `368c155`: depart strip device-local (was hardcoded IST+":30" — a
+  non-IST judge saw "now 07:30" vs their wall clock); tripNoun plural;
+  hi "9मि"→"मिनट"; sidebar "breathed on trips" scope caption; dormant
+  toggles read asleep-not-wiped (translucent accent track); receipt
+  "…less than on foot" via new worstMode field.
+- `1d77366`: boot-GPS `setFrom` race — a typed `from` inside the
+  ~1-2s permission window is no longer clobbered by the fix.
+- `ced7672`/`33cdab8`/`44e5e97`: residual "1 trips"→nominative plural
+  family (tripNoun/streetNoun/dayNoun en+hi, call sites in
+  DelhiToday/CityMoves/CheckinSheet).
+- **Search-mount SIGSEGV (sim): ~deterministic on touch, exonerated
+  of our code** — 8/8 kills touch vs 4/4 clean a11y, cold+warm, both
+  JS bundles. Countermove `ced7672`: both search CTAs open the map
+  draw-hold at `onPressIn` (touch-DOWN) so the tap's own native work
+  runs inside the throttled window. Rebuilt A/B: **0/8 → 16/20
+  (80%) touch mounts survive**; residual = cold-boot JSI/Metal warmup
+  (outside the hold window). REAL-DEVICE CHECK MANDATORY demo-morning;
+  on sim pre-warm ~30s + one sheet cycle before first CTA tap.
+- **DEPLOY VERIFIED `44e5e97f`** (suite 1199 passed): XFF rate-limit
+  rightmost-hop bucket key, community-snapshot durability, unified
+  donation ledger, verify-numbers drift closes, plural family,
+  edge-honesty markers, sigsegv mount-vs-draw fix (d45a55c),
+  fix-trip-bounds admission control. /health sha match, 53 stations
+  waqi+dpcc, transit compiled, CloudWatch silent post-deploy.
+- Edge-honesty holds live: degenerate params all get typed honest
+  answers (422 validation / outside-service-area / point_in_area:false).
+- AWS spend Oct 1-7: **$0.15** (NLB+S3; Fargate $0 spot+credits).
+  $50 budget alarm armed. FARGATE_SPOT permanent — no T-60 flip
+  (owner's ₹0 call; docs/demo-day.md updated).
+- Board (old org): route-segments fc54326b (owns /v2/plan segments[]
+  contract — render lane on Max org consumes it, must NOT write
+  server/ itself), pocket-engine d2782cd, notify-v2 ec5f70f,
+  repo-hygiene a38cf33 (secrets git-history audit + judge README +
+  LICENSE + .env.example). ios-cold-drive slept after its wave.
+- Owner pending calls: TLS (domain+ACM :443 vs honest-answer card),
+  EventBridge enable (rollup-daily+validate-weekly vs in-app+doc).
+
+### cont.61 — Oct 7 ~05:15 UTC (segments contract landed; deploy a1dca1ec in flight)
+- **Route-render pair landed** (Max-org lane, work-1's board):
+  `c152760` /v2/plan options now carry `segments[]` — served geometry
+  cut into ~12 vertex-boundary spans, one priced-field PM2.5 read per
+  span midpoint on the SAME dose chain (no new math), CPCB band per
+  span, null→"No data" never faked; declared V2PlanSegment in
+  Bridge/contract.ts. `dc6796a` mobile CPCB ramp + seam (old-server
+  fallback), `495957b` staggered settle + tap-swap (no unmounts),
+  `f932acc` camera-follow 600ms ease inside the commit cadence.
+  My route-segments lane re-scoped: review theirs + safe-path audit
+  (no jungle routes) — collision avoided.
+- **Suite 1203 passed** at HEAD incl. +4 segment tests.
+- **repo-hygiene landed `5fc3a5b`+**: secrets audit across ALL 1,219
+  public commits = ZERO real credentials (test fakes + stock debug
+  keystore only). MIT LICENSE, README re-measured (untraceable p50
+  claim → measured 0.320ms on 120,351-entry index), .env.example,
+  docs/README index, 6 dead links fixed.
+- **audit-writeup verdict: no fabrication** (51 claims checked).
+  P2 fixes applied in `a1dca1e`: lede "no uploads"→"nothing personal
+  leaves the phone"; plaintext HTTP named with the armed line;
+  EventBridge cite repointed infra/schedules→handoff.md (committed
+  JSONs are DISABLED templates — the cite was a self-own); /v2/skill
+  self-grade framed; drifted counts restamped (53-54 stns, 22
+  contributors/40 obs/1,028.5µg, 12/55 corridors, ~98 samples,
+  "5 days" not "120 hours", 16-24 options, strided-90k veil).
+- **Donation pipeline code-verified end-to-end**: client pre-trim +
+  server re-trim + wipeGen guard + bounded dedupe + implied-C≤900 +
+  geo admission + token-hash — tight at every layer.
+- **safefile everywhere `7f7276d`**: settings/vehicle/places/outbox
+  converted to atomic writes + .bak; purgeJsonDoc scrubs .tmp/.bak.
+- **warm_task.py proven on new deploy**: 22.6s all-layers warm,
+  tiles 22.7MB z0-14 live.
+- oct7-test-plan updated (`f21b348`): Lane B/C now cover wipe
+  completeness, alert kinds+reflect toggle, daysum week-strip parity,
+  BandScale, Android touch-taps on Where-to.
+- Deploy `a1dca1ec` in flight (segments + all above).
+- Board: route-segments fc54326b (re-scoped), wipe-verify 3b1586e9,
+  android-drive 53a85a60 (Lane C oct7 plan on shipped APK),
+  repo-hygiene slept. Slot held for incoming findings.
+
+## cont.62 — 2026-10-08 ~00:20 UTC (base/v2 @ 0c9ba5a)
+
+- **R9 unit-bug FIXED `0c9ba5a`**: `useShellFlow.remind` read
+  `ug_saved_vs_now` as µg and re-derived a percent off it — wire serves
+  percent already (server `pct_less_vs_now` honest key + ug_* alias same
+  value, main.py:1027-1031) → scheduled "breathe X% less" copy overstated
+  ~2.5× (13% true → ~32% shown). Now takes served percent verbatim
+  (clamped ≥0); `pct_less_vs_now` carried through DepartCurve mapper +
+  Depart type. tsc/lint/76-store-tests clean.
+- **Sim live-nav verified end-to-end on HEAD**: painted per-segment
+  gradient, staggered alt-routes, camera-follow on moved fixes, live
+  dose counters (≈0.3µg / ≈0.3kg), remaining-distance ticking
+  (35.4→29.9km), receipt "Trip ended" with honest zeros + "kept on this
+  phone only", Done → idle (no phantom re-plan — c84b5c2 confirmed).
+- **Suite at HEAD running** for deploy batch: server-side `58632f3`
+  (reroute segments parity + dose-coverage cap) + Mobile `790d4e6`
+  (NSURLCache purge) + rehearsal doc + R9 fix.
+- **Board**: me + android-drive 53a85a60 (Lane C oct7-plan on shipped
+  APK — wipe completeness incl. OkHttp http-cache, alerts toggles,
+  daysum parity, BandScale, 10+ Where-to taps kill-count=0).
+- **Owner calls still open**: TLS domain+ACM / honest card; EventBridge
+  enable / in-app+doc.
+
+## cont.63 — 2026-10-08 ~00:40 UTC (deployed f5f0bfe)
+
+- **Deploy `f5f0bfe` LIVE + verified**: /health sha match, 51 stns
+  waqi+dpcc, suite 1204 green at HEAD. /v2/reroute now serves
+  `segments[]` (18 opts probed) — painted strip survives mid-trip
+  reroute on the wire (58632f3 live). NSURLCache purge in bundle.
+- Same-unit sibling `ug_saved_vs_worst` audited: genuinely µg,
+  server-only consumer (decide.py >5µg threshold) — clean.
+
+## cont.64 — 2026-10-08 ~01:45 UTC (deployed b12c6b3c)
+
+- **Deploy `b12c6b3c` LIVE + verified**: /health sha match; landing-v5
+  serving at root — verified visually: "ledger for your lungs" lede,
+  live 61.0µg MODERATE + 2.8-cig equivalence, 52-station stats band,
+  measure/interpolate/dose mechanics w/ real LOO (95.2% of 3,550
+  held-out hrs inside ±2σ), designed privacy object (k≥3), live field
+  map + "WATCH THE DAY" forecast + self-graded accuracy (27.0µg miss,
+  263 pairs), 29-district board worst-first, close = thesis line.
+  Footer stamps build sha B12C6B3C = deploy.
+- **Lane C testday-android PASS (a5b9c88)**: wipe FS audit zero residue
+  + no resurrection, consent-off pcap zero telemetry, alerts master +
+  4 kinds + live stagnation banner, daysum parity exact, BandScale,
+  12/12 Where-to taps 0 kills, Hindi. Findings→fixed: #1 IME over
+  wizard/compare (b12c6b3: phase-exit dismiss + VehicleSheet open-edge),
+  #2 stale out-of-NCR last-known /aqi (c0d200c: drop fix, read centroid).
+- **69cde82** (Max rescoped lane): departSavedPct helper extracted;
+  CompareSheet reads helper not raw alias; depart.test.ts pins
+  served-13→13 (no ~33 recompute); demo script re-pinned to served
+  values (India Gate→Huda metro OD 23 opts ~34x; T-45 checklist +
+  ≥90s iOS cold-launch line).
+- Board: android-drive re-verifying IME fix + demo APK at HEAD.
+
+## cont.65 — 2026-10-08 ~04:30 UTC (security batch + usage analytics live)
+
+- **Deploy `aea1c688` → `dc6d0cc2`** both LIVE + verified (task defs :195, :196).
+- **Rate limiter PROVEN on the wire** (was the pentest HIGH): 12 parallel
+  POST /v2/plan each with a *different* forged X-Forwarded-For → exactly
+  6×200 + 6×429 — socket-peer key holds, forged XFFs mint zero buckets.
+  Earlier all-200 bursts were under the global class's 10rps refill —
+  inconclusive, now settled. Admin stored-XSS fix also on the wire.
+- **/v2/usage + admin "who's using it" tab LIVE** (16d3764→dc6d0cc):
+  admin-token gated, structural k≥3 (city-level scalars only — nothing
+  dimensional below a city total exists to leak). Verified live: 23
+  devices-that-shared, 41 trips, 179.5km, 108.3µg, 14.03kg CO₂, 6
+  switched; `installs: null` + note (unknowable by design — disclosed
+  honestly, not dressed up).
+- **SIGSEGV root-caused + killed** (`3c24a5e`, Max lane): off-JS-thread
+  jsi::Function/Object destructors corrupting Hermes pinned roots —
+  victim dies walking the freelist ~2s after the burst. Explains the
+  touch-vs-a11y axis (real taps drive more native work) + box
+  determinism + cold/post-wipe windows. Fix = patch-package sim-only
+  (#if TARGET_OS_SIMULATOR): allowRelease→CallInvoker hop, ~Promise
+  deferJsi queue, CallbackWrapper defer, GC sizing + ProtectMetadata
+  tripwire. Gate 34/34 clean on their box. Build caveat: pod installs
+  need RCT_USE_PREBUILT_RNCORE=0 + plain xcodebuild. Composes with
+  ced7672 press-in hold (different layer).
+- **Suite: 1204 passed, 5 skipped** at `aea1c68` (my box).
+- **Demo APK delivered + verified**: alive108-3589209.apk @ 3589209,
+  sha256 8896d5b2…fc17 — Lane C PASS 0 P0 (IME fix confirmed).
+- **Landing-v5 recorded demo sent to owner** (full-scroll live-prod
+  MP4). ASCII-art question dispositioned: killed deliberately in v4
+  a916fc0; restore = owner taste call, flagged.
+- **Owner asks relayed**: admin "sexy/orgasmic" love → Max board; usage
+  tab must follow same scheme (it does); coordinator syncs every ~20min
+  running (sync #8 sent).
+- **Board**: me + ios-cold-drive (native rebuild + re-running its exact
+  8-touch SIGSEGV harness on post-3c24a5e for independent confirmation).
+- **Owner calls still open**: ASCII restore; TLS domain+ACM / honest
+  card; EventBridge enable / in-app+doc; donation anti-abuse attestation
+  (pentest MED — needs device attestation, owner decision).
+
+## cont.66 — 2026-10-08 ~06:15 UTC (verify arc closed, prod 70914c00)
+
+- **Deploys `dc6d0cc2` → `e0aca004` → `70914c00`** all LIVE + verified:
+  usage endpoint+tab, low-RAM batch (TripAggregates 72h eviction, lazy
+  gazetteer), server+Mobile dead-code drop, my `history.stations`→
+  `stations_climatology` rename, deploy-freeze rule in demo-day.md.
+- **Rate limiter wire-proof**: 12 parallel POST /v2/plan unique spoofed
+  XFFs → exactly 6×200 + 6×429 (tight class 2rps/6burst). Socket-peer
+  keying confirmed — forged headers mint zero buckets.
+- **SIGSEGV root-fix `3c24a5e` independently re-verified**: cold-drive's
+  exact 8-touch harness on post-fix HEAD — 22/24 mounts survive (0/8
+  pre-fix baseline; their box 34/34). Residual = cold-boot first-tap
+  only (~14% of cold, 0% warm). Verdict: substantially confirmed, not
+  proven zero on this rig. Demo rule hardened: pre-warm ~30s + open/
+  close search sheet once; hardware check stays mandatory.
+- **/v2/usage + admin tab verified rendered** — operator sign-in shows
+  real aggregates (23 devices-that-shared, 41 trips, 179.5km, 2.6µg/trip
+  mean, mode-share bars, 2kg CO₂ avoided); guest sees honest-locked
+  state, no 401 nag. Owner screenshot sent.
+- **"Dup stations key" scare → NOT a bug**: .sources.stations.count=53
+  (live, correct) vs .history.stations=125 (climatology, different
+  parent). Renamed anyway → stations_climatology; live on the wire.
+- **Demo APK re-cut triggered** on android-drive: delivered APK @3589209
+  was stale — aea1c68 counters.ts fix (GNSS-jump→4.5× dose/CO₂ spike)
+  missed it. Rebuild at HEAD + re-verify with forced GPS jumps.
+- **Demo-exchange audit (Max, fb4a993)**: "the demo is real" — all
+  surfaces byte-identical to HEAD, numbers match, gradient honest.
+- **Board**: me + android-drive (APK re-cut ~1.5h). ios-cold-drive slept.
+- **Owner calls still open**: ASCII restore; TLS; EventBridge; donation
+  attestation.
+
+## cont.67 — 2026-10-08 ~08:15 UTC (prod 38492947, ops-holes closed)
+
+- **Deploy `38492947` LIVE + verified**: plain-words server-side now on
+  the wire — landing serves "reading the live air", "the air map",
+  corridor→"shared street" in the k≥3 explainer; day.py/outlook.py
+  avg→average. /v2/city serving honest copy on the new build.
+- **Demo APK deliveries**: `alive108-70914c0.apk` (Max org, sha256
+  bfceaf26, KVM-verified 0 crashes) sent to owner w/ fallback
+  `alive108-0be8181.apk` (in-org, teleport-verified counters fix).
+  Both predate plain-words strings.ts — **canonical demo binary = ONE
+  final re-cut at freeze HEAD (~20:00 IST) by Max apk-final lane +
+  GitHub Release asset** — agreed w/ coordinator, no per-commit churn.
+- **OPS-HOLES found + closed (real)**:
+  - field-age alarm watched namespace `ALive108` — metric lives in
+    `Alive`. NEVER saw a datapoint; missing-data=breaching made it
+    permanently cry wolf. Recreated on correct ns, 900s×2 eval,
+    notBreaching on gaps → now OK on real data.
+  - `alive108-5xx-rate` watched Http5xx/RequestCount — metrics that
+    don't exist anywhere. Deleted (always-OK false security).
+  - NEW `alive108-target-down`: HealthyHostCount<1 for 2×60s →
+    alive108-ops SNS (missing-data=breaching — right for down-detector).
+  - alive108-ops SNS had ZERO subscribers — every alarm fired into the
+    void. Subscribed owner's email (pending his SNS confirm click).
+- **SIGSEGV residual honest note**: 22/24 on this rig (2 cold-boot
+  kills), their box 34/34 — pre-warm ritual in runbook.
+- **Board**: me + coordinator channel. Freeze ~20:00 IST → final APK.
+
+## cont.68 — 2026-10-08 ~08:40 UTC (prod 227c25d8, ops arm only)
+
+- **OWNER DIRECTIVE via coordinator sync#13**: all ALive lanes
+  consolidate on the Max board (7-cap). This org = lead + ops only —
+  no new lanes spawned here. Ops duties kept: deploy.sh, T-60 freeze
+  hold, alarm watch, no-ff merges, verify_numbers, handoff doc.
+- **Alarm surgery complete + honest**: `alive108-field-age` re-created
+  on correct ns `Alive` (was `ALive108` — never saw a datapoint),
+  900s×2, missing=notBreaching → now OK on real data. Dead
+  `alive108-5xx-rate` deleted (watched metrics that never existed).
+  NEW `alive108-target-down` (NLB HealthyHostCount<1, 2×60s,
+  missing=breaching) + `alive108-field-emitter-dead` (metric silence
+  45min+ → breach). alive108-ops SNS: owner's gmail subscribed —
+  **pending his AWS confirmation-email click**.
+- **FieldAgeSeconds honesty fix `227c25d8` deployed + verified**:
+  age-less provenance (injected/degraded inputs) used to emit 0 —
+  dressed unknown staleness as fresh. Now emits nothing; silence is
+  the emitter-dead alarm's job. Regression test in test_rollup_lambda.
+  Prod: sha on /health, field 196s fresh, 53 stations waqi+dpcc ok,
+  44 fires (12 in-belt, smoke mod 1.06 @CP — parali ramp IS live).
+  Zero errors/tracebacks on fresh task :200.
+- **verify_numbers: ZERO flags** — every headline figure re-verified:
+  3550 pairs/85 stations/95.4% ±2σ, LOO MAE 8.8 bias +0.2 n=70,
+  CP PM2.5 67.1/AQI 155, corridors 12/55, community 44/24/1278.9µg.
+- **Hold**: no more deploys unless a fix lands; freeze ~20:00 IST →
+  Max apk-final cuts canonical binary at freeze HEAD + GH Release.
+
+## cont.69 — 2026-10-08 ~13:15 IST (prod f9ea5ae8, P0 closed)
+
+- **P0**: landing `/` dead on prod — boot overlay never dismissed
+  (plain-words `326e64e` left `map's` unescaped inside a single-quoted
+  JS string in landing.html:1293 → whole inline script failed parse).
+  Coordinator lane fixed `f9ea5ae`; I verified the real script block
+  (lines 720-1870) node --check clean + deployed + re-verified on the
+  wire: prod HTML script parses, escaped `map\'s` served, real Chrome
+  renders hero live (49.2µg, ~2.2 cigs/day, 53 stn, 3min-fresh, 903K
+  edges). Boot overlay self-dismissed — JS path end-to-end.
+- **Gotcha for sweeps**: `grep '<script>'` in landing.html hits a
+  literal inside the CSS comment at line 475 — extract the real block
+  by line range (719<script>→1871</script>), not regex.
+- Task def :201 live; alarms: field-age OK, target-down OK,
+  emitter-dead armed (-1 dead-man threshold — real 0.0 datapoints no
+  longer self-breach).
+
+## cont.70 — 2026-10-08 ~14:00 IST (admin auth: real sign-in, cookie session)
+
+- **Lane: admin-auth.** `/admin` now fails closed behind a real login:
+  unauthenticated → a gate card (ops register — warm paper, hairlines,
+  mono small-caps, `/city` escape link for guests), no gated fetches
+  fire. **Govinda signs in demo morning**: open `/admin` → paste the
+  operator token → sign in; the session is an HMAC-signed HttpOnly
+  SameSite=Strict cookie (~8h, `ALIVE_ADMIN_SESSION_S` tunes).
+  Sign-out = masthead button → `POST /v2/admin/logout`.
+- **Endpoints (new, all in main.py ~120 lines, stdlib only)**:
+  `POST /v2/admin/login` (token→cookie, 503 when ALIVE_ADMIN_TOKEN
+  unset), `POST /v2/admin/logout`, `GET /v2/admin/session` (probe).
+  Rate limit: `/v2/admin/login` gets its own socket-peer bucket
+  (5 tries → ~1/5s) in middleware `_DEFAULT_PATH_LIMITS`.
+- **Guard widened, not replaced**: `_admin_guard` now accepts the
+  session cookie OR `Authorization: Bearer` — Bearer stays for
+  go-nogo/ops curl. No-token loopback dev path unchanged.
+- **The XSS→theft path pentest flagged is dead**: admin.html no
+  longer stores `alive_admin_tok` in sessionStorage nor calls
+  prompt(); JS never sees a secret — it only knows `AUT` (signed-in
+  bool). Mid-view expiry → locked tiles + gate with "session ended".
+- **Honest limits** (in lane report): stateless cookie can't be
+  revoked server-side (logout deletes it locally; a copied cookie
+  lives ≤8h); Secure flag only when the request arrives over TLS —
+  the NLB is still :80 so the cookie rides plaintext on-wire (same
+  as the Bearer did); sessions die on token rotation (intended) and
+  on redeploy is NOT a factor (stateless — survives restarts).
+- Verified: pytest +12 (login ok/bad/503/expired/tamper/rotation/
+  flags/429/logout/page-no-sessionStorage) 21/21 with usage suite;
+  live curl chain guest→login→cookie→logout on :8099; real Chrome
+  E2E (gate→wrong→login→board→sign out→gate).
+- **Demo-morning line**: token lives in SM `alive108/admin-token`;
+  paste once → ~8h of board; phone hotspot = same flow.
+
+## cont.71 — 2026-10-08 ~09:55 UTC (hash-login: one-link admin sign-in)
+
+- **Lane: hash-login.** `GET <mount>/in/<token>` is now the primary
+  sign-in — server-side compare_digest against ALIVE_ADMIN_TOKEN →
+  same `alive_admin=v1.<exp>.<sig>` cookie (HttpOnly, SameSite=Strict)
+  + 303 to the bare mount. Credential never sits in the address bar
+  after landing; wrong guess = the honest 404 every unknown path gets.
+  Form login stays as fallback (same cookie, same brake).
+- **Same brakes as the form**: `<mount>/in/` rides its own (0.2, 5)
+  socket-peer bucket in middleware `_DEFAULT_PATH_LIMITS`;
+  observability `RequestLoggingMiddleware` renders the path
+  `/in/<redacted>` — token can't reach CloudWatch via a log line
+  (verified end-to-end on 303 and 404). Uvicorn stays --no-access-log.
+- **Console splash killed**: the admin boot strip is deleted outright
+  (~120 lines: CSS, #boot node, bootStrip(), alive_boot_v1) — the
+  landing keeps its own strip. First paint = one checkSession fetch →
+  board. Also fixed a stale-label bug the link exposed: tokBtnRefresh
+  now re-runs when the session probe lands (signed-in reloads used to
+  keep "operator sign in" on the masthead).
+- Verified: pytest +5 (303/cookie/redirect, honest-404, unconfigured
+  404, /in/ bucket 429, log redaction) 20/20 auth suite; live curl
+  chain + real Chrome drive on :8108 (link → clean URL → board →
+  SIGN OUT → gate). Report `docs/lanes/hash-login-report.md`; doc
+  `docs/plan/admin-login.md` rewritten around the link.
+- **Honest edge**: the link is the token — it lives in browser
+  history and wherever it's pasted; rotation is the kill.

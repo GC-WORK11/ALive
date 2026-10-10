@@ -1,0 +1,180 @@
+# Register card — ALive-108 mobile (post app-overhaul-v2)
+
+One screen of truth for the component register — the light-theme
+"chunky colorful components" language: one hero per screen, tinted
+one-idea cards, icon-tile doors, pill grammar, mini-word labels
+(number + unit + ≤3-word label does the talking). Source of values:
+`Mobile/src/theme.ts` (V2T / V2Tint / V2Elev / V2Type / V2Radius / fam*
+are the contract — names + keys stable, values may move). Landing pages
+(`server/landing.html`, `city.html`, `admin.html`) carry the same
+register in CSS vars — web siblings track this file, not a fork.
+
+## Grammar — the 10 decoded patterns
+
+1. **Hero per screen** — exactly one big serif numeral owns every
+   surface (dose µg, city µg/m³, trip count). Everything else is
+   component-scale.
+2. **One-idea cards** — each card carries one thought (the move, the
+   days ahead, how you felt, your budget). No dashboard grids.
+3. **Tinted surfaces** — a card CAN wear a wash: band wash for data,
+   clay/sand warm wash for breath/advice. Colour lives ON components —
+   the app itself is never repainted.
+4. **Icon-tile doors** — feature doors are tinted squares with a glyph +
+   label — and since cont.55 every door/option/ledger/sidebar icon well
+   wears the SAME forest `accentWash`/`accentInk`. The earlier
+   map/forest + city/sky + trips/clay trio read as a cheap pastel
+   parade; functional identity is ONE accent now.
+5. **Pill grammar** — selections are pills (ink fill for primary,
+   tinted wash for selectable groups); tabs are segmented pills.
+6. **Mini-words** — `number + unit + ≤3-word label`; prose is rationed
+   to one-line qualifiers. Eyebrows carry section names.
+7. **Single-CTA heroes** — one ink pill per screen leads the eye
+   ("Where to?", "Start", "Done"); secondary actions stay quiet.
+8. **Honest empties** — no data is a designed state (sparse hero,
+   empty ledger, no-streets city) — never fake fills, never blank.
+9. **Component rows** — ledger rows / option cards / settings rows are
+   designed objects: tinted icon tile + name + one stat + one qualifier.
+10. **Colour = meaning or data, never decoration** — the Apple-class
+    discipline the owner demanded: ONE accent (forest) for every
+    functional icon well; band hues ONLY where colour means air
+    quality; the clay/sand warm family survives ONLY as the
+    "breath/advice" semantic (ledger summary card, move-card verdict
+    fallback, AQI tile, checkin/onboarding breath rows). Two different
+    hues that don't MEAN two different things are a bug now.
+
+## Surfaces — the ladder, and when translucency is allowed
+
+| step | token | value | where |
+|---|---|---|---|
+| paper | `V2T.bg` | `#FAFAF7` | canvas, **all full-screen sheets + drawer + receipt** |
+| card | `V2T.surface` | `#FFFFFF` | cards resting on paper/sheets |
+| raised | `V2T.surface2` | `#F3F2EC` | inputs, pressed rows |
+| top flat | `V2T.surface3` | `#EBE9E1` | floating controls |
+| scrim | `V2T.scrim` / `scrimDeep` | ink 42% / 58% | dims behind every sheet — *carries* the dim, not the pane |
+
+**Sheet-surface rule:** any pane that covers *content* — DelhiToday,
+ledger, settings, search, vehicle wizard, sidebar, receipt — is **solid
+`V2T.bg`** with a `hairline` edge. Translucency
+(`glass`/`glassDeep`/`glassSoft`/`glassFaint`/`glassSel`/`glassEdge`/
+`glassLine`) is reserved for chrome that keeps the *map* legible:
+search bar, FABs, chips, DayPeek card, compare sheet, HUD tiles.
+A content-bearing pane that lets the layer beneath ghost through reads
+as a rendering bug, not frost.
+
+## Ink + hairlines
+
+| token | value | use |
+|---|---|---|
+| `text` | `#16181D` | ink — headings, owned numerals |
+| `text2` | `#4A4E57` | labels, meta |
+| `text3` | `#8A8D94` | weakest ink that still reads |
+| `text4` | `#A6ACB8` | empty states only |
+| `line` | `#E4E1D8` | dividers |
+| `hairline` | `#D8D5C9` | crisp card/sheet edge |
+| `ink10` | ink 10% | overlay hairline |
+
+## Accent + tint wells + data colour
+
+- `accent #3A6844` / `accentInk #2B4E32` / `accentWash #EAF0E4` /
+  `accentTint #DCE7D1` — **forest, not olive**: the muted-expensive
+  discipline (deep, saturated, classy). The only non-data hue; fills the
+  primary CTA ink is reserved for (`Where to?`, `Start`, `Done` are ink,
+  not accent — accent is identity, not action).
+  Every web surface (`landing`, `city`, `community`) carries this same
+  forest canon. **The one documented exception is `admin.html`:
+  `--accent #2456D6` / `--accent-ink #1E47B0` / `--accent-wash #E8EDFB`
+  — a deliberate "engine room" backstage hue, kept because the
+  backstage dialect reads as a different room, not a sibling store.
+  Everything else about admin still tracks this card; its accent is
+  canon-by-exception, not drift.**
+- **`V2Tint` wells** — `{wash, ink}` pairs pulled ~80% toward paper.
+  **Post-cont.55 usage is restricted**: `forest` = the accent family
+  (all functional wells); `clay`/`sand` = the warm "breath/advice"
+  family on its few semantic surfaces only; `sky`/`plum` are retired
+  from screens (kept in code for compat — do NOT reintroduce them as
+  component colours; a second cool hue beside forest reads as a
+  palette bug). Supporting-data tiles go neutral `surface2`+`text2`.
+- `band0..5` = `#7AAB59 #C8B25A #D58C4A #B85442 #8F3C49 #6E3C54` — the
+  ONLY data colour (CPCB breaks `[30,60,90,120,250]`).
+- Washes blend solid toward white, never alpha: `bandWashIdx` 90%
+  (cell fills), **`bandWashMidIdx` 82% (tinted hero cards — a card
+  carries the day's band)**, `bandWashDeepIdx` 74% (tile fills that
+  must scan), `bandEdgeIdx` 60%, `bandInkIdx` 15% (band-coloured text).
+- `breath1..3` = `#D58C4A #B85442 #8F3C49` (smoke you breathe),
+  `out1..3` = `#4A4E57 #8A8D94 #A6ACB8` (smoke your ride puts out),
+  `pinDest #B85442`.
+
+## Type + numerals
+
+- Ramp `V2Type`: micro 11 · label 13 · secondary 15 · body 17 · title 22
+  · display 30 · hero 44 · heroXL 62.
+- Voices: **Fraunces** serif display (`famSerif`), **Inter** body
+  (`fam`), **IBM Plex Mono** every numeral + eyebrow (`famMono`, `NUM`
+  tabular-nums; `famMonoText` for mono-styled localized text). Hindi →
+  Noto Sans Devanagari all slots.
+- **Numerals own their card**: dose hero ≈88 serif; stat heroes
+  `display`; the unit is a bare `µg` (the `(micrograms)` gloss lives on
+  the peek card, not the hero). Cell numerals full ink — band ink is
+  for the band *cue* (wash, dot, label), not the figure.
+
+## Radius · elevation · motion
+
+- `V2Radius`: **row 13 · card 20 · sheet 24** · pill 999 — the chunky
+  register; cards read as designed objects, not table cells.
+- `V2Elev`: card (2/.10/8/+2) · float (5/.16/12/+3) · sheet
+  (12/.18/24/−4, cast up) · pop (18/.22/30/−6). Warm-ink shadow; flat
+  fills do the lifting, shadows stay low.
+- Motion: RN `Animated` only — `pressFx` (opacity .78 · scale .985) on
+  every tappable card; sheet enter spring `damping 22 / stiffness 220`;
+  drag-dismiss spring-back same tune; `FadeIn`/`CountUp` for mounts +
+  counters; `camDur` is 0 on sim (MapLibre SIGSEGV guard); `BreathEdge`
+  (4.4s band-ink edge loop) is the ONE ambient motion — tinted hero
+  cards only, `useReduceMotion`-gated. Physics on real interactions
+  only — no decorative animation. No new libs.
+
+## Do not
+
+- No cyberpunk / neon / glow / retro, no 3D renders or decorative SVG
+  art, no lime-slime / chocolaty-green / cheap-yellow — violations are
+  regressions.
+- No gradients, no glass-morphism blur, no dashboard metric grids, no
+  emoji.
+- No repainting the app: colour goes on components (wash, tile, pill),
+  never full-bleed pages or chrome.
+- No mid-word truncation: qualifiers (`· your usual`, `· least-smoke
+  alt N`) are nested dim runs that wrap whole — never `· y…`.
+- No system-font fallback: every `Text`/`TextInput` carries
+  `fam*`/`famSerif`/`famMono*` explicitly.
+
+## Web component grammar (server templates — landing / city / admin)
+
+Same register, expressed in CSS vars inside each `server/*.html` (`--paper`,
+`--surface/--surf`, `--surf2/--surf3`, `--ink/--ink2/--ink3/--ink4`, `--line`,
+`--hairline`, `--acc/--accInk/--accWash/--accTint`, `--b0..5` + washed
+`--bw0..5`/deeper `--bd0..5`/band-ink `--bi0..5`). The DOM/JS contract is law:
+every `id` queried, every JS-emitted class, and every test-mandated string
+survives — redesign means wrapper markup + CSS rewrites + minimal emit tweaks,
+never removals. (Landing's test also forbids the literal `border-radius:999px`
+— it uses 7–18px radii instead of pills.)
+
+| component | shape | rule |
+|---|---|---|
+| accent canon | one accent per surface family | web surfaces run forest `#3A6844` + canon ink/wash/tint; **only `admin.html` keeps blue `#2456D6` as the documented backstage exception** |
+| `chip` | tinted label block, radius 6–8, mono 9–10px | carries a state word (`LIVE`, `FRESH`, `GRAP`) — solid `--accWash`+`--accInk` for accent state, `surface2`+`ink2` neutral, band-washed for severity |
+| `stat` | tile = chip header + huge numeral + unit + label-under | numeral serif ~40–80px full ink; provenance becomes a `.cap` caption (mono 9px ink4) or hover — never a paragraph; the chip MAY carry the severity tint (`.accent`/`.brick`/`.wine` on admin's `.kchip`) |
+| `door` | feature doorway tile | icon block (36px solid accent or band-deep square) + name + ≤3-word caption + arrow; one row of 2–3, never a nav list |
+| `sec-tick` | 6px accent/band square before a mono section label | `.t-acc`/`.t-b1..3` pick the hue; replaces underline/counter decorations |
+| `day` / `dchip` | band-washed tile | `background:var(--cw/--dw)` where `--cw`/`--dw` = `washHex(bandHex, .78–.82)` — pastel band surfaces on tiles, true hues kept for map fills + dots |
+| `pill` / segmented | surface2 track + white-card active | `psel`, `fmsel`, `tl`, reach arm — controls read as chips, active = accent-wash fill or white card + hairline |
+| `pipe` / step tile | surface2 radius-10 tile inside a gap-8/12 grid | numbered `.n` chip + serif title + one-line `.d` |
+
+- **Wash rule**: `washHex(hex, t)` blends toward white (never alpha) — landing
+  washes its muted `--b*` ramp at .82; city washes the OFFICIAL CPCB fills at
+  .78 (`--dw` on `.day` tiles) while the map keeps true CPCB hues.
+- **Words rationed**: number + unit + ≤3-word label; everything else is a
+  `.cap` caption or a `title=` hover. One hero numeral per viewport.
+- **Admin dialect** (owner likes the look — comprehension, not cosmetics):
+  `.kchip` moves the label ABOVE the numeral as a severity-tinted chip,
+  `.cap` replaces the lowercase what-it-is label, `h2::before` gives each
+  section an accent tick, `.st` tiles grid the pipe stages. Tables, `.prov`,
+  `.fmpop`, `.kv`, `.whybig` untouched.
