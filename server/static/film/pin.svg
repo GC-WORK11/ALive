@@ -1,0 +1,9 @@
+<!-- Minimal location pin: one continuous teardrop + inner ring -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path data-draw="" d="M 600 512
+    C 548 442 502 392 502 302
+    A 98 98 0 1 1 698 302
+    C 698 392 652 442 600 512
+    Z"/>
+  <circle data-draw="" cx="600" cy="300" r="38"/>
+</svg>

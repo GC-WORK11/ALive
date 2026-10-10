@@ -1,0 +1,22 @@
+<!-- Two diverging routes between shared nodes: direct street-like line vs long arc detour -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- detour: long arc over the top -->
+  <path data-draw="" d="M 372 428
+    C 410 300 500 185 640 168
+    C 770 152 872 235 888 352"/>
+  <!-- direct: through-route with gentle street jogs -->
+  <path data-draw="" d="M 372 428
+    L 505 414
+    L 552 424
+    L 648 398
+    L 726 402
+    L 888 352"/>
+  <!-- waypoint dots on the direct route -->
+  <circle data-draw="" cx="552" cy="424" r="3.2" stroke-width="1.5"/>
+  <circle data-draw="" cx="726" cy="402" r="3.2" stroke-width="1.5"/>
+  <!-- shared nodes -->
+  <circle data-draw="" cx="372" cy="428" r="7"/>
+  <circle data-draw="" cx="372" cy="428" r="2.2" stroke-width="1.5"/>
+  <circle data-draw="" cx="888" cy="352" r="7"/>
+  <circle data-draw="" cx="888" cy="352" r="2.2" stroke-width="1.5"/>
+</svg>

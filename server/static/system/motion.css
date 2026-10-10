@@ -1,0 +1,204 @@
+/* ============================================================================
+   motion.css — the timing system
+   Slow, confident, paper-like motion. Three curves, three durations.
+   Every animation lives inside (prefers-reduced-motion: no-preference);
+   under reduce, nothing moves — see the fallback contract at the bottom.
+   ============================================================================ */
+
+:root {
+  /* ---- easing ramps --------------------------------------------------------
+     out-expo     — fast attack, long silk tail. The default for entrances
+                    and hovers; nothing overshoots.
+     in-out-soft  — symmetric, for elements already on stage that must move
+                    (drawers, cross-fades). Gentle at both ends.
+     settle       — out-curve with a whisper of overshoot (y2 ≈ 1.08). For
+                    things that "land": images resolving, a panel docking.  */
+  --ease-out-expo:    cubic-bezier(.16, 1, .3, 1);
+  --ease-in-out-soft: cubic-bezier(.65, 0, .35, 1);
+  --ease-settle:      cubic-bezier(.3, 1.08, .35, 1);
+
+  /* ---- durations -------------------------------------------------------------
+     transition — 600ms: hovers, state changes, panel slides.
+     beat       — 900–1400ms: entrance choreography. One "beat" is a scene
+                  in the scroll narrative; long beats are for the hero.      */
+  --dur-micro:       300ms;    /* micro-interactions: link underlines, dots */
+  --dur-transition:  600ms;    /* the one transition duration               */
+  --dur-beat:       1100ms;    /* standard entrance beat                    */
+  --dur-beat-short:  900ms;    /* small elements: rules, kickers            */
+  --dur-beat-long:  1400ms;    /* hero type, blur resolves                  */
+  --dur-ambient:    7000ms;    /* ambient loops (imagery drift) — not a beat*/
+
+  --stagger: 90ms;             /* delay step between siblings               */
+}
+
+/* ============================================================================
+   Everything below runs ONLY when the user allows motion.
+   Entrance classes attach `animation` with fill-mode `both`; the base state
+   of every element is its final state, so removing the animation (reduce)
+   renders the page instantly complete — nothing is ever hidden waiting to
+   be revealed.
+   ============================================================================ */
+@media (prefers-reduced-motion: no-preference) {
+
+  html { scroll-behavior: smooth; }
+
+  /* ---- entrances ------------------------------------------------------------
+     Pair with --a-delay or .d1–.d8 for sequencing. Compose freely:
+     <h1 class="display--hero a-rise d2">                                */
+
+  .a-fade   { animation: sys-fade   var(--dur-beat-short) var(--ease-out-expo)  both; }
+  .a-rise   { animation: sys-rise   var(--dur-beat)       var(--ease-out-expo)  both; }
+  .a-blur   { animation: sys-blur   var(--dur-beat-long)  var(--ease-in-out-soft) both; }
+  .a-settle { animation: sys-settle var(--dur-beat)       var(--ease-settle)    both; }
+
+  /* hairline draw — put on .rule/.frame children or a dedicated <hr>:
+     the line draws itself left → right on a short beat.                    */
+  .a-rule   { animation: sys-rule   var(--dur-beat-short) var(--ease-out-expo)  both;
+              transform-origin: 0 50%; }
+  .a-rule--v{ animation: sys-rule-y var(--dur-beat-short) var(--ease-out-expo)  both;
+              transform-origin: 50% 0; }
+
+  /* ambient drift — slow settle of imagery, e.g. a hero photo resolving.
+     Runs once; for continuous loops see .a-breathe.                         */
+  .a-drift  { animation: sys-drift  var(--dur-ambient)    var(--ease-out-expo)  both; }
+
+  /* live-dot pulse — opacity only, infinite, very quiet                      */
+  .a-breathe{ animation: sys-breathe 2400ms               var(--ease-in-out-soft)
+              infinite alternate; }
+
+  /* ---- sequencing -------------------------------------------------------------
+     .d1–.d8 set a delay inline without touching the class.                  */
+
+  .d1 { animation-delay: calc(var(--stagger) * 1); }
+  .d2 { animation-delay: calc(var(--stagger) * 2); }
+  .d3 { animation-delay: calc(var(--stagger) * 3); }
+  .d4 { animation-delay: calc(var(--stagger) * 4); }
+  .d5 { animation-delay: calc(var(--stagger) * 5); }
+  .d6 { animation-delay: calc(var(--stagger) * 6); }
+  .d7 { animation-delay: calc(var(--stagger) * 7); }
+  .d8 { animation-delay: calc(var(--stagger) * 8); }
+
+  /* .stagger staggers children automatically: give the parent .stagger and
+     each child an a-* class; nth-child assigns --i so markup stays clean.   */
+  .stagger > * { animation-delay: calc(var(--i, 0) * var(--stagger)); }
+  .stagger > *:nth-child(1) { --i: 0; }
+  .stagger > *:nth-child(2) { --i: 1; }
+  .stagger > *:nth-child(3) { --i: 2; }
+  .stagger > *:nth-child(4) { --i: 3; }
+  .stagger > *:nth-child(5) { --i: 4; }
+  .stagger > *:nth-child(6) { --i: 5; }
+  .stagger > *:nth-child(7) { --i: 6; }
+  .stagger > *:nth-child(8) { --i: 7; }
+  .stagger > *:nth-child(n+9) { --i: 8; }
+
+  /* ---- transitions -------------------------------------------------------------
+     State changes ride the 600ms transition duration. Transform and shadow
+     are gated here; color-only transitions could live outside the media
+     query, but keeping everything inside means reduce = fully instant.     */
+
+  .t-lift {
+    transition: transform var(--dur-transition) var(--ease-out-expo),
+                box-shadow var(--dur-transition) var(--ease-out-expo);
+  }
+  .t-lift:hover, .t-lift:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+
+  .t-color {
+    transition: color var(--dur-micro) var(--ease-out-expo),
+                background-color var(--dur-micro) var(--ease-out-expo),
+                border-color var(--dur-micro) var(--ease-out-expo),
+                text-decoration-color var(--dur-micro) var(--ease-out-expo);
+  }
+
+  .t-fade {
+    transition: opacity var(--dur-transition) var(--ease-out-expo);
+  }
+
+  /* scroll reveal — JS (IntersectionObserver) adds .in when the element
+     intersects. Under no-preference an element stays hidden until .in
+     arrives, so only use .reveal where the observer is actually wired; for
+     load-time entrances prefer the .a-* classes above (self-completing).
+     Under reduce it is reset to visible — see the contract below.        */
+  .reveal {
+    opacity: 0;
+    transform: translateY(1.25rem);
+    transition: opacity var(--dur-beat) var(--ease-out-expo),
+                transform var(--dur-beat) var(--ease-out-expo);
+  }
+  .reveal.in { opacity: 1; transform: none; }
+}
+
+/* ---- keyframes -------------------------------------------------------------
+   Declared outside the media query; they are inert unless an animation
+   references them (which only happens under no-preference).               */
+
+@keyframes sys-fade {
+  from { opacity: 0; }
+}
+
+@keyframes sys-rise {
+  from { opacity: 0; transform: translateY(1.5rem); }
+}
+
+@keyframes sys-blur {
+  from { opacity: 0; filter: blur(14px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+
+@keyframes sys-settle {
+  from { opacity: 0; transform: translateY(1rem) scale(.985); }
+}
+
+@keyframes sys-rule {
+  from { transform: scaleX(0); }
+}
+
+@keyframes sys-rule-y {
+  from { transform: scaleY(0); }
+}
+
+@keyframes sys-drift {
+  from { transform: scale(1.07); }
+  to   { transform: scale(1); }
+}
+
+@keyframes sys-breathe {
+  from { opacity: .35; }
+  to   { opacity: 1; }
+}
+
+/* ============================================================================
+   REDUCED-MOTION FALLBACK CONTRACT
+   ----------------------------------------------------------------------------
+   When prefers-reduced-motion is `reduce` (or unset in environments that
+   don't support the query), this system guarantees:
+
+   1. No animation runs — the block above is gated on `no-preference`.
+   2. Nothing is hidden — every entrance class only *adds* an animation;
+      an element's base style is already its final state, so content renders
+      complete and readable instantly. `.reveal` is the one exception by
+      design (it must start hidden to reveal) — it is reset below.
+   3. scroll-behavior snaps back to auto.
+   4. Any residual animation/transition (from third-party CSS or inline
+      styles) is collapsed to ~instant by the catch-all below.
+
+   Net effect: the page looks identical, it just doesn't move.
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+
+  html { scroll-behavior: auto; }
+
+  .reveal {                    /* undo the hidden initial state            */
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
