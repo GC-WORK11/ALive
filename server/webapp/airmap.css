@@ -1,0 +1,55 @@
+/* Alive webapp — air around me. The map is the hero: the sheet only
+   takes a bottom detent so the field stays visible and tappable. */
+
+/* mobile: bottom-detent sheet instead of the near-full sheet */
+.am-host .sheet { top: auto; max-height: 58%; }
+
+/* tap readout — floats under the chrome, always over live map
+   (app.css also styles .am-read bottom-center; we take it top-center) */
+.am-read { position: fixed; top: calc(64px + var(--sat)); bottom: auto; left: 50%;
+  transform: translateX(-50%); display: block; width: min(340px, calc(100vw - 28px));
+  background: var(--surface); border-radius: 16px; box-shadow: var(--sh-float);
+  padding: 12px 14px 11px; z-index: 40; }
+.am-read-top { display: flex; align-items: center; gap: 10px }
+.am-read .am-num { font-size: 34px; font-weight: 300; letter-spacing: -.03em; line-height: 1 }
+.am-read .am-u { font-size: 11px; color: var(--ink3) }
+.am-read .am-word { font-size: 13px; font-weight: 500 }
+.am-read .am-x { margin-left: auto; align-self: flex-start;
+  font-size: 11px; color: var(--ink3); padding: 4px 6px }
+.am-read .am-note { font-size: 11.5px; color: var(--ink2); margin-top: 7px; line-height: 1.35 }
+.am-read .am-meta, .am-meta { font-size: 10.5px; color: var(--ink4); margin-top: 4px;
+  font-family: var(--mono) }
+
+/* legend — one compact line of six band chips */
+.am-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 6px }
+.am-leg { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink3) }
+.am-leg span { width: 9px; height: 9px; border-radius: 3px }
+.am-hint { font-size: 11.5px; line-height: 1.45; margin-bottom: 10px }
+
+/* the place row — reuses .searchbar shape as a button */
+.am-place { width: 100%; text-align: left; margin-bottom: 10px }
+.am-place-label { flex: 1; font-size: 14px; font-weight: 500; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+.am-place-edit { font-size: 11.5px; color: var(--ink3); flex: none }
+
+/* the 24-hour strip — bar = mid, whisker = lo–hi band while anchored */
+.am-bars { display: flex; align-items: flex-end; gap: 2px; height: 58px; margin: 8px 0 2px }
+.am-bar { flex: 1; display: flex; align-items: flex-end; height: 100%;
+  min-width: 0; position: relative }
+.am-bar i { width: 100%; border-radius: 3px 3px 1px 1px; min-height: 3px; position: relative; z-index: 1 }
+.am-bar u { position: absolute; left: 15%; right: 15%; border-radius: 2px;
+  background: var(--ink10); z-index: 0 }
+.am-bar.isbest i { box-shadow: 0 0 0 1.5px var(--accent) }
+.am-bar.isworst i { opacity: .92 }
+.am-axis { display: flex; justify-content: space-between; font-size: 9.5px;
+  color: var(--ink4); font-family: var(--mono); margin-bottom: 8px }
+
+.am-verdict { font-size: 14px; font-weight: 500; margin: 2px 0 4px; line-height: 1.4 }
+.am-bw { font-size: 13px; padding: 6px 0; border-bottom: .5px solid var(--ink10) }
+.am-bw .bw-l { color: var(--ink3); font-size: 11.5px; margin-right: 6px }
+.am-quick { display: flex; flex-direction: column; margin-bottom: 4px }
+
+@media (min-width: 720px) {
+  .am-host .sheet { max-height: none; top: 0; }   /* desktop: right rail as usual */
+  .am-read { left: 24px; transform: none; width: 330px }
+}
