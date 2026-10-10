@@ -130,7 +130,7 @@ function show(id, params, replace = false) {
   // hide current
   const cur = stack[stack.length - 1];
   if (cur) { cur.el.classList.remove('on'); if (cur.def.hide) cur.def.hide(); }
-  if (replace && cur) { stack.pop(); cur.el.remove(); }
+  if (replace && cur) { stack.pop(); if (cur.cleanup) cur.cleanup(); cur.el.remove(); }
   const el = document.createElement('div');
   el.className = 'screen on';
   host.appendChild(el);

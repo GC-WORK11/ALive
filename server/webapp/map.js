@@ -36,23 +36,23 @@ function onReady(cb) { ready ? cb(map) : queue.push(cb); }
 
 /* ── the field — /grid cells as a semi-transparent fill layer ────── */
 async function loadField(first) {
-  const j = await A.api.get('/grid?cells=44');
-  if (!j || !Array.isArray(j.cells)) return;
-  fieldData = j; fieldEpoch = j.epoch ?? j.generated_s ?? null;
-  const feats = [];
-  for (const c of j.cells) {
-    if (c.lat == null || c.lon == null || c.pm25 == null) continue;
-    const d = (j.cell_deg || j.deg || 0.012);
-    const h = d / 2;
-    feats.push({
+  const j = await A.api.get('/grid?cells=40&param=pm2_5');
+  if (!j || !Array.isArray(j.features)) return;
+  fieldData = j;
+  const ce = j.properties && j.properties.cell_epoch;
+  fieldEpoch = Array.isArray(ce) ? ce[0] : (j.properties && j.properties.epoch) ?? null;
+  const feats = j.features
+    .filter(f => f && f.geometry && f.properties && f.properties.pm25 != null)
+    .map(f => ({
       type: 'Feature',
-      properties: { pm25: c.pm25, band: c.band ?? A.fmt.bandIdx(c.pm25), conf: c.conf ?? null },
-      geometry: { type: 'Polygon', coordinates: [[
-        [c.lon - h, c.lat - h], [c.lon + h, c.lat - h],
-        [c.lon + h, c.lat + h], [c.lon - h, c.lat + h], [c.lon - h, c.lat - h],
-      ]] },
-    });
-  }
+      properties: {
+        pm25: f.properties.pm25,
+        band: f.properties.band ?? A.fmt.bandIdx(f.properties.pm25),
+        conf: f.properties.conf ?? null,
+      },
+      geometry: f.geometry,
+    }));
+  if (!feats.length) return;
   const fc = { type: 'FeatureCollection', features: feats };
   if (map.getSource('alive-field')) {
     fieldSrc.setData(fc);
@@ -68,8 +68,8 @@ async function loadField(first) {
         'fill-opacity': 0.34,
       },
     }, firstWater());
-    document.dispatchEvent(new CustomEvent('alive:field', { detail: { epoch: fieldEpoch, n: feats.length } }));
   }
+  document.dispatchEvent(new CustomEvent('alive:field', { detail: { epoch: fieldEpoch, n: feats.length } }));
 }
 
 /* put the field below road labels — find the first symbol/water layer */
