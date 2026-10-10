@@ -7,7 +7,9 @@
 /* tap readout — floats under the chrome, always over live map
    (app.css also styles .am-read bottom-center; we take it top-center) */
 .am-read { position: fixed; top: calc(64px + var(--sat)); bottom: auto; left: 50%;
-  transform: translateX(-50%); display: block; width: min(340px, calc(100vw - 28px));
+  transform: translateX(-50%); display: block; width: min(340px, calc(100vw - 28px)); }
+.am-read[hidden] { display: none }
+.am-read {
   background: var(--surface); border-radius: 16px; box-shadow: var(--sh-float);
   padding: 12px 14px 11px; z-index: 40; }
 .am-read-top { display: flex; align-items: center; gap: 10px }
