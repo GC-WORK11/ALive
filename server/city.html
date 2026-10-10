@@ -1,0 +1,1775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alive — Delhi NCR air, district by district</title>
+<meta name="description" content="Delhi NCR's air right now, district by district — every number measured live from government monitors, the satellite model, and trips riders share.">
+<meta property="og:title" content="Alive — Delhi NCR air, right now">
+<meta property="og:description" content="Every district boundary filled by its live air level — government monitors anchor it, the satellite model and shared trips fill the rest.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%23f4f1ea%27/%3E%3Crect x=%273%27 y=%273%27 width=%2710%27 height=%2710%27 fill=%27%233a6844%27/%3E%3C/svg%3E">
+<style>
+  /* web-overhaul-v2: shared muted-expensive register, component grammar
+     from docs/lanes/register-card.md — tiles over hairlines, stat =
+     accent chip + huge numeral + caption, band hues arrive pastel on
+     tile surfaces (--dw washes computed in JS off the official CPCB
+     palette; the map itself keeps the true CPCB fills). */
+  :root{
+    --paper:#FBFBFA; --surface:#FFFFFF; --surface2:#F2F1EA; --surface3:#E8E5DB;
+    --ink:#16181D; --ink2:#4A4E57; --ink3:#6E7278; --ink4:#A6ACB8;
+    --line:#E4E1D8; --line2:#D8D5C9; --hair:#D8D5C9;
+    --sage:#3A6844; --accent:#3A6844; --accent-ink:#2B4E32; --accent-wash:#EAF0E4;
+    --acc-tint:#DCE7D1;
+    --bronze:#A1662F; --brick:#A34446; --wine:#8A2D3E;
+    --serif:"New York",ui-serif,Georgia,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Segoe UI",Inter,system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono","Cascadia Mono",Menlo,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{background:var(--paper);scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+       font-variant-numeric:tabular-nums;min-height:100vh;
+       -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  ::selection{background:#ECEADF;color:var(--ink)}
+  a{color:inherit}
+  a:focus-visible{outline:1px solid var(--ink);outline-offset:3px}
+
+  /* ---------- masthead ---------- */
+  .mast{display:flex;align-items:baseline;justify-content:space-between;
+        padding:20px clamp(16px,4vw,40px);border-bottom:1px solid var(--line);
+        position:sticky;top:0;background:var(--paper);z-index:20}
+  .mark{font-family:var(--sans);font-size:16px;letter-spacing:-.025em;
+        font-weight:800;color:var(--ink);text-decoration:none}
+  .mark b{color:var(--sage);font-weight:800}
+  .mast-r{display:flex;align-items:baseline;gap:26px;font-family:var(--mono);
+          font-size:11px;letter-spacing:.01em;color:var(--ink3);}
+  .mast-r a{color:var(--ink2);text-decoration:none}
+  .mast-r a:hover{color:var(--ink);text-decoration:underline;
+          text-underline-offset:4px;text-decoration-thickness:1px}
+  .live-sq{width:6px;height:6px;background:var(--sage);flex:none;border-radius:2px}
+  .live-lbl{display:inline-flex;align-items:center;gap:8px}
+  @media(max-width:560px){.mast{flex-wrap:wrap;row-gap:10px}
+    .mast-r{width:100%;gap:20px}.mast-r .hidemob{display:none}}
+
+  /* ---------- hero ---------- */
+  .wrap{max-width:1180px;margin:0 auto;padding:0 clamp(16px,4vw,40px)}
+  .hero{padding:clamp(40px,7vh,72px) 0 26px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;
+           font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+           font-weight:600;color:var(--ink2);}
+  .eyebrow::before{content:"";width:6px;height:6px;background:var(--sage);
+           border-radius:2px;flex:none}
+  h1{font-family:var(--sans);font-weight:800;letter-spacing:-.038em;
+     font-size:clamp(40px,6.8vw,72px);line-height:1.0;margin:28px 0 0;
+     color:var(--ink)}
+  h1 em{font-style:normal;color:var(--ink2)}
+  .dek{margin-top:26px;max-width:560px}
+  .dek p{color:var(--ink2);font-size:16px;line-height:1.72;font-weight:400}
+  .dek p b{color:var(--ink);font-weight:500}
+
+  /* the today card — the page's hero: the city's average fine dust now,
+     its band, the honest range across the map, and which districts
+     breathe easiest vs heaviest. deep band wash (--hw/.74, --ht/.60,
+     --he band ink — all set from the live mean) + the breathing band-ink
+     edge, the page's one ambient motion; accent wash is the no-field
+     fallback. */
+  .htoday{margin-top:28px;display:flex;align-items:center;gap:24px;
+          max-width:660px;flex-wrap:wrap;background:var(--hw,var(--surface2));
+          border:1.5px solid var(--ink);border-radius:24px;
+          padding:22px 26px 20px;position:relative;
+          box-shadow:0 24px 48px -30px rgba(22,24,29,.22)}
+  .htoday .hv{font-family:var(--sans);font-weight:800;
+          font-size:clamp(56px,6vw,80px);line-height:.95;letter-spacing:-.038em;
+          font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+  .htoday .hv small{font-family:var(--mono);font-size:11px;color:var(--ink3);
+          letter-spacing:.01em;font-weight:400;text-transform:none}
+  .htoday .ht{font-size:14.5px;line-height:1.5;color:var(--ink);
+          min-width:220px;flex:1;max-width:340px}
+  .htoday .ht .hchip{display:inline-block;margin-bottom:9px;
+          font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+          color:var(--hi,var(--ink3));
+          background:rgba(255,255,255,.65);border-radius:3px;padding:3px 8px}
+  .htoday .ht i{display:block;margin-top:8px;font-style:normal;
+          font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+          color:var(--ink3);line-height:1.85}
+  .htoday::after{content:"";position:absolute;inset:0;pointer-events:none;
+          border-radius:inherit;border:1.5px solid transparent}
+  .htoday.breathe::after{border-color:var(--he,var(--accent-ink));
+          animation:breath 4.4s ease-in-out infinite}
+  @media(prefers-reduced-motion:reduce){.htoday.breathe::after{display:none}}
+
+  /* the why/grap callouts — tinted tiles, solid tag chip, one line each */
+  .whyline{margin-top:12px;font-size:14px;line-height:1.55;color:var(--ink2);
+           display:flex;gap:12px;align-items:center;max-width:600px;
+           background:var(--surface2);border:1.5px solid var(--ink);
+           border-radius:16px;padding:10px 14px}
+  .whyline .wtag{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+                 font-weight:600;color:var(--ink);flex:none;
+                 background:var(--surface);border:1.5px solid var(--ink);
+                 border-radius:3px;padding:4px 10px}
+  .whyline[hidden]{display:none}
+  .whyline .wtxt em{font-style:normal;color:var(--ink);font-weight:500}
+
+  /* ---------- map frame — the card that holds the field ---------- */
+  .map-card{position:relative;margin-top:34px;border:1.5px solid var(--ink);
+            border-radius:24px;overflow:hidden;background:var(--surface);
+            box-shadow:0 28px 56px -34px rgba(22,24,29,.30)}
+  .map-view{position:relative}
+  svg#ncr{display:block;width:100%;height:clamp(420px,64vh,680px);
+          touch-action:manipulation;cursor:default}
+  /* phones: let the svg take its viewBox aspect — the 64vh clamp letterboxes
+     the whole NCR extent inside ~270px of dead canvas at phone widths */
+  @media(max-width:640px){svg#ncr{height:auto}}
+  .m-tag{position:absolute;top:16px;left:18px;font-family:var(--mono);
+         font-size:11px;letter-spacing:.01em;
+         color:var(--ink3);pointer-events:none;line-height:1.9}
+  .m-tag b{color:var(--ink2);font-weight:400}
+  .m-wind{position:absolute;top:16px;right:18px;font-family:var(--mono);
+          font-size:11px;letter-spacing:.01em;
+          color:var(--ink3);pointer-events:none;text-align:right;line-height:1.9}
+  @media(max-width:640px){.m-wind{display:none}
+    /* phones: drop the tag off the map and into the hairline — at 60% of
+       390px it wraps ~6 lines of mono straight over the districts */
+    .m-tag{position:static;max-width:none;border-top:1px solid var(--line);
+      padding:9px 18px 10px}
+    /* scroll shadows — local cover + scroll shadow: the edge shade only
+       peeks when there is more strip/table in that direction */
+    .chips,.dayrow{
+      background-image:linear-gradient(to right,#fff 30%,rgba(255,255,255,0)),
+        linear-gradient(to right,rgba(255,255,255,0),#fff 30%),
+        linear-gradient(to right,rgba(20,24,31,.13),rgba(20,24,31,0)),
+        linear-gradient(to left,rgba(20,24,31,.13),rgba(20,24,31,0));
+      background-position:0 0,100% 0,0 0,100% 0;
+      background-repeat:no-repeat;
+      background-size:22px 100%,22px 100%,8px 100%,8px 100%;
+      background-attachment:local,local,scroll,scroll}}
+  /* legend sits in-flow under the map — absolute positioning painted it
+     over the southern districts' shapes; the frame keeps it inside the
+     same hairline without ever covering geography */
+  .m-legend{display:flex;
+            align-items:flex-end;justify-content:space-between;gap:14px;
+            pointer-events:none;flex-wrap:wrap;
+            border-top:1px solid var(--line);padding:10px 18px 12px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;max-width:min(560px,80%)}
+  .chip{display:flex;align-items:center;gap:6px;font-family:var(--mono);
+        font-size:11px;letter-spacing:.01em;color:var(--ink2);
+        background:var(--surface2);border:1px solid var(--line2);
+        border-radius:3px;padding:4px 11px 4px 8px}
+  .chip i{width:9px;height:9px;flex:none;border-radius:2px}
+  .m-src{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+         color:var(--ink3);text-align:right;
+         line-height:1.9;background:var(--surface2);
+         border:1px solid var(--line2);
+         border-radius:3px;padding:4px 11px}
+  .m-src b{color:var(--ink2);font-weight:400}
+  /* the one-line gloss that makes the band numbers legible — same
+     register as the control-row notes */
+  .leg-note{flex-basis:100%;font-family:var(--mono);font-size:11px;
+            letter-spacing:.01em;
+            color:var(--ink4);line-height:1.9}
+
+  /* watch the day — forecast scrubber. in-flow inside the same hairline
+     as the legend so it can never cover geography; text-link play, a
+     hairline scrubber with an ink progress fill, mono ticks */
+  .tl{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+      border-top:1px solid var(--line);padding:9px 18px 10px;
+      font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+      color:var(--ink3)}
+  .tl[hidden]{display:none}
+  /* controls are chips now — surface2 tiles on the card's floor,
+     selection reads as the accent-wash chip */
+  .tl button{font-family:inherit;font-size:inherit;letter-spacing:.01em;
+      color:var(--ink2);
+      background:var(--surface2);border:1.5px solid var(--ink);
+      border-radius:3px;padding:6px 14px;cursor:pointer}
+  .tl button:hover{color:var(--ink)}
+  .tl button:focus-visible{outline:1px solid var(--ink);outline-offset:3px}
+  .tl-range{flex:1;min-width:110px;max-width:320px;-webkit-appearance:none;
+      appearance:none;background:transparent;height:14px;margin:0;
+      cursor:pointer}
+  .tl-range:focus-visible{outline:1px solid var(--ink);outline-offset:3px}
+  .tl-range::-webkit-slider-runnable-track{height:1px;
+      background:linear-gradient(to right,var(--ink3) 0 var(--tp,0%),
+      var(--line2) var(--tp,0%) 100%)}
+  .tl-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+      width:10px;height:10px;background:var(--ink);border:none;
+      border-radius:3px;margin-top:-4.5px}
+  .tl-range::-moz-range-track{height:1px;background:var(--line2)}
+  .tl-range::-moz-range-progress{height:1px;background:var(--ink3)}
+  .tl-range::-moz-range-thumb{width:10px;height:10px;background:var(--ink);
+      border:none;border-radius:3px}
+  .tl-h{min-width:66px;color:var(--ink2);white-space:nowrap}
+  .tl-load{color:var(--ink4);white-space:nowrap}
+  .tl-now{white-space:nowrap}
+  .tl-note{flex-basis:100%;font-size:11px;letter-spacing:.01em;
+      color:var(--ink4)}
+  /* where can your lungs go? — same control row, text-link chips for
+     mode/budget presets; the caption carries the honest counts */
+  .rch-pills{display:inline-flex;gap:6px}
+  /* selection reads as the register's white card + ink hairline — no lift */
+  .rch-pills button.on,
+  #rchArm[aria-pressed="true"]{background:var(--surface);color:var(--ink)}
+
+  /* what happened — the recorded archive strip. one square per ist
+     hour: recorded = its mean band tile (clickable, replays the stored
+     field), gap = dashed hollow (no record exists), pending = faint
+     (hour hasn't started), unreadable = hatched. squares, not a
+     scrubber — history is discrete */
+  .rc-strip{display:inline-flex;gap:4px;align-items:center}
+  .rc-strip .rc-h{width:12px;height:12px;padding:0;border-radius:3px;
+        background:transparent;border:1px solid var(--line2)}
+  .rc-strip .rc-h.rec{border-color:rgba(20,24,31,.5);cursor:pointer}
+  .rc-strip .rc-h.rec:hover{outline:1px solid var(--ink);
+        border-color:rgba(20,24,31,.5)}
+  .rc-strip .rc-h.on{outline:1.5px solid var(--ink);outline-offset:1px}
+  .rc-strip .rc-h.gap{border-style:dashed;opacity:.55}
+  .rc-strip .rc-h.pend{opacity:.3}
+  .rc-strip .rc-h.bad{background:repeating-linear-gradient(45deg,
+        transparent 0 2px,var(--line2) 2px 3px)}
+  .rc-strip .rc-h:focus-visible{outline:1px solid var(--ink)}
+  .rc-strip .rc-h[disabled]{cursor:default}
+
+  /* the days ahead — /v2/outlook folded into the frame's bottom row.
+     hairline-separated cells; ghosted while only the raw model still
+     speaks (the served note says why); the verdict reads as caption */
+  .days{border-top:1px solid var(--line);padding:12px 18px 14px}
+  .days[hidden]{display:none}
+  .days-lbl{display:block;font-family:var(--mono);font-size:11px;
+            letter-spacing:.01em;color:var(--ink4)}
+  .days-lbl .u{text-transform:none;letter-spacing:.01em}
+  /* five pastel tiles — each washed from the day's own CPCB band
+     (--dw set in JS); the dot keeps the true hue */
+  .dayrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
+          gap:8px;margin-top:9px}
+  .day{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+       padding:10px 12px 9px;background:var(--dw,var(--surface2));
+       border:1.5px solid var(--de,var(--line2));border-radius:4px;font-family:var(--mono);
+       font-size:11px;text-align:left;cursor:pointer;color:var(--ink3);
+       position:relative;
+       transition:transform .2s cubic-bezier(.22,1,.36,1)}
+  /* the breathing edge — a 4.4s sine opacity loop on a 1.5px band-ink
+     ring. it lives on the today card now (the page's one ambient
+     motion); the day tiles keep their deeper today wash only. skipped
+     under reduce-motion. */
+  @keyframes breath{0%,100%{opacity:.12}50%{opacity:.32}}
+  .day.breathe::after{content:"";position:absolute;inset:0;
+       pointer-events:none;border-radius:inherit;
+       border:1.5px solid var(--he,var(--ink3));
+       animation:breath 4.4s ease-in-out infinite}
+  @media(prefers-reduced-motion:reduce){.day.breathe::after{display:none}}
+  .day:hover{border-color:var(--line2);transform:translateY(-1px)}
+  .day .dl{font-size:11px;letter-spacing:.01em;
+           color:var(--ink2)}
+  .day .dl small{color:var(--ink4);letter-spacing:.01em;margin-left:5px;
+                 text-transform:none}
+  .day .dv{margin-top:2px;font-size:19px;line-height:1.3;color:var(--ink);
+           font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:7px}
+  .day .dv i{width:8px;height:8px;flex:none;border-radius:2px}
+  .day .dr{font-size:11px;letter-spacing:.01em;color:var(--ink3)}
+  .day .dm{margin-top:2px;font-size:11px;letter-spacing:.01em;
+           color:var(--ink3);line-height:1.65}
+  .day.on{box-shadow:inset 0 0 0 1.5px var(--ink)}
+  .day.lo{opacity:.6}
+  .day.lo:hover,.day.lo.on{opacity:.85}
+  .day:focus-visible{outline:1px solid var(--ink);outline-offset:2px}
+  .days-cap{display:block;margin-top:12px;
+            font-size:14px;letter-spacing:-.01em;
+            color:var(--ink2)}
+  .days-note{display:block;margin-top:6px;font-family:var(--mono);
+             font-size:11px;letter-spacing:.01em;
+             color:var(--ink4);line-height:1.9}
+  @media(max-width:640px){.dayrow{display:flex;overflow-x:auto;
+      scrollbar-width:none}.dayrow::-webkit-scrollbar{display:none}
+    .day{flex:none;min-width:112px}}
+
+  /* district detail — top-left under m-tag on desktop, docks bottom on mobile;
+     hairline popover, same language as the console's cell inspector */
+  .detail{position:absolute;left:18px;top:66px;min-width:210px;max-width:250px;
+          background:rgba(255,255,255,.96);border:1.5px solid var(--ink);
+          border-radius:16px;padding:13px 15px;pointer-events:none;
+          box-shadow:0 18px 36px -20px rgba(22,24,29,.26);
+          opacity:0;transform:translateY(4px);transition:opacity .18s,transform .18s}
+  .detail.on{opacity:1;transform:none}
+  .detail .d-name{font-weight:500;font-size:17px;letter-spacing:-.01em;
+                  color:var(--ink)}
+  .detail .d-state{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+                   color:var(--ink3);margin-top:2px}
+  .detail .d-aqi{font-family:var(--sans);font-weight:800;font-size:30px;line-height:1.15;
+                 letter-spacing:-.03em;
+                 color:var(--ink);margin-top:8px;display:flex;align-items:baseline;gap:8px}
+  .detail .d-aqi small{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+                       color:var(--ink3);}
+  .detail .d-cat{display:inline-block;margin-top:6px;padding:3px 9px;
+                 border-radius:3px;font-family:var(--mono);font-size:11px;
+                 letter-spacing:.01em;color:#fff}
+  .detail .d-pm{margin-top:8px;font-family:var(--mono);font-size:11px;
+                color:var(--ink2);line-height:1.8}
+  .detail .d-conf{margin-top:4px;font-size:11px;color:var(--ink4);line-height:1.5}
+  /* ≤640: chips become one scrollable row + provenance wraps under it.
+     The detail card docks to the bottom of .map-view (the svg box) —
+     anchoring to .map-card put it over the legend/days stack once the
+     in-flow rows grew past 170px */
+  @media(max-width:640px){.detail{top:auto;bottom:12px;left:12px;right:12px;
+    min-width:0;max-width:none}
+    .chips{flex:0 0 100%;max-width:none;flex-wrap:nowrap;overflow-x:auto;
+           scrollbar-width:none}
+    .chips::-webkit-scrollbar{display:none}
+    .chip{white-space:nowrap}
+    .m-src{margin-left:auto}}
+
+  /* ---------- status strip — the ticker's numbers, a row of chips ---------- */
+  .ticker{border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+          margin-top:34px}
+  .ticker-in{display:flex;flex-wrap:wrap;gap:8px;padding:14px 0;
+             font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+             color:var(--ink3)}
+  .ticker-in span{background:var(--surface2);
+             border-radius:3px;padding:6px 12px;color:var(--ink2)}
+  .ticker-in i{display:none}
+  .ticker-in b{color:var(--ink);font-weight:600;text-transform:none}
+
+  /* ---------- sections ---------- */
+  section{padding:clamp(52px,8vh,96px) 0 8px}
+  .sec-h{display:flex;align-items:baseline;gap:18px;margin-bottom:38px;
+         border-bottom:1px solid var(--line);padding-bottom:14px}
+  /* section number reads as the register's accent chip */
+  .sec-n{font-family:var(--mono);font-size:11px;color:var(--ink4);
+         letter-spacing:.01em;flex:none}
+  .sec-t{font-size:clamp(24px,3.4vw,34px);
+         font-weight:800;letter-spacing:-.03em}
+  .sec-t em{font-style:normal;color:var(--ink2)}
+  .sec-sub{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+           color:var(--ink3);margin-left:auto;text-align:right}
+  @media(max-width:700px){.sec-sub{display:none}}
+
+  /* ledger — stat tiles: accent chip label, huge serif numeral + unit,
+     provenance shrinks to a caption underneath */
+  .ledger{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:960px){.ledger{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:520px){.ledger{grid-template-columns:1fr}}
+  .stat{background:var(--surface);
+        border:1.5px solid var(--ink);
+        border-radius:20px;padding:16px 18px 15px;
+        display:flex;flex-direction:column;min-height:132px;
+        box-shadow:0 18px 36px -24px rgba(22,24,29,.22)}
+  .stat .k{display:inline-block;font-family:var(--mono);font-size:11px;
+           letter-spacing:.01em;line-height:1.6;
+           color:var(--ink2);background:var(--surface2);
+           border-radius:3px;padding:3px 8px;margin-right:auto}
+  .stat .v{font-family:var(--sans);font-size:clamp(32px,3.2vw,42px);font-weight:800;
+           letter-spacing:-.035em;margin-top:auto;padding-top:14px;line-height:1}
+  .stat .v small{font-family:var(--mono);font-size:11px;color:var(--ink3);
+                 font-weight:400;letter-spacing:.01em}
+  .stat .d{font-size:11px;color:var(--ink3);margin-top:9px;line-height:1.5}
+  .stat .d b{color:var(--ink2);font-weight:500}
+
+  /* provenance */
+  .prov{display:grid;grid-template-columns:360px 1fr;gap:44px;align-items:center}
+  @media(max-width:820px){.prov{grid-template-columns:1fr}}
+  .minimap{width:100%;aspect-ratio:1/1.05;background:var(--surface);
+           border:1.5px solid var(--ink);border-radius:20px;
+           box-shadow:0 18px 36px -24px rgba(22,24,29,.20)}
+  .prov-txt{font-size:14.5px;line-height:1.8;color:var(--ink2);
+            max-width:560px}
+  .prov-txt p+p{margin-top:14px}
+  .prov-txt b{color:var(--ink);font-weight:500}
+  .prov-txt .mono{font-family:var(--mono);font-size:12px;color:var(--ink3)}
+
+  /* corridors */
+  table{width:100%;border-collapse:collapse}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+     color:var(--ink2);font-weight:600;text-align:left;padding:0 12px 12px}
+  td{padding:13px 12px;border-top:1px solid var(--line);font-size:13.5px;
+     color:var(--ink2);font-weight:400;vertical-align:middle}
+  td.rank{font-family:var(--mono);font-size:11px;color:var(--ink4);width:34px}
+  td.cell{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+  td.cell small{color:var(--ink3)}
+  td.num{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+  td .modep{display:inline-block;font-family:var(--mono);font-size:11px;
+            letter-spacing:.01em;padding:3px 9px;
+            border-radius:3px;
+            background:var(--surface2);color:var(--ink2)}
+  .dose-chip{display:inline-block;min-width:64px;text-align:right;padding:3px 10px;
+             font-size:12px;font-variant-numeric:tabular-nums;border-radius:3px;
+             background:var(--surface2);color:var(--ink)}
+  .scrollx{overflow-x:auto}
+  .card2{border:1.5px solid var(--ink);border-radius:20px;
+         padding:16px 14px 4px;background:var(--surface);
+         box-shadow:0 18px 36px -24px rgba(22,24,29,.20)}
+  @media(max-width:640px){td{padding:11px 8px;font-size:12.5px}th{padding:0 8px 10px}}
+
+  /* reveal */
+  .rv{opacity:0;transform:translateY(18px);transition:opacity .8s ease,transform .8s cubic-bezier(.22,1,.36,1)}
+  .rv.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+
+  /* foot */
+  /* the footer is a black block — the register's one dark surface */
+  footer{margin-top:clamp(60px,10vh,110px);
+         background:#0F100C;border-radius:24px;
+         margin-left:clamp(8px,2vw,20px);margin-right:clamp(8px,2vw,20px);
+         padding:44px clamp(22px,4vw,40px) 60px;
+         display:grid;grid-template-columns:1fr auto;gap:26px}
+  .foot-l{max-width:640px;color:rgba(242,242,236,.55);font-size:12px;line-height:1.85}
+  .foot-l b{color:#F2F2EC;font-weight:600}
+  .foot-r{font-family:var(--mono);font-size:11px;letter-spacing:.01em;
+          color:rgba(242,242,236,.55);text-align:right;line-height:2.2}
+  .foot-r a{color:rgba(242,242,236,.8);text-decoration:none}
+  .foot-r a:hover{color:#F2F2EC;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:4px}
+  @media(max-width:700px){footer{grid-template-columns:1fr}.foot-r{text-align:left}}
+
+  /* phones: thumb-sized hits — text chips keep their look, the box grows;
+     the hairline scrubber gets a taller grab strip and a bigger thumb.
+     sits at the end of the sheet so it beats the desktop rules it widens */
+  @media(max-width:640px){
+    .tl button,.rch-pills button,.tl-now{padding-top:14px;padding-bottom:13px}
+    .rc-strip{min-width:0;max-width:100%;overflow-x:auto;
+              scrollbar-width:none}
+    .rc-strip::-webkit-scrollbar{display:none}
+    .rc-strip .rc-h{width:14px;height:14px;flex:none}
+    .tl-range{height:28px;min-width:140px}
+    .tl-range::-webkit-slider-thumb{width:16px;height:16px;margin-top:-7.5px}
+    .tl-range::-moz-range-thumb{width:16px;height:16px}}
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <a class="mark" href="/">ALIVE</a>
+  <div class="mast-r">
+    <a href="/">home</a>
+    <a href="/community">community</a>
+    <span class="hidemob" id="clock">—</span>
+    <span class="live-lbl"><span class="live-sq"></span>live</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow">what delhi is breathing · delhi ncr</div>
+    <h1>Delhi NCR air, <em>right now.</em></h1>
+    <div class="htoday" id="hToday" role="status">
+      <div class="hv"><span id="hMean">—</span><small> µg/m³</small></div>
+      <div class="ht"><span class="hchip" id="hBand">reading the live field…</span><br>
+        <span id="hWhat">fine dust (pm2.5) — the city's average right now</span>
+        <i id="hRange"></i><i id="hDist"></i></div>
+    </div>
+    <div class="dek"><p>Each district is coloured by the official air
+      score (<b>AQI</b>) — mostly <b>pm2.5</b>, the fine dust that
+      settles deep in lungs. Live government monitors anchor it; the
+      satellite model and shared trips fill the rest.</p></div>
+    <div class="whyline" id="whyline" hidden><span class="wtag">why now</span>
+      <span class="wtxt" id="whytxt"></span></div>
+    <div class="whyline" id="grapline" hidden><span class="wtag">grap</span>
+      <span class="wtxt" id="graptxt"></span></div>
+    <div class="whyline" id="noteline" hidden><span class="wtag">parali watch</span>
+      <span class="wtxt" id="notetxt"></span></div>
+  </div>
+
+  <noscript>
+    <style>.map-card,.ticker,.minimap,#corridors{display:none}
+      .rv{opacity:1;transform:none}</style>
+    <p style="margin-top:20px;font-family:var(--mono);font-size:11px;
+      letter-spacing:.01em;color:var(--ink3);
+      line-height:1.9">
+      the live map, the hour-by-hour replay and the numbers need
+      javascript — the ledger reads '—' because nothing has run yet,
+      not because the city is empty. the explainer sections below
+      still read.</p>
+  </noscript>
+
+  <div class="map-card">
+    <div class="map-view">
+      <svg id="ncr" role="img" aria-label="Delhi districts coloured by live air quality — tap one for its reading"></svg>
+      <div class="m-wind" id="windtag">wind —</div>
+      <div class="detail" id="detail"></div>
+    </div>
+    <div class="m-tag"><b>districts coloured by the official air score</b> · each is the average of the air inside it<br>
+      tap a district for its number</div>
+    <div class="tl" id="tl" hidden>
+      <button id="tlPlay" type="button" aria-pressed="false">▶ the hours ahead</button>
+      <input class="tl-range" id="tlRange" type="range" min="0" max="11"
+             step="1" value="0" aria-label="forecast — drag to see the next twelve hours">
+      <span class="tl-h" id="tlHour">now</span>
+      <span class="tl-load" id="tlLoad" hidden></span>
+      <button class="tl-now" id="tlNow" type="button" hidden>← now</button>
+      <span class="tl-note" id="tlNote"></span>
+    </div>
+    <div class="tl" id="rch" hidden>
+      <button id="rchArm" type="button" aria-pressed="false">◎ where can your lungs go?</button>
+      <span class="rch-pills" id="rchModes"></span>
+      <span class="rch-pills" id="rchBudgets"></span>
+      <span class="tl-h" id="rchCap"></span>
+      <span class="tl-load" id="rchLoad" hidden></span>
+      <span class="tl-note" id="rchNote"></span>
+    </div>
+    <div class="tl" id="rc" hidden>
+      <button id="rcPlay" type="button" aria-pressed="false">▶ the day so far</button>
+      <span class="rc-strip" id="rcStrip" role="group"
+            aria-label="saved air maps — pick an hour to replay"></span>
+      <span class="rch-pills" id="rcBasis" hidden></span>
+      <span class="tl-h" id="rcHour"></span>
+      <span class="tl-load" id="rcLoad" hidden></span>
+      <button class="tl-now" id="rcNow" type="button" hidden>← live</button>
+      <span class="tl-note" id="rcNote"></span>
+    </div>
+    <div class="m-legend">
+      <div class="chips" id="chips"></div>
+      <div class="m-src" id="src">connecting…</div>
+      <span class="leg-note">india's official bands — under 100 is fine for most people · 200+ sensitive lungs feel it · 300+ everyone does</span>
+    </div>
+    <div class="days" id="days" hidden>
+      <span class="days-lbl">the days ahead · average fine dust per day, <span class="u">µg/m³</span></span>
+      <div class="dayrow" id="dayRow" role="group" aria-label="five-day outlook"></div>
+      <span class="days-cap" id="daysCap"></span>
+      <span class="days-note" id="daysNote"></span>
+    </div>
+  </div>
+
+  <div class="ticker"><div class="ticker-in" id="ticker"></div></div>
+
+  <section class="rv">
+    <div class="sec-h">
+      <span class="sec-n">01</span>
+      <span class="sec-t">the ledger, <em>today</em></span>
+      <span class="sec-sub">shared trips · counted since utc midnight — 05:30 ist</span>
+    </div>
+    <div class="ledger">
+      <div class="stat">
+        <div class="k">breaths taken on shared trips</div>
+        <div class="v"><span id="breaths">—</span></div>
+        <div class="d">how many breaths today's shared trips add up to — dust inhaled ÷ dust in the air ÷ a breath size we assume (half a litre) · <b>an estimate — breath size is the guess, the rest is measured · updates each refresh</b></div>
+      </div>
+      <div class="stat">
+        <div class="k">fine dust inhaled on shared trips</div>
+        <div class="v"><span id="doseug">—</span><small> µg pm2.5</small></div>
+        <div class="d">all the dust riders breathed today, added together — a cigarette is roughly 316 µg · <b>totals only; no per-person data exists</b></div>
+      </div>
+      <div class="stat">
+        <div class="k">trips shared today</div>
+        <div class="v"><span id="obs">—</span><small> trips</small></div>
+        <div class="d"><b><span id="km">—</span> km</b> travelled · <b><span id="contrib">—</span></b> trips shared <span id="contribw">so far</span></div>
+      </div>
+      <div class="stat">
+        <div class="k">exhaust from shared trips, today</div>
+        <div class="v"><span id="co2">—</span><small> kg co₂</small></div>
+        <div class="d" id="co2d">tailpipe co₂ + pm2.5 the shared trips put out today</div>
+      </div>
+      <div class="stat">
+        <div class="k">streets we can show</div>
+        <div class="v"><span id="corr">—</span><small> ≥3 phones</small></div>
+        <div class="d">a street stretch is shown only after 3 different phones cross it in 3 days · <b><span id="cellstr">—</span> stretches seen so far</b></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rv">
+    <div class="sec-h">
+      <span class="sec-n">02</span>
+      <span class="sec-t">where the numbers <em>come from</em></span>
+      <span class="sec-sub">govt monitors + satellite model</span>
+    </div>
+    <div class="prov">
+      <canvas class="minimap" id="minimap"></canvas>
+      <div class="prov-txt">
+        <p>Delhi's government monitors were built to regulate the city,
+        not to tell one commuter what they breathed. <b><span
+        id="nstations">—</span> live instruments</b> feed this map — the
+        green squares on it — each one outweighing the satellite model's
+        guess three to one, with every shared trip counted too.</p>
+        <p>Where monitors are far apart, the estimate is less sure and
+        the colours go quiet. <b>A district near the edge of coverage
+        says so on its card instead of pretending precision.</b></p>
+        <p class="mono" id="fieldmeta">field —</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="rv">
+    <div class="sec-h">
+      <span class="sec-n">03</span>
+      <span class="sec-t">the streets <em>the city actually travels</em></span>
+      <span class="sec-sub">~500 m street stretches · shared trips · needs ≥3 phones to appear</span>
+    </div>
+    <div class="card2 scrollx">
+      <table id="corridors">
+        <tr><th></th><th>street stretch</th><th style="text-align:right">trips</th><th style="text-align:right">pm2.5 per trip</th><th>vs typical</th></tr>
+      </table>
+    </div>
+    <p class="days-note" id="corrNote" hidden></p>
+  </section>
+
+  <footer>
+    <div class="foot-l">
+      <b>Alive</b> — shared trips help fill the gaps between
+      government stations. The map is estimated between live station
+      readings and the CAMS/Open-Meteo satellite model, then corrected
+      by what shared trips actually measure. Every estimate carries an
+      uncertainty band — we show it rather than hide it. District
+      boundaries from OpenStreetMap (ODbL). The map refreshes on its
+      own cadence.
+    </div>
+    <div class="foot-r">
+      <a href="/docs">api docs ↗</a><br>
+      <span id="stamp">—</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+/* ---------- CPCB National AQI — official six band names, the product's
+   muted ramp ----------
+   band NAMES stay the official CPCB categories; the hexes are the whole
+   web family's muted product ramp (--b0..5, same as landing + console) —
+   the raw govt swatches (#FFFF00, #FF0000…) flooded the choropleth and
+   read neon against the warm register. hue = air-quality meaning only. */
+const BANDS=[[0,50,'Good','#7AAB59'],[51,100,'Satisfactory','#C8B25A'],
+  [101,200,'Moderate','#D58C4A'],[201,300,'Poor','#B85442'],
+  [301,400,'Very Poor','#8F3C49'],[401,500,'Severe','#6E3C54']];
+
+const NODATA='#E8E5DB';
+/* -> [aqi, category, colour] so every painter reads [1]/[2] uniformly */
+const bandOf=a=>{if(a==null)return[null,'No data',NODATA];
+  const b=BANDS.find(b=>a<=b[1])||BANDS[5];return[a,b[2],b[3]]};
+const IN=n=>n==null?'—':Math.round(n).toLocaleString('en-IN');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* OSM names arrive raw — 'hanuman lane' — title-case the way the app
+   does before they land in a table */
+const tName=s=>String(s||'').replace(/(^|[\s\-/'(])([a-z])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+/* official hue → pastel tile surface: wash toward white (never alpha),
+   register-card's bandWashIdx — tiles wear the day's own band */
+const washHex=(hex,t=.78)=>{const m=/^#?([0-9a-f]{6})$/i.exec(hex||'');
+  if(!m)return null;const n=parseInt(m[1],16);
+  const px=i=>Math.round(((n>>(16-8*i))&255)*(1-t)+255*t);
+  return `rgb(${px(0)},${px(1)},${px(2)})`};
+/* the app's bandInkIdx — band hue pulled 15% toward ink, the breathing
+   edge's colour (deeper than a wash, softer than text ink) */
+const inkHex=(hex,t=.15)=>{const m=/^#?([0-9a-f]{6})$/i.exec(hex||'');
+  if(!m)return null;const n=parseInt(m[1],16),ik=[0x14,0x18,0x1f];
+  const px=i=>Math.round(((n>>(16-8*i))&255)*(1-t)+ik[i]*t);
+  return `rgb(${px(0)},${px(1)},${px(2)})`};
+
+/* ---------- geography / projection ---------- */
+let FEATS=[],PX0=0,PY0=0,PS=1,VW=0,VH=0;   // projected px-space
+let FEAT_CELLS=[];   // /grid cell features — the strip's ambient basis
+const LAT0=28.55,KM_PER_DEG_LON=111.32*Math.cos(LAT0*Math.PI/180),KM_PER_DEG_LAT=110.57;
+const toKm=(lon,lat)=>[lon*KM_PER_DEG_LON,lat*KM_PER_DEG_LAT];
+
+function computeView(){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const f of FEATS)for(const ring of f._rings)
+    for(const [lo,la] of ring){const [x,y]=toKm(lo,la);
+      if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  const pad=(x1-x0)*0.045;
+  x0-=pad;x1+=pad;y0-=pad;y1+=pad;
+  PX0=x0;PY0=y0;VW=x1-x0;VH=y1-y0;PS=1;   // viewBox already km
+}
+const X=lo=>(lo*KM_PER_DEG_LON-PX0);
+const Y=la=>(VH-(la*KM_PER_DEG_LAT-PY0));  // north-up
+
+function ringPath(ring){
+  let d='';
+  for(let i=0;i<ring.length;i++){const p=ring[i];
+    d+=(i?'L':'M')+X(p[0]).toFixed(2)+' '+Y(p[1]).toFixed(2)}
+  return d+'Z'}
+function featPath(f){return f._rings.map(ringPath).join(' ')}
+
+const SVGNS='http://www.w3.org/2000/svg';
+const svg=document.getElementById('ncr');
+let gCells,gRec,gDist,gLab;                 // svg layers
+const DETAIL=document.getElementById('detail');
+let selName=null;
+
+function buildMap(){
+  computeView();
+  svg.setAttribute('viewBox',`0 0 ${VW.toFixed(2)} ${VH.toFixed(2)}`);
+  svg.innerHTML='';
+  CELL_RECTS.clear();
+  gCells=document.createElementNS(SVGNS,'g');
+  gRec=document.createElementNS(SVGNS,'g');
+  gRec.setAttribute('pointer-events','none');
+  gDist=document.createElementNS(SVGNS,'g');
+  gLab=document.createElementNS(SVGNS,'g');
+  svg.append(gCells,gRec,gDist,gLab);
+  for(const f of FEATS){
+    const p=document.createElementNS(SVGNS,'path');
+    p.setAttribute('d',featPath(f));
+    p.dataset.name=f.properties.name;
+    p.setAttribute('fill',NODATA);
+    p.setAttribute('fill-opacity','0.86');
+    p.setAttribute('stroke','#FFFFFF');
+    p.setAttribute('stroke-width','0.5');
+    p.setAttribute('stroke-linejoin','round');
+    p.style.transition='fill-opacity .9s ease';
+    p.style.cursor='pointer';
+    const show=f.properties.name;
+    /* hover = transient (mouse only); tap = pinned so the card survives
+       pointerleave on touch — same district tapped again unpins it */
+    p.addEventListener('pointerenter',e=>{
+      if(e.pointerType==='mouse'&&!selPinned)highlight(show)});
+    p.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='mouse'){highlight(show);return}
+      if(selPinned===show){selPinned=null;unhighlight(show);return}
+      selPinned=show;highlight(show)});
+    p.addEventListener('pointerleave',e=>{
+      if(e.pointerType==='mouse'&&selPinned!==show)unhighlight(show)});
+    gDist.appendChild(p);f._path=p;
+    const c=f.properties.centroid;
+    if(c){
+      const t=document.createElementNS(SVGNS,'text');
+      t.setAttribute('x',X(c[0]));t.setAttribute('y',Y(c[1]));
+      t.setAttribute('text-anchor','middle');
+      t.setAttribute('font-family','ui-monospace,Menlo,monospace');
+      t.setAttribute('font-size','1.6');
+      t.setAttribute('letter-spacing','.04em');
+      t.setAttribute('fill','rgba(20,24,31,.55)');
+      t.setAttribute('pointer-events','none');
+      t.textContent=f.properties.name;
+      gLab.appendChild(t);f._label=t;
+    }
+  }
+}
+
+function highlight(name){
+  selName=name;
+  for(const f of FEATS){const on=f.properties.name===name;
+    f._path.setAttribute('stroke',on?'var(--ink)':'#FFFFFF');
+    f._path.setAttribute('stroke-width',on?'1.1':'0.5');
+    f._path.setAttribute('fill-opacity',on?'1':'0.86');
+    if(f._label)f._label.setAttribute('fill',on?'#14181F':'rgba(20,24,31,.55)');
+    if(on)gDist.appendChild(f._path)}
+  const f=FEATS.find(f=>f.properties.name===name);
+  if(f)showDetail(f);
+}
+let selPinned=null;
+function unhighlight(name){selName=null;DETAIL.classList.remove('on');
+  for(const f of FEATS){f._path.setAttribute('stroke','#FFFFFF');
+    f._path.setAttribute('stroke-width','0.5');
+    f._path.setAttribute('fill-opacity','0.86');
+    if(f._label)f._label.setAttribute('fill','rgba(20,24,31,.55)')}}
+
+function showDetail(f){
+  const d=f._data||{};
+  const band=bandOf(d.aqi);
+  DETAIL.innerHTML=
+    `<div class="d-name">${esc(f.properties.name)}</div>`+
+    `<div class="d-state">${esc(f.properties.state||'')}${d.cells_covered!=null?` · ${d.cells_covered} map squares`:''}</div>`+
+    `<div class="d-aqi">${d.aqi!=null?d.aqi:'—'}<small>aqi · pm2.5 ${d.pm25!=null?d.pm25+' <span style="text-transform:none">µg/m³</span>':'—'}</small></div>`+
+    `<div class="d-cat" style="background:${band[2]};${BANDS.slice(0,3).some(b=>b[1]===band[1])?'color:#14181F':''}">${band[1]}</div>`+
+    `<div class="d-conf">${d.confidence==='sparse'?'edge of coverage — estimated from the district centre; few readings inside':(d.confidence==='none'?'no live reading over this district':'average of the map squares inside the boundary')}</div>`;
+  DETAIL.classList.add('on');
+}
+
+/* ---------- live-cell underlayer (the pixel field, tinted subtle) ---
+   the grid layout is fixed, so rects persist across repaints — a
+   forecast frame only re-tints the fill attribute instead of tearing
+   down and rebuilding ~1.1k DOM nodes per hour */
+const CELL_RECTS=new Map();
+function paintCells(features){
+  const seen=new Set();
+  for(const ft of features){
+    const g=ft.geometry;if(!g||g.type!=='Polygon')continue;
+    const r=g.coordinates[0];if(!r)continue;
+    const pm=(ft.properties||{}).pm25;if(pm==null)continue;
+    const a=r[0],b=r[2];
+    const x=X(Math.min(a[0],b[0])),y=Y(Math.max(a[1],b[1]));
+    const w=Math.abs(X(Math.max(a[0],b[0]))-x),h=Math.abs(Y(Math.min(a[1],b[1]))-y);
+    const key=`${x.toFixed(1)}|${y.toFixed(1)}`;
+    seen.add(key);
+    let el=CELL_RECTS.get(key);
+    if(!el){
+      el=document.createElementNS(SVGNS,'rect');
+      el.setAttribute('x',x-w*0.48);el.setAttribute('y',y-h*0.48);
+      el.setAttribute('width',w*0.96);el.setAttribute('height',h*0.96);
+      el.setAttribute('fill-opacity','0.22');
+      gCells.appendChild(el);
+      CELL_RECTS.set(key,el);
+    }
+    // each pixel tinted by its own CPCB band — subtle under the fills
+    el.setAttribute('fill',bandOf(cpcbOf(pm))[2]);
+  }
+  for(const [key,el] of CELL_RECTS)
+    if(!seen.has(key)){el.remove();CELL_RECTS.delete(key)}
+}
+/* the page re-derives the CPCB sub-index per pixel so the underlayer
+   speaks the same scale the district fills do */
+function cpcbOf(pm){
+  const T=[[0,30,0,50],[30,60,51,100],[60,90,101,200],[90,120,201,300],
+           [120,250,301,400],[250,500,401,500]];
+  for(const [lo,hi,al,ah] of T)if(pm<=hi)return al+(ah-al)*(pm-lo)/(hi-lo);
+  return 500}
+
+/* ---------- watch the day — the forecast drift over these same cells --
+   every frame is a real served /grid surface at h+N; nothing is ever
+   interpolated client-side. untouched, the underlayer keeps the live
+   field (h=0's own basis — the control only borrows the paint); once
+   played or scrubbed it re-tints from that hour's grid while district
+   fills keep reading live. a failed hour is skipped, never faked. */
+const TL={active:false,playing:false,h:0,timer:null,seq:0,
+          cache:{},pending:{},epoch:null,touched:0};
+                                      /* cache[h]: feats | null(failed);
+         epoch = the served [forecast_at, field_at, obs] stamp of the
+         cached frames; touched = wall-clock of the last pull — the pair
+         that decides when cached frames have to be re-asked */
+const TL_MAX=11,TL_MS=1500;
+const tlUI={};
+const MTAG=document.querySelector('.m-tag'),MTAG0=MTAG.innerHTML;
+const tlClock=h=>new Date(Date.now()+h*36e5)
+  .toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',
+    hour:'2-digit',minute:'2-digit',hour12:false});
+function tlSetHour(h){TL.seq++;TL.h=h;tlUI.range.value=h;
+  tlUI.range.style.setProperty('--tp',(h/TL_MAX*100)+'%');
+  tlUI.hour.textContent=h===0?'now':`+${h} h · ${tlClock(h)}`;
+  if(TL.active)tlTag()}
+function tlTick(t){const e=tlUI.load;
+  if(t==null){e.hidden=true;return}e.hidden=false;e.textContent=t}
+function tlTag(){
+  MTAG.innerHTML=`<b>forecast — ${TL.h===0?'now':'+'+TL.h+' h from now'}</b> · squares = the model's guess<br>`+
+    `district fills still show now · tap for its number`}
+const TL_NOTE_ON=`squares = the forecast for that hour · district fills still show now · from the satellite model — further out means less certain`;
+const TL_NOTE_OFF=`the next twelve hours, from the satellite model — further out means less certain`;
+
+async function tlFetch(h){
+  if(h in TL.cache)return TL.cache[h];
+  if(TL.pending[h])return TL.pending[h];
+  TL.pending[h]=fetch(`/grid?cells=34&param=pm2_5&h=${h}`,
+    {signal:AbortSignal.timeout(12000)})
+    .then(r=>{if(!r.ok)throw r.status;return r.json()})
+    .then(g=>{const f=(g&&g.features)||[];
+      const ep=g&&g.properties&&g.properties.cell_epoch;
+      if(ep)TL.epoch=ep;
+      TL.touched=Date.now();
+      TL.cache[h]=f.length?f:null;return TL.cache[h]})
+    .catch(()=>{TL.cache[h]=null;return null})
+    .finally(()=>{delete TL.pending[h]});
+  return TL.pending[h];
+}
+/* the frames are a served surface, not a session fixture — when load()
+   sees the field rebuild (its cell_epoch[0] moves past the field stamp
+   the horizon frames were fetched under, epoch[1]), or the frames
+   outlive one field cadence (900 s — the floor every served layer
+   claims against), the cached set is dropped and only the hour on
+   screen re-pulls; the rest go back to lazy fetch-on-touch. A re-pull
+   re-asks /grid for the current epoch — never a fake timer. */
+function tlInvalidate(){
+  TL.cache={};TL.seq++;            // seq kills in-flight scrub paints
+  if(TL.active){const h=TL.h;tlShow(h)}
+}
+function tlAged(){
+  if(TL.touched&&Date.now()-TL.touched>900e3)tlInvalidate()
+}
+/* paint hour h's real frame; while it flies the caption says so — a
+   missing or failed frame never produces an interpolated stand-in */
+async function tlShow(h){
+  const seq=++TL.seq;
+  if(RC.active)rcReset();         /* the forecast takes the map back */
+  TL.active=true;tlUI.now.hidden=false;
+  tlUI.note.textContent=TL_NOTE_ON;tlTag();
+  if(TL.cache[h]){paintCells(TL.cache[h]);tlTick(null);return}
+  tlTick(`loading +${h} h`);
+  const f=await tlFetch(h);
+  if(seq!==TL.seq)return;                    // a newer scrub owns the map
+  if(f){paintCells(f);tlTick(null)}
+  else if(TL.playing){tlTick(null);tlAdvance()}
+  else tlTick(`+${h} h — no forecast for that hour`);
+}
+function tlAdvance(){                        // next cached frame, or hold
+  for(let h=TL.h+1;h<=TL_MAX;h++){
+    if(TL.cache[h]){tlSetHour(h);paintCells(TL.cache[h]);tlTick(null);return}}
+  let left=false;
+  for(let h=TL.h+1;h<=TL_MAX;h++)if(TL.cache[h]!==null)left=true;
+  if(!left){tlStop();return}                 // only failed hours remain
+  tlTick(`loading +${TL.h+1} h`);
+}
+function tlDeep(){                           // lazy chain, one at a time
+  let h=0;const next=()=>{while(h<=TL_MAX&&h in TL.cache)h++;
+    if(h>TL_MAX)return;
+    tlFetch(h++).finally(()=>setTimeout(next,80))};
+  next();
+}
+function tlPlay(){
+  if(TL.h>=TL_MAX)tlSetHour(0);
+  TL.playing=true;tlUI.play.textContent='‖ pause';
+  tlUI.play.setAttribute('aria-pressed','true');
+  tlDeep();                                  // deeper hours fetch on first play
+  TL.timer=setInterval(tlAdvance,TL_MS);
+  tlShow(TL.h);
+}
+function tlPause(){TL.playing=false;clearInterval(TL.timer);
+  tlUI.play.textContent='▶ resume';tlUI.play.setAttribute('aria-pressed','false')}
+function tlStop(){TL.playing=false;clearInterval(TL.timer);
+  tlUI.play.textContent='▶ the hours ahead'; // honest stop at h+11
+  tlUI.play.setAttribute('aria-pressed','false')}
+function tlReset(){                          // back to the live field
+  tlStop();TL.active=false;tlSetHour(0);tlTick(null);
+  tlUI.now.hidden=true;tlUI.note.textContent=TL_NOTE_OFF;
+  MTAG.innerHTML=MTAG0;
+  if(FEAT_CELLS.length)paintCells(FEAT_CELLS)}
+
+async function tlInit(){
+  tlUI.row=document.getElementById('tl');
+  tlUI.play=document.getElementById('tlPlay');
+  tlUI.range=document.getElementById('tlRange');
+  tlUI.hour=document.getElementById('tlHour');
+  tlUI.load=document.getElementById('tlLoad');
+  tlUI.now=document.getElementById('tlNow');
+  tlUI.note=document.getElementById('tlNote');
+  tlUI.note.textContent=TL_NOTE_OFF;
+  /* h+0 doubles as the availability probe — if the horizon endpoint
+     errors, the page stays complete without a dead control */
+  const f=await tlFetch(0).catch(()=>null);
+  if(!f)return;                              // row stays hidden
+  tlUI.row.hidden=false;
+  tlUI.play.addEventListener('click',()=>TL.playing?tlPause():tlPlay());
+  tlUI.range.addEventListener('input',()=>{tlSetHour(+tlUI.range.value);tlShow(TL.h)});
+  tlUI.now.addEventListener('click',tlReset);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden&&TL.playing)tlPause();
+    else if(!document.hidden)tlAged()});   // re-entry = a freshness check
+  /* h+1…h+3 drift in on idle; deeper hours wait for first play */
+  const idle=window.requestIdleCallback||(f=>setTimeout(f,400));
+  idle(()=>{tlFetch(1).then(()=>tlFetch(2)).then(()=>tlFetch(3))});
+}
+
+/* ---------- what happened — the recorded archive, replayed ----------
+   the timelapse above plays FORECAST slots (basis:forecast); this row
+   plays what the api actually served — hourly snapshots archive.py
+   writes to durable storage (basis:recorded). only recorded hours are
+   playable: a dashed square is a gap — no record exists — a faint one
+   hasn't started. recorded cells paint as a discrete hairline-edged
+   mosaic on their own layer (never the forecast's borderless wash) and
+   the captions say 'recorded', never 'forecast'.
+
+   the flip — recorded vs model: when an hour's payload carries a
+   'model' block (source 'archive' = the /grid horizon the api served,
+   stored at capture; 'held-run' = the run still in memory, raw model)
+   the recorded·model·δ chips appear for it. coverage.with_model on the
+   wire is exactly the trigger — the row lights up as snapshots land. */
+const RC={active:false,playing:false,h:null,timer:null,seq:0,
+          data:null,basis:'rec'};
+const RC_MS=1800;
+const rcUI={};
+const RC_BASIS=[['rec','what happened'],['model','what the model called'],['delta','the gap']];
+
+const rcEntry=h=>((RC.data&&RC.data.hours)||[])
+  .find(e=>e.hour_ist===h);
+function rcMeanBand(e){           /* the strip square's honest colour */
+  let s=0,n=0;for(const c of e.cells||[])if(c[2]!=null){s+=c[2];n++}
+  return n?bandOf(cpcbOf(s/n))[2]:'var(--line2)';
+}
+function rcIdleNote(){
+  const d=RC.data||{},cov=d.coverage||{},n=(cov.recorded||[]).length;
+  const since=((d.archive&&d.archive.since_ist)||'').slice(11,16);
+  const wm=(cov.with_model||[]).length;
+  rcUI.note.textContent=!n
+    ?`the air map is saved every hour (delhi time) — recording since ${since||'—'} · today's first saved hour lands on the next hour mark`
+    :n<3
+      ?`the air map, saved every hour — ${n} hour${n>1?'s':''} on record today · recording since ${since||'—'} · a square is one hour`
+      :`the air map, saved every hour — ${n} hours saved today · tap a square to see it`+
+       `${wm?` · ${wm} also carry what the model called for them — flip with the chips`:''}`;
+}
+function rcRender(){
+  const d=RC.data,hours=(d&&d.hours)||[];
+  const total=(d&&d.archive&&d.archive.total_snapshots)||0;
+  if(!total){rcReset(true);rcUI.row.hidden=true;return}
+  rcUI.row.hidden=false;
+  rcUI.strip.innerHTML=hours.map(e=>{
+    const h=e.hour_ist,st=e.status,rec=st==='recorded';
+    const tt=`${e.ist_label} ist — ${rec?'the saved air map · click to replay it'
+      :st==='gap'?'nothing was saved this hour':st==='unreadable'?'the saved hour can’t be read'
+      :'hasn’t happened yet'}`;
+    return `<button type="button" data-h="${h}" ${rec?'':'disabled'}
+      class="rc-h ${rec?'rec':st==='gap'?'gap':st==='unreadable'?'bad':'pend'}${RC.active&&RC.h===h?' on':''}"
+      ${rec?`style="background:${rcMeanBand(e)}"`:''}
+      title="${esc(tt)}" aria-label="${esc(tt)}"></button>`;
+  }).join('');
+  if(!RC.active)rcIdleNote();
+}
+async function rcLoad(){
+  try{const r=await fetch('/v2/archive',
+        {signal:AbortSignal.timeout(15000)});
+    if(!r.ok)return;
+    const d=await r.json();
+    if(d&&d.basis==='recorded'){RC.data=d;rcRender()}
+  }catch(_){}                     /* the archive row is optional chrome */
+}
+
+/* the mosaic — one hairline-edged tile per stored emit cell. cell pitch
+   comes from the snapshot's own grid block (grid.BBOX, cells=22) with
+   the bbox literal as fallback for pre-grid docs */
+function rcGeom(e){
+  const g=(e&&e.grid)||{};
+  const n=g.cells||22,
+        b=g.bbox||[76.80,28.20,77.90,28.95];
+  return [(b[2]-b[0])/n*KM_PER_DEG_LON,(b[3]-b[1])/n*KM_PER_DEG_LAT];
+}
+function rcMk(x,y,w,h,fill,fOp,stroke,sOp,title){
+  const r=document.createElementNS(SVGNS,'rect');
+  r.setAttribute('x',(x-w/2).toFixed(2));
+  r.setAttribute('y',(y-h/2).toFixed(2));
+  r.setAttribute('width',w.toFixed(2));
+  r.setAttribute('height',h.toFixed(2));
+  r.setAttribute('fill',fill);r.setAttribute('fill-opacity',fOp);
+  r.setAttribute('stroke',stroke);r.setAttribute('stroke-opacity',sOp);
+  r.setAttribute('stroke-width','0.05');
+  if(title){const t=document.createElementNS(SVGNS,'title');
+    t.textContent=title;r.appendChild(t)}
+  gRec.appendChild(r);
+}
+function rcBasisPills(e){
+  const el=rcUI.basis;
+  if(!e||!e.model){el.hidden=true;el.innerHTML='';return}
+  el.hidden=false;
+  el.innerHTML=RC_BASIS.map(([k,l])=>
+    `<button type="button" data-b="${k}"`+
+    ` class="${RC.basis===k?'on':''}">${l}</button>`).join('');
+}
+function rcPaint(e){
+  if(!gRec)return;
+  gRec.innerHTML='';
+  const [dx,dy]=rcGeom(e),w=dx*.94,h=dy*.94;
+  const b=e.model?RC.basis:'rec';
+  if(b==='rec'){
+    for(const c of e.cells||[]){
+      if(c[2]==null)continue;
+      rcMk(X(c[0]),Y(c[1]),w,h,bandOf(cpcbOf(c[2]))[2],.5,'#14181F',.5,
+        `${e.ist_label} ist · pm2.5 ${c[2]} µg/m³ · what was served then`);
+    }
+    MTAG.innerHTML=`<b>the map as it was · ${e.ist_label} ist</b><br>`+
+      `squares = the saved hour · districts still show now`;
+    const cap=e.captured_at
+      ?new Date(e.captured_at).toLocaleTimeString('en-IN',
+          {timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})
+      :'—';
+    rcUI.note.textContent=
+      `what delhi actually breathed at ${e.ist_label} · saved ${cap}`+
+      ` · built from ${e.station_readings??'?'} live stations · ${e.samples??'?'} readings`+
+      ` · ${e.source||'—'} · ${e.n_cells??'?'} map squares`+
+      `${e.field_age_s!=null?` · the map was ${Math.round(e.field_age_s/60)} min old`:''}`;
+  }else if(b==='model'){
+    const m=e.model;
+    for(const c of m.cells||[]){
+      if(c[2]==null)continue;
+      const col=bandOf(cpcbOf(c[2]))[2];
+      rcMk(X(c[0]),Y(c[1]),w,h,col,.16,col,.85,
+        `the model called it ${c[2]} µg/m³`);
+    }
+    MTAG.innerHTML=`<b>what the model called · ${e.ist_label} ist</b>`+
+      ` · ${m.source==='archive'?'the forecast the map served back then':'the raw model run'}`+
+      `<br>districts still show now`;
+    rcUI.note.textContent=
+      `${m.note} · forecast made ${m.issued_ist?m.issued_ist.slice(11,16)+' ist':'—'}`+
+      `${m.lead_hours!=null?` · ${m.lead_hours} h ahead`:''}`;
+  }else{
+    const m=e.model,rec=new Map();
+    for(const c of e.cells||[])rec.set(c[0]+'|'+c[1],c[2]);
+    const tol=(m.delta&&m.delta.tol_ug)||10;
+    for(const c of m.cells||[]){
+      const v=rec.get(c[0]+'|'+c[1]);
+      if(v==null||c[2]==null)continue;
+      const d=v-c[2],miss=Math.abs(d)>tol;
+      /* under-called = the model read cleaner than what was actually
+         served (reality was dirtier): brick. over-called: sage */
+      const col=d>tol?'#A14440':d<-tol?'#77804F':'#4A4E57';
+      rcMk(X(c[0]),Y(c[1]),w,h,col,miss?.5:.18,col,miss?.85:.3,
+        `${d>0?'+':''}${d.toFixed(1)} µg/m³ — what happened ${v} vs the model called ${c[2]}`);
+    }
+    MTAG.innerHTML=`<b>what happened − what the model called</b>`+
+      ` · ${e.ist_label} ist<br>`+
+      `brick = model called it cleaner · green = called it worse · grey = about right`;
+    const d=e.model.delta;
+    /* the note uppercases — µ opts out or µg reads "mg" (1000× off) */
+    const noT='<span style="text-transform:none">µg/m³</span>';
+    rcUI.note.innerHTML=d
+      ?`the model called it lower in ${d.under_called} squares · about right in ${d.about_right} · higher in ${d.over_called}`+
+       ` · within ±${d.tol_ug} <span style="text-transform:none">µg</span> counts as right · average gap ${d.mean_signed_ug>0?'+':''}${d.mean_signed_ug} ${noT}`
+      :'the saved hour and the model don’t share points — nothing to compare';
+  }
+}
+
+function rcShow(h){
+  const e=rcEntry(h);
+  if(!e||e.status!=='recorded')return;
+  RC.seq++;RC.active=true;RC.h=h;
+  if(TL.active||TL.playing)tlReset();   /* forecast scrubber hands over */
+  if(gCells)gCells.style.display='none';/* the live wash yields — the
+        record stands alone, never blended with forecast or live cells */
+  rcUI.now.hidden=false;
+  rcUI.hour.textContent=`${e.ist_label} ist`;
+  rcBasisPills(e);rcPaint(e);rcRender();
+}
+function rcPause(){RC.playing=false;clearInterval(RC.timer);
+  rcUI.play.textContent='▶ resume';
+  rcUI.play.setAttribute('aria-pressed','false')}
+function rcStopPlay(){RC.playing=false;clearInterval(RC.timer);
+  rcUI.play.textContent='▶ the day so far';
+  rcUI.play.setAttribute('aria-pressed','false')}
+function rcPlay(){
+  const rec=(RC.data&&RC.data.coverage&&RC.data.coverage.recorded)||[];
+  if(!rec.length)return;
+  RC.playing=true;rcUI.play.textContent='‖ pause';
+  rcUI.play.setAttribute('aria-pressed','true');
+  let i=RC.h!=null?rec.indexOf(RC.h):-1;
+  RC.timer=setInterval(()=>{i++;
+    if(i>=rec.length){rcStopPlay();return}
+    rcShow(rec[i])},RC_MS);
+  rcShow(i>=0?rec[i]:rec[0]);
+}
+function rcReset(silent){               /* back to the live field */
+  RC.seq++;RC.playing=false;clearInterval(RC.timer);
+  RC.active=false;RC.h=null;
+  if(gRec)gRec.innerHTML='';
+  if(gCells)gCells.style.display='';
+  if(silent)return;
+  if(RC.data){
+    rcUI.now.hidden=true;rcUI.hour.textContent='';
+    rcUI.basis.hidden=true;rcUI.basis.innerHTML='';
+    rcStopPlay();MTAG.innerHTML=MTAG0;
+    rcUI.strip.querySelectorAll('.rc-h.on')
+      .forEach(el=>el.classList.remove('on'));
+    if(FEAT_CELLS.length)paintCells(FEAT_CELLS);
+    rcIdleNote();
+  }
+}
+function rcInit(){
+  rcUI.row=document.getElementById('rc');if(!rcUI.row)return;
+  rcUI.play=document.getElementById('rcPlay');
+  rcUI.strip=document.getElementById('rcStrip');
+  rcUI.basis=document.getElementById('rcBasis');
+  rcUI.hour=document.getElementById('rcHour');
+  rcUI.load=document.getElementById('rcLoad');
+  rcUI.now=document.getElementById('rcNow');
+  rcUI.note=document.getElementById('rcNote');
+  rcUI.play.addEventListener('click',()=>RC.playing?rcPause():rcPlay());
+  rcUI.now.addEventListener('click',()=>rcReset());
+  rcUI.strip.addEventListener('click',ev=>{
+    const b=ev.target.closest('.rc-h');
+    if(!b||b.disabled)return;
+    rcPause();rcShow(+b.dataset.h)});
+  rcUI.basis.addEventListener('click',ev=>{
+    const b=ev.target.closest('button[data-b]');if(!b)return;
+    RC.basis=b.dataset.b;const e=rcEntry(RC.h);
+    if(e){rcBasisPills(e);rcPaint(e)}});
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden&&RC.playing)rcPause()});
+  rcLoad();
+}
+
+/* ---------- where can your lungs go? — dose-budget reach ---------------
+   a tap solves /v2/reach's bounded dijkstra on the server and paints
+   exactly the edge set it settled — thin ink lines on real road
+   geometry, never a smoothed blob. mode/budget chips re-solve the same
+   origin; the caption carries the honest counts. when the endpoint
+   can't answer, the row hides instead of hanging a dead control. */
+const RCH={armed:false,mode:'walk',budget:50,origin:null,layer:null,seq:0,paintSeq:0};
+const RCH_MODES=['walk','cycle','auto','car'];
+const RCH_BUDGETS=[25,50,100];
+const rchUI={};
+
+function rchClear(){RCH.paintSeq++;   /* any in-flight chunked paint dies here */
+  if(RCH.layer){RCH.layer.remove();RCH.layer=null}}
+function rchCap(t){rchUI.cap.textContent=t||''}
+function rchNote(t){rchUI.note.innerHTML=t||''}
+function rchLoad(t){const e=rchUI.load;
+  if(t==null){e.hidden=true;return}e.hidden=false;e.textContent=t}
+
+function rchArm(){RCH.armed=true;
+  rchUI.arm.textContent='◉ tap the map';
+  rchUI.arm.setAttribute('aria-pressed','true');
+  svg.style.cursor='crosshair';
+  /* district/cell hit-testing would swallow the tap — yield the whole
+     svg while armed (the veil itself is pointer-events:none) */
+  for(const g of [gCells,gDist,gLab])if(g)g.style.pointerEvents='none';
+  rchNote('tap anywhere on the map — every road reachable inside the picked dust budget gets drawn in ink')}
+function rchDisarm(){RCH.armed=false;RCH.origin=null;RCH.seq++;rchClear();
+  rchUI.arm.innerHTML='◎ where can your lungs go?';
+  rchUI.arm.setAttribute('aria-pressed','false');
+  svg.style.cursor='';
+  for(const g of [gCells,gDist,gLab])if(g)g.style.pointerEvents='';
+  rchCap('');rchNote('')}
+function rchHide(){rchDisarm();rchUI.row.hidden=true}
+
+function rchClick(e){
+  if(!RCH.armed)return;
+  e.stopPropagation();e.preventDefault();
+  const ctm=svg.getScreenCTM();if(!ctm)return;
+  const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;
+  const p=pt.matrixTransform(ctm.inverse());
+  RCH.origin={lon:(p.x+PX0)/KM_PER_DEG_LON,
+              lat:(VH-p.y+PY0)/KM_PER_DEG_LAT};
+  rchSolve();
+}
+
+async function rchSolve(){
+  const seq=++RCH.seq,o=RCH.origin;if(!o)return;
+  rchLoad('drawing your reach…');rchCap('');
+  let b=null,bad=false;
+  try{
+    const r=await fetch(`/v2/reach?lat=${o.lat.toFixed(6)}&lon=${o.lon.toFixed(6)}&mode=${RCH.mode}&budget_ug=${RCH.budget}`,
+      {signal:AbortSignal.timeout(20000)});  /* server-bound ~8s + multi-MB payload */
+    if(r&&r.ok)b=await r.json();else bad=true;
+  }catch(_){bad=true}
+  if(seq!==RCH.seq)return;
+  rchLoad(null);
+  if(bad||!b||typeof b.edge_count!=='number'){rchHide();return}
+  if(b.error){
+    rchClear();
+    if(b.code==='outside_service_area')
+      rchCap('outside the air map — tap inside delhi ncr');
+    else if(b.code==='engine_unavailable'||b.code==='timeout')
+      rchCap('the map is still warming up — tap again in a few seconds');
+    else rchCap('reach — '+String(b.error).slice(0,80));
+    return;
+  }
+  rchPaint(b);
+}
+
+function rchPaint(b){
+  rchClear();
+  const g=document.createElementNS(SVGNS,'g');
+  g.setAttribute('pointer-events','none');
+  svg.appendChild(g);RCH.layer=g;
+  const seq=++RCH.paintSeq;
+  const edges=b.edges_e6||[];
+  const km=(b.distance_km||0).toLocaleString('en-IN',{maximumFractionDigits:1});
+  let cap=`${RCH.mode} · ≤${RCH.budget} µg dust — ${km} km of roads reachable · ${(b.edge_count||0).toLocaleString('en-IN')} road segments drawn`;
+  if(b.truncated)cap+=' · reach stopped early — the engine hit its limit';
+  if(b.edge_partial)cap+=` · the map shows a uniform sample of ${(b.edges_e6.length||0).toLocaleString('en-IN')} of them`;
+  /* the decode+paint is chunked across frames — a 90k-edge payload was a
+     ~150 ms main-thread block as one path; now each frame decodes only
+     what it can paint inside its budget. the caption counts honestly
+     while it flies; a newer solve/clear aborts mid-way. */
+  const mkPath=d=>{
+    const p=document.createElementNS(SVGNS,'path');
+    p.setAttribute('d',d);
+    p.setAttribute('fill','none');
+    p.setAttribute('stroke','rgba(22,24,29,.5)');
+    p.setAttribute('stroke-width','0.04');  /* ~40 m — ink hairlines */
+    p.setAttribute('stroke-linejoin','round');
+    p.setAttribute('stroke-linecap','round');
+    g.appendChild(p);
+  };
+  const finish=()=>{
+    if(RCH.origin){
+      const c=document.createElementNS(SVGNS,'circle');
+      c.setAttribute('cx',X(RCH.origin.lon));
+      c.setAttribute('cy',Y(RCH.origin.lat));
+      c.setAttribute('r','0.22');c.setAttribute('fill','var(--ink)');
+      g.appendChild(c);
+    }
+    rchCap(cap);
+    let n='every ink line is a real road — solved by the engine, never smoothed';
+    if(b.field_age_s!=null)n+=` · the map was ${Math.floor(b.field_age_s/60)} min old`;
+    rchNote(n);
+    if(window.__m&&__m.paint)__m.paint.done=true;
+  };
+  if(!edges.length){mkPath('M0 0');finish();return}
+  rchCap(cap+` · drawing 0/${edges.length.toLocaleString('en-IN')}`);
+  let i=0;
+  const step=()=>{
+    if(seq!==RCH.paintSeq||!g.isConnected)return;
+    const t0=performance.now();
+    let d='';
+    do{
+      const e=edges[i++];
+      for(let j=0;j+1<e.length;j+=2)
+        d+=(j?'L':'M')+X(e[j]/1e6).toFixed(2)+' '+Y(e[j+1]/1e6).toFixed(2);
+    }while(i<edges.length&&(i%1500||performance.now()-t0<12));
+    mkPath(d);
+    if(i<edges.length){
+      rchCap(cap+` · drawing ${i.toLocaleString('en-IN')}/${edges.length.toLocaleString('en-IN')}`);
+      requestAnimationFrame(step);
+    }else finish();
+  };
+  requestAnimationFrame(step);
+}
+
+async function rchInit(){
+  const row=document.getElementById('rch');if(!row)return;
+  rchUI.row=row;
+  rchUI.arm=document.getElementById('rchArm');
+  rchUI.modes=document.getElementById('rchModes');
+  rchUI.budgets=document.getElementById('rchBudgets');
+  rchUI.cap=document.getElementById('rchCap');
+  rchUI.load=document.getElementById('rchLoad');
+  rchUI.note=document.getElementById('rchNote');
+  /* a zero-budget probe costs nothing on the server and doubles as the
+     availability check — a 404/network failure keeps the row hidden;
+     a typed engine_unavailable still means the endpoint exists */
+  try{
+    const r=await fetch('/v2/reach?lat=28.6139&lon=77.2090&mode=walk&budget_ug=0',
+      {signal:AbortSignal.timeout(10000)});
+    if(!r.ok)return;
+    const b=await r.json();
+    if(!b||typeof b.edge_count!=='number'||typeof b.mode!=='string')return;
+  }catch(_){return}
+  rchUI.modes.innerHTML=RCH_MODES.map(m=>
+    `<button type="button" data-m="${m}"${m===RCH.mode?' class="on"':''}>${m}</button>`).join('');
+  rchUI.budgets.innerHTML=RCH_BUDGETS.map(v=>
+    `<button type="button" data-b="${v}"${v===RCH.budget?' class="on"':''}>≤${v} <span style="text-transform:none">µg</span></button>`).join('');
+  rchUI.modes.addEventListener('click',e=>{const b=e.target.closest('button[data-m]');
+    if(!b)return;RCH.mode=b.dataset.m;
+    rchUI.modes.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    if(RCH.origin)rchSolve()});
+  rchUI.budgets.addEventListener('click',e=>{const b=e.target.closest('button[data-b]');
+    if(!b)return;RCH.budget=+b.dataset.b;
+    rchUI.budgets.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    if(RCH.origin)rchSolve()});
+  rchUI.arm.addEventListener('click',()=>RCH.armed?rchDisarm():rchArm());
+  svg.addEventListener('pointerdown',rchClick,true);
+  rchNote('pick a mode and a dust budget — a cigarette is ≈316 <span style="text-transform:none">µg</span> — then press the button and tap the map')
+  row.hidden=false;
+}
+
+/* ---------- the days ahead — /v2/outlook under the same field ----------
+   one row of served days, painted as served: the mid is the day-mean,
+   the range is the served band, ghosted cells are where the live anchor
+   no longer reaches and only the raw model still speaks. a day whose
+   first ist hour sits inside the scrubber's 12 h reach jumps the frame
+   to it; anything further only writes its detail line — nothing here
+   invents a surface the horizon doesn't carry. an unreachable endpoint
+   keeps the row hidden, like the other controls. */
+const OUT={days:null,gen:0,best:null,sel:null,model:''};
+const outUI={};
+const OUT_MON=['jan','feb','mar','apr','may','jun',
+               'jul','aug','sep','oct','nov','dec'];
+const bandCol=n=>{const b=BANDS.find(b=>b[2]===n);return b?b[3]:NODATA};
+const outDate=s=>{const p=String(s||'').split('-');
+  return p.length===3?OUT_MON[+p[1]-1]+' '+(+p[2]):s};
+/* the day's first ist hour inside the scrubber's reach, else null */
+function outHour(dy){
+  const t0=Date.parse(dy.date_ist+'T00:00:00+05:30');if(isNaN(t0))return null;
+  const h=Math.max(0,Math.ceil((t0-OUT.gen)/36e5));
+  return h<=TL_MAX?h:null}
+function outDetail(dy){
+  const bits=[`${dy.label} — avg fine dust ~${Math.round(dy.pm25_mid)} µg/m³`];
+  if(dy.pm25_lo!=null&&dy.pm25_hi!=null)
+    bits[0]+=` (somewhere between ${Math.round(dy.pm25_lo)}–${Math.round(dy.pm25_hi)})`;
+  const cw=dy.cleanest_window;
+  if(cw&&cw.start_label)
+    bits.push(`cleanest ${cw.start_label}–${cw.end_label} ~${Math.round(cw.pm25_mid)}`);
+  const hh=dy.heavy_hours_ist||[];
+  if(hh.length)bits.push(`worst ${hh.length} h: ${hh[0]}–${hh[hh.length-1]}`);
+  if(dy.partial&&dy.n_hours!=null)bits.push(`only the first ~${dy.n_hours} h are forecast`);
+  if(dy.confidence==='lo')bits.push('model estimate only');
+  return bits.join(' · ')}
+async function outLoad(){
+  if(!outUI.row)return;
+  let d=null;
+  try{const r=await fetch('/v2/outlook?lat=28.63&lon=77.22',
+      {signal:AbortSignal.timeout(15000)});                    /* the page's own bias point */
+      if(r.ok)d=await r.json()}catch(_){}
+  if(!d||!Array.isArray(d.days)||!d.days.length)return;         /* keep last paint / stay hidden */
+  OUT.days=d.days.slice(0,5);
+  OUT.gen=Date.parse(d.generated_ist)||Date.now();
+  OUT.best=d.best_day&&d.best_day.date_ist;
+  OUT.model=(d.model||'').toLowerCase();
+  if(OUT.sel&&!OUT.days.some(x=>x.date_ist===OUT.sel))OUT.sel=null;
+  outUI.row.hidden=false;
+  outUI.row_.innerHTML=OUT.days.map((dy,di)=>{
+    const lo=dy.confidence==='lo';
+    const meta=[dy.band,
+      dy.partial&&dy.n_hours!=null?`first ~${dy.n_hours}h only`:null,
+      OUT.best===dy.date_ist?'least-bad':null,
+      lo?'model estimate':null].filter(Boolean).join(' · ');
+    const on=OUT.sel===dy.date_ist;
+    /* today = the deep wash (26% band) + band-edge hairline; the
+       breathing ring moved up to the today card — one ambient motion
+       per page, and the hero owns it now */
+    const col=dy.band?bandCol(dy.band):null;
+    const dw=col?washHex(col,di===0?.74:.78):null;
+    const today=di===0;
+    const st=(dw?`--dw:${dw};`:'')
+      +(today?`--de:${col?washHex(col,.60):'var(--line)'}`:'');
+    return `<button type="button" class="day${lo?' lo':''}${on?' on':''}"
+      data-d="${esc(dy.date_ist)}" aria-pressed="${on}"
+      ${st?`style="${st}"`:''}>
+      <span class="dl">${esc(dy.label)}<small>${esc(outDate(dy.date_ist))}</small></span>
+      <span class="dv">${dy.pm25_mid!=null?Math.round(dy.pm25_mid):'—'}<i style="background:${bandCol(dy.band)}"></i></span>
+      <span class="dr">${dy.pm25_lo!=null&&dy.pm25_hi!=null?Math.round(dy.pm25_lo)+'–'+Math.round(dy.pm25_hi):'no band'}</span>
+      <span class="dm">${esc(meta)}</span></button>`}).join('');
+  outUI.cap.textContent=d.verdict||'';
+  const sel=OUT.days.find(x=>x.date_ist===OUT.sel);
+  outUI.note.textContent=sel?outDetail(sel):OUT.model}
+function outInit(){
+  const row=document.getElementById('days');if(!row)return;
+  outUI.row=row;outUI.row_=document.getElementById('dayRow');
+  outUI.cap=document.getElementById('daysCap');
+  outUI.note=document.getElementById('daysNote');
+  outUI.row_.addEventListener('click',e=>{
+    const b=e.target.closest('button.day');if(!b)return;
+    const dy=(OUT.days||[]).find(x=>x.date_ist===b.dataset.d);if(!dy)return;
+    OUT.sel=OUT.sel===dy.date_ist?null:dy.date_ist;   /* same day again releases */
+    outUI.row_.querySelectorAll('.day').forEach(x=>{
+      const on=x.dataset.d===OUT.sel;
+      x.classList.toggle('on',on);
+      x.setAttribute('aria-pressed',on?'true':'false')});
+    outUI.note.textContent=OUT.sel?outDetail(dy):OUT.model;
+    const h=OUT.sel?outHour(dy):null;
+    /* inside the scrubber's 12 h reach, jump its frame to that day's
+       first hour; further out the detail line is the whole answer */
+    if(h!=null&&tlUI.row&&!tlUI.row.hidden){tlSetHour(h);tlShow(h)}});
+}
+
+/* ---------- CPCB legend ---------- */
+function paintChips(){
+  document.getElementById('chips').innerHTML=
+    BANDS.map(([lo,hi,c,col])=>
+      `<div class="chip"><i style="background:${col}"></i>${c} ${lo}–${hi}</div>`).join('')+
+    `<div class="chip"><i style="background:${NODATA}"></i>no live read</div>`;
+}
+
+/* ---------- district fills ---------- */
+function paintDistricts(rows){
+  const byName={};rows.forEach(r=>byName[r.name]=r);
+  for(const f of FEATS){
+    const d=byName[f.properties.name];
+    f._data=d||null;
+    f._path.setAttribute('fill',d?bandOf(d.aqi)[2]:NODATA);
+    f._path.setAttribute('fill-opacity',d&&d.aqi!=null?'0.86':'0.55');
+  }
+  if(selName){const f=FEATS.find(f=>f.properties.name===selName);if(f)showDetail(f)}
+}
+
+/* lo–hi spread of the served map squares — the honest range, shared by
+   the today card and the ticker */
+function cellRange(){let lo=1e9,hi=-1e9,n=0;
+  for(const ft of FEAT_CELLS){const v=(ft.properties||{}).pm25;
+    if(v==null)continue;n++;if(v<lo)lo=v;if(v>hi)hi=v}
+  const f1=v=>(+v).toFixed(1);
+  return n?`${f1(lo)}–${f1(hi)}`:null}
+
+function paintTicker(a,cy,t,ad,nd){
+  const f1=v=>v==null?'—':(+v).toFixed(1);
+  /* strip reads the SAME basis the choropleth paints — the ambient field
+     aggregate from /v2/city (district means of field cells), never the
+     breathing-zone point estimate (ambient×smoke modifier) that /aqi
+     serves at one coordinate. map and strip can no longer diverge. */
+  const sp=(cy&&cy.species)||{},pm=(cy&&cy.pm25_stats)||{};
+  const rng=cellRange()||'—';
+  const items=[
+    [`fine dust (pm2.5) · ncr avg`,`${f1(pm.mean)} µg/m³`,
+      'the main pollutant delhi breathes — the same number the map is coloured by'],
+    [`coarse dust (pm10) · ncr avg`,`${f1(sp.pm10&&sp.pm10.mean)} µg/m³`,
+      'bigger particles — road dust and construction'],
+    [`no₂ · ncr avg`,`${f1(sp.nitrogen_dioxide&&sp.nitrogen_dioxide.mean)} µg/m³`,
+      'nitrogen dioxide — the traffic-exhaust gas'],
+    [`o₃ · ncr avg`,`${f1(sp.ozone&&sp.ozone.mean)} µg/m³`,
+      'ozone — formed in sunlight from exhaust and fumes'],
+    [`co · ncr avg`,`${f1(sp.carbon_monoxide&&sp.carbon_monoxide.mean)} µg/m³`,
+      'carbon monoxide — from exhaust and burning'],
+    [`so₂ · ncr avg`,`${f1(sp.sulphur_dioxide&&sp.sulphur_dioxide.mean)} µg/m³`,
+      'sulphur dioxide — from industry and coal'],
+    [`us aqi · ncr avg`,`${sp.us_aqi&&sp.us_aqi.mean!=null?Math.round(+sp.us_aqi.mean):'—'}`,
+      'the same air on the american 0–500 scale'],
+    [`fine dust · lowest–highest`,`${rng}`,
+      'the spread of the estimate across the whole map'],
+    [`wind`,windNow?`${Math.round(windNow.speed_kmh)} km/h from the ${compass(windNow.from_deg)}`:'—',
+      'the direction the dust is blowing from'],
+    [`govt monitors`,`${a.field?.station_readings??'—'} live`,
+      'official station readings feeding this map right now'],
+    [`smog alert`,(()=>{const g=cy&&cy.grap;
+        if(!g||g.equivalent_stage==null)return'—';
+        return g.equivalent_stage
+          ?['','I','II','III','IV'][g.equivalent_stage]
+          :'below stage i'})(),
+      'grap — the smog-emergency stage this air maps to (aqi of the live field, computed here — the official stage is caqm\'s call)'],
+    [`districts`,`${nd} live`,'districts with a live reading right now'],
+    /* F8 — 'today' buckets on the UTC day: the qualifier is part of the
+       label, matching the ledger head's 'counted since utc midnight' */
+    [`shared trips · utc day`,`${IN(t.obs_24h)}`],
+    [`km shared · utc day`,`${IN(t.km_24h)}`],
+    [`street stretches seen`,`${IN(t.cells_tracked)}`,
+      'street stretches crossed by shared trips in the last 3 days'],
+    [`streets ≥3 phones`,`${IN(t.corridors_publishable)}`,
+      'a stretch is shown publicly only after 3 different phones cross it'],
+    [`map rebuilt`,`${ad.field_age_s!=null?Math.floor(ad.field_age_s/60)+' min ago':'—'}`],
+    [`next rebuild`,`${ad.refresh_in_s!=null?'in '+Math.floor(ad.refresh_in_s/60)+' min':'—'}`]];
+  /* static strip — the same live numbers, standing still; nothing on
+     this page loops */
+  document.getElementById('ticker').innerHTML=
+    items.map(([k,v,tip])=>
+      `<span${tip?` title="${esc(tip)}"`:''}>${k} <b>${v}</b></span>`
+    ).join('<i>·</i>');
+}
+
+/* ---------- provenance minimap — district outlines + station anchors - */
+/* station dots come from the field's own live instrument list
+   (/v2/city field.stations — the readings behind station_readings),
+   refreshed with every load; a cold/snapshot field paints no dots —
+   a painted-in station list is never served */
+let liveStations=[];
+function paintMini(){
+  const mm=document.getElementById('minimap'),mx=mm.getContext('2d');
+  const r=mm.getBoundingClientRect();if(!r.width)return;
+  const d=window.devicePixelRatio||1;
+  mm.width=r.width*d;mm.height=r.height*d;mx.setTransform(d,0,0,d,0,0);
+  const mW=r.width,mH=r.height,pad=16;
+  // reuse the choropleth's own projection — fit the district extent
+  const k=Math.min((mW-2*pad)/VW,(mH-2*pad)/VH);
+  const ox=pad+(mW-2*pad-VW*k)/2, oy=pad+(mH-2*pad-VH*k)/2;
+  const px=lon=>ox+X(lon)*k, py=lat=>oy+Y(lat)*k;
+  mx.strokeStyle='rgba(101,112,127,.4)';mx.lineWidth=1;
+  for(const f of FEATS){
+    mx.beginPath();
+    f._rings.forEach(ring=>ring.forEach(([lo,la],i)=>
+      i?mx.lineTo(px(lo),py(la)):mx.moveTo(px(lo),py(la))));
+    mx.stroke()}
+  for(const s of liveStations){
+    const x=px(s.lon),y=py(s.lat);
+    if(x<0||x>mW||y<0||y>mH)continue;
+    mx.fillStyle='rgba(58,104,68,.8)';mx.fillRect(x-1.5,y-1.5,3,3)}
+}
+
+/* ---------- data ---------- */
+/* null until /aqi answers — the ticker would rather show '—' than a
+   made-up wind vector */
+let windNow=null;
+let refreshMs=60000;
+
+async function loadGeo(){
+  const g=await fetch('/ncr.geojson',{signal:AbortSignal.timeout(15000)})
+    .then(r=>r.json());
+  FEATS=(g.features||[]).map(f=>{
+    const t=f.geometry&&f.geometry.type,c=f.geometry&&f.geometry.coordinates||[];
+    f._rings=(t==='Polygon'?[c[0]]:t==='MultiPolygon'?c.map(p=>p[0]):[]).filter(Boolean);
+    return f}).filter(f=>f._rings.length);
+  buildMap();paintChips();
+}
+
+async function load(){
+  try{
+    /* per-feed settle — during a deploy one endpoint can die while the
+       others serve; every section keeps what it can honestly paint
+       rather than the whole page falling back to placeholders */
+    const jget=u=>fetch(u,{signal:AbortSignal.timeout(15000)})
+      .then(r=>r.ok?r.json():null).catch(()=>null);   /* per-feed honest null */
+    let [g,a,cy,dd]=await Promise.all([
+      jget('/grid?cells=34'),jget('/aqi?lat=28.63&lon=77.22'),
+      jget('/v2/city'),jget('/v2/districts')]);
+    outLoad();   /* the days-ahead strip — an independent feed with its
+                    own honesty; it never takes this page's feeds down */
+    rcLoad();    /* the recorded archive strip — same rule */
+    if(!g&&!a&&!cy&&!dd)throw new Error('all feeds down');
+    if(g&&g.features){FEAT_CELLS=g.features;
+      /* a fresh field epoch re-anchors the horizon surface too — the
+         timeline frames fetched under the previous build are stale now */
+      const ep=g.properties&&g.properties.cell_epoch;
+      if(ep&&TL.epoch&&ep[0]!==TL.epoch[1])tlInvalidate();
+      else tlAged();
+      if(!TL.active&&!RC.active)paintCells(g.features)}   /* a forecast or
+        recorded frame stays put through live refreshes — the '← now' /
+        '← live' link hands the layer back */
+    else tlAged()
+    if(dd)paintDistricts(dd.districts||[]);
+    a=a||{};
+    /* the causal read — one honest line under the hero, straight from
+       /v2/why via the city payload; absent line = nothing claimed */
+    const whyLn=(cy.why&&cy.why.line)||'';
+    const wl=document.getElementById('whyline');
+    if(wl){if(whyLn){setTxt('whytxt',whyLn);wl.hidden=false}else{wl.hidden=true}}
+    /* the legal frame, same honest-line register: which CAQM stage the
+       served field maps to under the GRAP rules — 'maps to', never
+       'in effect' (the official stage is CAQM's to declare). Absent
+       when /v2/city can't map the field — honest degrade */
+    const gl=document.getElementById('grapline');
+    if(gl){
+      const gp=(cy&&cy.grap)||null;
+      if(gp&&gp.equivalent_stage!=null){
+        const R=['','I','II','III','IV'][gp.equivalent_stage]||gp.equivalent_stage;
+        document.getElementById('graptxt').innerHTML=
+          (gp.equivalent_stage
+            ?`this air reads like <em>GRAP stage ${R}</em> — aqi ${gp.aqi} on the live city map`
+            :`today's air sits below <em>GRAP stage I</em> — aqi ${gp.aqi} on the live city map`)
+          +` · our read, not the official caqm call`;
+        gl.hidden=false;
+      }else{gl.hidden=true}
+    }
+    /* the parali/news line — the belt's fires + the carrying wind + the
+       day's drivers in plain words. Every figure is a measured field
+       (no free licensable news feed exists); 'measured, not reported'
+       says so on the card. Empty = nothing claimed. */
+    const noteLn=(cy.why&&cy.why.cause_note)||'';
+    const nl=document.getElementById('noteline');
+    if(nl){
+      /* the story shows its age — the freshest claim it can make is the
+         staler of its ingredient reads (server story_age_s) */
+      const sa=cy.why&&cy.why.story_age_s;
+      const ageBit=sa==null?''
+        :` · updated ${sa<90?'just now':Math.round(sa/60)+' min ago'}`;
+      if(noteLn){setTxt('notetxt',noteLn+ageBit+' · measured, not reported');nl.hidden=false}
+      else{nl.hidden=true}
+    }
+    if(a.wind&&a.wind.speed_kmh!=null)windNow=a.wind;  /* null wind = unknown, keep last */
+    /* 'connecting…' resolves to whichever feed actually answered —
+       never left hanging when a sibling endpoint came through */
+    /* the source token ('open-meteo/cams' etc) in words a reader
+       gets — the provenance detail stays in the admin console */
+    const srcWord=s=>/cams|meteo|model/i.test(s||'')?'the satellite model'
+      :/station|waqi|openaq|cpcb|dpcc/i.test(s||'')?'live stations'
+      :(s||'—');
+    setTxt('src',a.field
+      ?`${srcWord(a.field.source)} · ${a.field.station_readings??'?'} live stations · ${a.field.samples??'?'} map squares`+
+       `${a.field.kriging==='on'?' · the gaps estimated between them':''}`
+      :(cy?'shared-trips numbers live · station feed unreachable — retrying'
+        :'station feed unreachable — retrying'));
+    /* wind expires ~31 min server-side — the tag carries its age the
+       same way 'map rebuilt N min ago' does once it outlives the
+       field's own cadence */
+    setTxt('windtag',windNow
+      ?`wind ${Math.round(windNow.speed_kmh)} km/h · blowing from the ${compass(windNow.from_deg)}`+
+       (windNow.age_s>900?` · ${Math.round(windNow.age_s/60)}m old`:'')
+      :'wind —');
+    if(!cy){   /* the ledger/corridor numbers all ride /v2/city */
+      document.getElementById('corridors').innerHTML=
+        '<tr><th></th><th>street stretch</th><th style="text-align:right">trips</th><th style="text-align:right">fine dust per trip</th><th>vs typical</th></tr>'+
+        '<tr><td colspan="5" style="color:var(--ink3)">the street feed is unreachable — retrying</td></tr>';
+      /* the today card degrades honestly too */
+      setTxt('hBand','live feed unreachable');
+      setTxt('hWhat','the city feed is resting — the map below may still answer');
+      return;
+    }
+    /* ---- the today card: live mean + band + honest range + districts --
+       every figure on it is a served field: pm25_stats.mean (the NCR
+       lattice mean), grap.aqi (the server's own cpcb aqi of that mean,
+       cpcbOf() as the same-scale fallback), the lo–hi spread of the
+       served map squares, and the district extremes off /v2/districts */
+    const ht=document.getElementById('hToday');
+    const pm25s=cy.pm25_stats||{};
+    if(pm25s.mean!=null){
+      const mean=+pm25s.mean;
+      const aqi=(cy.grap&&cy.grap.aqi!=null)?cy.grap.aqi:Math.round(cpcbOf(mean));
+      const band=bandOf(aqi);
+      ht.style.setProperty('--hw',washHex(band[2],.74));
+      ht.style.setProperty('--ht',washHex(band[2],.60));
+      ht.style.setProperty('--he',inkHex(band[2]));
+      ht.classList.add('breathe');
+      setTxt('hMean',Math.round(mean));
+      setTxt('hBand',`${band[1]} · aqi ${aqi}`);
+      const rng=cellRange();
+      document.getElementById('hRange').innerHTML=rng?`across the map: ${rng} <span style="text-transform:none">µg/m³</span>`:'the map range is still loading';
+      /* every polygon with a live read — the same denominator the
+         ticker's 'districts live' chip counts (districts + their
+         sub-district wards), so hero and ticker can't disagree */
+      const dl=(dd&&dd.districts||[]).filter(x=>x.aqi!=null);
+      if(dl.length){
+        const lo=dl.reduce((a,b)=>b.aqi<a.aqi?b:a);
+        const hi=dl.reduce((a,b)=>b.aqi>a.aqi?b:a);
+        setTxt('hDist',`${dl.length} districts live · easiest ${lo.name.toLowerCase()} ${lo.aqi} · heaviest ${hi.name.toLowerCase()} ${hi.aqi}`);
+      }else setTxt('hDist','district feed resting');
+    }else{
+      setTxt('hBand','the live field is still warming');
+      setTxt('hRange','');setTxt('hDist','');
+    }
+    const days=(cy.trips&&cy.trips.days)||{};
+    const dayKeys=Object.keys(days).sort();
+    /* 'today' keys on the ledger's own UTC day — trips.today_key is the
+       server's gmtime, the same basis the store writes (the client-side
+       fallback computes the same basis for older payloads) — and never
+       on the last populated day: an absent key is the honest 'nothing
+       shared yet today' state, not yesterday's numbers under a TODAY
+       label */
+    const tkey=(cy.trips&&cy.trips.today_key)||new Date().toISOString().slice(0,10);
+    const lastKey=dayKeys.length?dayKeys[dayKeys.length-1]:null;
+    const latest=(cy.trips&&cy.trips.today)||days[tkey]||{};
+    const t={
+      dose_ug_24h: latest.dose_ug||0,
+      obs_24h: latest.trips||0,
+      obs_total: dayKeys.reduce((s,k)=>s+(days[k].trips||0),0),
+      km_24h: latest.km||0,
+      cells_tracked: cy.trips?.cells_tracked||0,
+      corridors_publishable: cy.trips?.publishable_corridors??cy.trips?.corridors_publishable??0,
+    };
+    const ad={corridors:cy.corridors||[],field_age_s:cy.field_age_s,
+              refresh_in_s:cy.field?.refresh_in_s,freshness:cy.freshness};
+    /* breaths divides the day's donated dose by the AMBIENT field mean —
+       same basis as the map — never the smoke-adjusted point estimate */
+    const pm=(cy.pm25_stats&&cy.pm25_stats.mean)||a.pm25||0;
+    document.getElementById('breaths').textContent=
+      pm>0?Math.floor((t.dose_ug_24h||0)/pm*2000).toLocaleString('en-IN'):'—';
+    setTxt('doseug',IN(t.dose_ug_24h));
+    setTxt('obs',IN(t.obs_24h));
+    setTxt('km',IN(t.km_24h));setTxt('contrib',IN(t.obs_total));
+    setTxt('corr',IN(t.corridors_publishable));
+    setTxt('cellstr',IN(t.cells_tracked));
+    setTxt('contribw',dayKeys.length?`since ${dayKeys[0]}`:'so far');
+    const co2v=latest.co2_kg_mid,pmv=latest.pm25_g_mid;
+    if(co2v!=null&&(latest.trips||0)>0){
+      setTxt('co2',(+co2v).toFixed(co2v<1?2:1));
+      const md=latest.modes?Object.entries(latest.modes).sort((a,b)=>b[1]-a[1])
+        .map(([m,n])=>`${m} ${n}`).join(' · '):'';
+      document.getElementById('co2d').innerHTML=
+        `tailpipe pm2.5 <b>${pmv!=null?(+pmv).toFixed(pmv<1?3:1)+' g':'—'}</b> · central estimate`+
+        `${md?` · by mode: ${md}`:''}`;
+    }else{
+      setTxt('co2','—');
+      setTxt('co2d',(latest.trips||0)>0
+        ?'shared trips today, but none carried an exhaust estimate'
+        :(lastKey?`no shared trips today — last shared ${lastKey} · this fills in as delhi moves`
+          :'no shared trips today — this fills in as delhi moves'));
+    }
+    setTxt('nstations',a.field?.station_readings>0?a.field.station_readings:'no');
+    liveStations=(cy.field&&Array.isArray(cy.field.stations))?cy.field.stations:[];
+    setTxt('fieldmeta',`map rebuilt ${Math.round((a.field?.age_s||0)/60)} min ago · nearest read ~${a.nearest_sample_km??'—'} km away · ${a.calibration?.mae_ug?`usually within ±${a.calibration.mae_ug} µg/m³`:'error band not yet measured'}`);
+    paintTicker(a,cy,t,ad,(dd&&dd.districts||[]).filter(d=>d.aqi!=null).length);
+    paintMini();
+    const rows=(ad.corridors||[]).map((c,i)=>
+      `<tr><td class="rank">${String(i+1).padStart(2,'0')}</td>
+       <td class="cell">${esc(c.name?tName(c.name):`${(+c.lat).toFixed(3)}°N · ${(+c.lon).toFixed(3)}°E`)}</td>
+       <td class="num">${IN(c.trips)}</td>
+       <td class="num"><span class="dose-chip">${IN(Math.round(c.avg_dose_ug))} µg</span></td>
+       <td><span class="modep">${c.relative?c.relative+' than typical':'—'}</span></td></tr>`).join('');
+    document.getElementById('corridors').innerHTML=
+      '<tr><th></th><th>street stretch</th><th style="text-align:right">trips</th><th style="text-align:right">fine dust per trip</th><th>vs typical</th></tr>'+
+      (rows||'<tr><td colspan="5" style="color:var(--ink4)">no street has enough phones yet — this fills in as delhi moves</td></tr>');
+    /* the served set is the publishable store's heaviest+lightest ends —
+       say so when it isn't the whole count the stat above claims */
+    const nCorr=(ad.corridors||[]).length,nPub=t.corridors_publishable;
+    const cn=document.getElementById('corrNote');
+    if(cn){cn.hidden=!nCorr;
+      cn.textContent=nCorr&&nPub>nCorr
+        ?`showing ${nCorr} of ${nPub} stretches — the heaviest and lightest ends by dose`
+        :(nCorr?`every stretch with ≥3 phones, dose-sorted`:'');}
+    setTxt('stamp','updated '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})+' ist');
+    /* cadence from the field itself — refresh_in_s rides /v2/city, but
+       the donation counters (dose/km/trips today) don't wait for a
+       field rebuild: they move the moment a trip lands. A full 15-min
+       sleep let them lag the page's own 15-min law, so the wait caps
+       at 10 min — the field cadence still sets the floor, nothing here
+       claims newer than its source. */
+    const rs=Math.min(
+      (ad.refresh_in_s&&ad.refresh_in_s>=30)?ad.refresh_in_s*1000:60000,
+      600000);
+    if(rs!==refreshMs){refreshMs=rs;schedule()}
+  }catch(e){setTxt('stamp','reconnecting…');setTxt('src','feeds unreachable — retrying');
+    console.error('city load',e)}
+}
+
+function setTxt(id,v){const e=document.getElementById(id);if(e)e.textContent=v}
+function compass(d){const D=['N','NE','E','SE','S','SW','W','NW'];
+  return D[Math.round(d/45)%8]}
+function clock(){setTxt('clock',new Date().toLocaleTimeString('en-IN',
+  {timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})+' IST')}
+
+let timer=null;
+function schedule(){clearInterval(timer);timer=setInterval(load,refreshMs)}
+const io=new IntersectionObserver(es=>es.forEach(e=>
+  e.isIntersecting&&e.target.classList.add('in')),{threshold:0.12});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+
+loadGeo().then(load).catch(()=>{
+  const t=document.querySelector('.m-tag');
+  if(t)t.innerHTML='<b>district boundaries unreachable</b><br>the numbers below still load';
+  load()});
+tlInit();
+rchInit();
+rcInit();
+outInit();
+clock();schedule();
+setInterval(clock,30000);
+window.addEventListener('resize',()=>{paintMini()});
+</script>
+</body>
+</html>
