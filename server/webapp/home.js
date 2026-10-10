@@ -78,15 +78,16 @@ function daypart(h) {
   return 'night';
 }
 
+/* freshness → up to two tidy right-aligned lines (never a mid-phrase wrap) */
 function freshness(aqi) {
   const f = aqi && aqi.field;
   if (!f) return null;
   const ep = f.built_epoch || (f.age_s != null ? Date.now() / 1000 - f.age_s : null);
-  const bits = [];
-  if (ep) bits.push(f.stale ? `stale · ${A.fmt.ago(ep)}` : A.fmt.ago(ep));
-  else if (f.stale) bits.push('stale');
-  if (aqi.nearest_station_km != null) bits.push(`station ${A.fmt.km(aqi.nearest_station_km)}`);
-  return bits.filter(Boolean).join(' · ') || null;
+  const lines = [];
+  if (ep) lines.push(f.stale ? `stale · ${A.fmt.ago(ep)}` : A.fmt.ago(ep));
+  else if (f.stale) lines.push('stale');
+  if (aqi.nearest_station_km != null) lines.push(`station ${A.fmt.km(aqi.nearest_station_km)}`);
+  return lines.join('<br>') || null;
 }
 
 function renderAir(el) {
@@ -157,7 +158,7 @@ function renderAir(el) {
   } else {
     whyEl.textContent = (cur.why && cur.why.line) || '';
   }
-  ageEl.textContent = freshness(aqi) || '';
+  ageEl.innerHTML = freshness(aqi) || '';
 }
 
 async function loadAir(el) {
@@ -264,7 +265,9 @@ A.screen('home', {
     const onTap = (e) => {
       if (A.current() !== 'home') return;
       if (A.geo.consent !== 'picked') return;    // real gps wins
-      applyPos({ lat: e.detail.lat, lon: e.detail.lon });
+      const p = { lat: e.detail.lat, lon: e.detail.lon, t: Date.now() };
+      A.geo.pos = p; A.store.set('pos', p);      // their spot survives relaunch
+      applyPos(p);
     };
     const onField = () => renderAir(el);          // field rebuilt — refresh age text
     document.addEventListener('alive:location', onLoc);
@@ -277,7 +280,7 @@ A.screen('home', {
     const tick = setInterval(() => {
       if (el.isConnected && cur.tried && cur.aqi && cur.aqi.pm25 != null) {
         const ageEl = el.querySelector('.air-age');
-        if (ageEl) ageEl.textContent = freshness(cur.aqi) || '';
+        if (ageEl) ageEl.innerHTML = freshness(cur.aqi) || '';
       }
     }, TICK_MS);
 
