@@ -576,7 +576,7 @@ html.ilock,html.ilock body{overflow:hidden;height:100%;overscroll-behavior:none}
         <div class="simfit" id="simfit">
           <div class="dev simdev" id="simdev">
             <div class="dscr">
-              <iframe id="simFrame" src="/static/sim/index.html" title="Alive — live preview" loading="eager" allow="geolocation"></iframe>
+              <iframe id="simFrame" src="/app/" title="Alive — live preview" loading="eager" allow="geolocation"></iframe>
               <div class="simnote" id="simNote" hidden>the live preview is being assembled —<br>check back shortly.</div>
             </div>
           </div>
@@ -591,6 +591,7 @@ html.ilock,html.ilock body{overflow:hidden;height:100%;overscroll-behavior:none}
         <button class="openbtn" id="simOpen" type="button">Try the app — it's live</button>
       </div>
       <div class="thint">Click to use — the app, running live</div>
+      <a class="openbtn" href="/app/" style="display:block;text-align:center;text-decoration:none;margin-top:8px">open the app →</a>
     </div>
   </div>
 </section>
@@ -1121,7 +1122,7 @@ else{
    desktop: the same ghost phone, iframe lazy-mounted near the viewport.
    phones: a poster + a fullscreen takeover. the slot exists whether or
    not the sim build has landed — a quiet note stands in if it hasn't. */
-const simURL='/static/sim/index.html';
+const simURL='/app/';
 let simOk=null;
 async function simProbe(){
   if(simOk!=null)return simOk;
