@@ -74,3 +74,4 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Mobile deliverables confirmed from earlier waves: alive-ef758f9-arm64.apk (v9, verified) + iOS reports/shots in docs/lanes/ios-*.
 - Admin gate verified on prod (engine room, token-gated, obscure mount).
 - Pending user approvals: blueprint suggestion (aws-cli venv), alive-webapp-prod-testing SKILL.md. Credential rotation reminder still standing.
+- ~18:55 UTC heartbeat#2: Pawan Bakery acceptance re-verified ON PROD in whereto field — full Shahdara cluster (Jain Confectionary/Modi/Rathor 78BlockB/Hathras/Shagun/Sehgal/Manohar/Harish/Shakti/Shyam Bakery — all "near shahdara"/Mandir Marg), zero CP pastry. Master-prompt acceptance phrase passes live.
