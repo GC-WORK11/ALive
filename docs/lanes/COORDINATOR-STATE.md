@@ -33,3 +33,8 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 5. Re-deploy after each wave; verify /app on CF + Vercel; truth-audit every rendered number vs live JSON.
 6. Credential rotation reminder for final report (keys pasted in chat = compromised).
 7. Memory update at end: webapp-wave2 facts, deploy recipe, rival-tree lesson.
+
+## Deep-search test data (coordinator probing, 16:58 UTC)
+- "Pawan Bakery c block Hanuman mandir Ashok nagar shahdara": /v2/search misses (gives Pawan Plaza pastry 0.5km central). Photon finds "Royal Bakery, Near Hanuman Mandir road, Shahdara" (77.2839,28.6211) — right locality. Fix = better token handling/bias.
+- "Neelanchal dham santnagar": /v2/search, Photon, Nominatim, Overpass-spellings ALL empty — POI likely absent from OSM. Photon resolves "Sant Nagar" localities (77.0912,28.647 west; 77.2495,28.5548 south). Honest UX = offer locality + drop-a-pin, never invent coords.
+- "iskcon east of kailash": /v2/search resolves 3 delhi_index hits incl ISKCON East Delhi (28.56ish) — verified live in whereto.
