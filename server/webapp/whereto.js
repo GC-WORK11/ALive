@@ -1238,10 +1238,10 @@ function openVehicle(ctx) {
   renderVehicle();
 }
 const wizSteps = () => {
+  /* two taps at most: the ride, then its fuel. No year / PUC pages —
+     without them the engine uses the Delhi fleet average, said plainly */
   const s = ['cls'];
   if (needsFuel(S.wiz.cls)) s.push('fuel');
-  if (needsYear(S.wiz.cls)) s.push('year');
-  if (S.wiz.ctx === 'edit' && needsYear(S.wiz.cls)) s.push('puc');
   return s;
 };
 const stepQ = { cls: 'vehicleQ1', fuel: 'vehicleQ2', year: 'vehicleQ3', puc: 'puc_title' };
@@ -1346,7 +1346,7 @@ function bindVehicle() {
       w.cls = k;
       if (!same) { w.fuel = null; w.year = null; w.puc = {}; w.bs = null; }
       /* the saved ride, already described → straight on (trip ctx) */
-      const complete = (!needsFuel(k) || w.fuel) && (!needsYear(k) || w.year);
+      const complete = !needsFuel(k) || w.fuel;
       if (w.ctx === 'trip' && same && complete) { done(false); return; }
       const next = wizSteps()[1];
       if (next) goStep(next); else done(false);

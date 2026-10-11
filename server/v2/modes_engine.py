@@ -61,7 +61,7 @@ _ALIASES = {
 DOSE_SLACK = 1.15            # "still clean" = within +15 % of the least dose
 SAME_DOSE = 0.03             # rows within 3 % dose / fuel and 60 s are
 SAME_ETA_S = 60.0            # "about the same"
-TRAFFIC_BUDGET_S = 3.0       # whole live-traffic fan-out, wall clock
+TRAFFIC_BUDGET_S = 6.0       # whole live-traffic fan-out, wall clock
 TRAFFIC_MAX_ROUTES = 5       # distinct road geometries asked per response
 TRAFFIC_MAX_PTS = 400        # coords sent per geometry (ends always kept)
 JAMS_MAX = 12                # jams echoed per option (response size)
@@ -357,7 +357,10 @@ async def live_traffic(options: list, family_of: Callable, vehicle: str,
         for k in keys]
     done, pending = await asyncio.wait(tasks, timeout=budget_s)
     for p in pending:
-        p.cancel()
+        # a slow reading is NOT thrown away: it finishes in the background
+        # and lands in the provider's 60 s cache, so switching modes on the
+        # same road shows the SAME live time (not a free-flow fallback)
+        p.add_done_callback(lambda f: f.cancelled() or f.exception())
     live_n = 0
     sources = set()
     for k, t in zip(keys, tasks):
