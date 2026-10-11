@@ -364,3 +364,4 @@
 @media (min-width: 720px) {
   .wt-rc { margin-left: 16px; margin-right: 16px }
 }
+.wt-ogap { margin-top: 3px; font-size: 12px; color: #6E7278; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }

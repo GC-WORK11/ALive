@@ -1047,6 +1047,13 @@ function optionCard(o, i, other) {
   for (const fb of fuelBits(o)) extra.push(`<span class="wt-ofuel${S.mode === 'petrol_health' ? ' hl' : ''}">${fb}</span>`);
   const meta = [baseLabel(o), o.distance_km != null ? `${o.distance_km} ${t('unitsKm')}` : null, viaOf(o)].filter(Boolean).join(' · ');
   const why = o.why ? String(o.why).trim() : '';
+  /* honest edge note: the router snapped a far point to the coverage
+     edge — the line on the map really does start/end short. Say so on
+     the card, never let '15 km' read as a 25 km trip. */
+  const gaps = [];
+  if (typeof o.from_gap_km === 'number' && o.from_gap_km >= 1) gaps.push(`route starts ${o.from_gap_km} ${t('unitsKm')} from your point`);
+  if (typeof o.to_gap_km === 'number' && o.to_gap_km >= 1) gaps.push(`route ends ${o.to_gap_km} ${t('unitsKm')} before the destination`);
+  const gapLine = gaps.join(' · ');
   return `<button class="wt-opt${sel ? ' sel' : ''}${other ? ' oth' : ''}" type="button" data-i="${i}" aria-pressed="${sel}">
     <span class="wt-selbg"></span>
     <span class="wt-well">${icon(vehicleGlyph(o.mode), 24, sel ? ACCENT : INK2)}</span>
@@ -1057,6 +1064,7 @@ function optionCard(o, i, other) {
       ${extra.length ? `<span class="wt-oext">${extra.join('<span class="wt-osep">·</span>')}</span>` : ''}
       ${why ? `<span class="wt-owhy">${esc(why)}</span>` : ''}
       <span class="wt-ometa">${esc(meta)}</span>
+      ${gapLine ? `<span class="wt-ogap">${esc(gapLine)}</span>` : ''}
     </span>
   </button>`;
 }
@@ -1390,7 +1398,7 @@ A.screen('whereto', {
     params = params || {};
     /* From = your location by default; To starts empty — a fresh "where to?" */
     if (params.from) S.from = params.from;
-    else if (A.geo && A.geo.pos) S.from = { label: t('yourLocation'), lat: A.geo.pos.lat, lon: A.geo.pos.lon };
+    else if (A.geo && A.geo.pos) S.from = { label: t('yourLocation'), lat: A.geo.pos.lat, lon: A.geo.pos.lon, live: 1 };
     if (params.to) S.to = params.to;
     S.armed = params.arm || 'to';
     if (S.from && S.to) showModes();

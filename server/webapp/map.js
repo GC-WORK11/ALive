@@ -101,7 +101,28 @@ function fallBack(reason) {
   void reason;
 }
 
+/* MapLibre draws with WebGL; a browser with graphics acceleration off (some
+   laptops, hardened browser settings) would otherwise show an empty map —
+   say so plainly instead */
+function webglOK() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGL2RenderingContext && c.getContext('webgl2')) || !!c.getContext('webgl');
+  } catch (e) { return false; }
+}
+function noMapNote() {
+  const el = document.getElementById('map');
+  if (!el || el.querySelector('.map-nogl')) return;
+  const n = document.createElement('div');
+  n.className = 'map-nogl';
+  n.setAttribute('role', 'note');
+  n.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font:15px/1.45 inherit;color:#4A4E57;background:#F2F3F0';
+  n.textContent = "This browser has graphics acceleration (WebGL) turned off, so the map can't draw. Turn on hardware acceleration in your browser settings, or open Alive on your phone — every number still works.";
+  el.appendChild(n);
+}
+
 function init() {
+  if (!webglOK() || !window.maplibregl) { noMapNote(); return; }
   map = new maplibregl.Map({
     container: 'map',
     style: STYLE_URL,

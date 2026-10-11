@@ -39,6 +39,23 @@ async function post(path, body, ms = 30000) {
   } catch (e) { return null; }
 }
 
+/* shared /aqi read — the home hero and the air-map hero must never
+   quote different numbers for the same spot: one fetch per spot per
+   ~2 min, in-flight requests shared so two screens mounting together
+   ride a single call. Failures are never cached (a retry re-fetches). */
+const aqiMemo = new Map();      // key -> {t, j}
+const aqiBusy = new Map();      // key -> Promise
+async function aqiSpot(lat, lon, ms = 9000) {
+  const key = `${(+lat).toFixed(4)},${(+lon).toFixed(4)}`;
+  const hit = aqiMemo.get(key);
+  if (hit && Date.now() - hit.t < 120000) return hit.j;
+  if (aqiBusy.has(key)) return aqiBusy.get(key);
+  const p = get(`/aqi?lat=${(+lat).toFixed(5)}&lon=${(+lon).toFixed(5)}`, ms)
+    .then((j) => { aqiBusy.delete(key); if (j) aqiMemo.set(key, { t: Date.now(), j }); return j; });
+  aqiBusy.set(key, p);
+  return p;
+}
+
 /* ── store ───────────────────────────────────────────────────────── */
 const store = {
   get(k, d = null) {
@@ -251,7 +268,7 @@ function boot() {
 }
 
 window.A = {
-  api: { get, post }, geo, store, fmt, toast, screen, show, back, current, stackIds,
+  api: { get, post }, aqiSpot, geo, store, fmt, toast, screen, show, back, current, stackIds,
   sheetChrome, DELHI, BOUNDS, screensReady: SCREENS,
 };
 

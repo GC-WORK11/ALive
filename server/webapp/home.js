@@ -372,9 +372,12 @@ function spotHtml(d) {
   }
   const dp = A.digipin && A.digipin.encode ? A.digipin.encode(p.lat, p.lon) : null;
   const acc = d.state !== 'pin' && isNum(p.acc) ? `±${Math.max(1, Math.round(p.acc))} m` : null;
-  const parts = [near ? cur.addr.text : null, acc, dp ? `DIGIPIN ${dp}` : null].filter(Boolean);
-  if (!parts.length) return '';
-  return `<div class="hs-spot">${ic('pin', 14, 'hs-spotic')}<span><b class="hs-spotk">You are here</b> ${esc(parts.join(' · '))}</span></div>`;
+  /* the address and the DIGIPIN pinpoint a home: blurred until tapped
+     (screen-share / demo safe); the accuracy stays readable */
+  const secret = [near ? cur.addr.text : null, dp ? `DIGIPIN ${dp}` : null].filter(Boolean);
+  if (!secret.length && !acc) return '';
+  const blur = secret.length ? `<span class="hs-blur">${esc(secret.join(' · '))}</span>` : '';
+  return `<button class="hs-spot${cur.spotShown ? ' shown' : ''}" type="button" data-act="spot" aria-label="${cur.spotShown ? 'hide' : 'show'} your address">${ic('pin', 14, 'hs-spotic')}<span><b class="hs-spotk">You are here</b> ${blur}${blur && acc ? ' · ' : ''}${acc ? esc(acc) : ''}${secret.length ? `<span class="hs-spothint">${cur.spotShown ? 'tap to hide' : 'tap to show'}</span>` : ''}</span></button>`;
 }
 let addrSeq = 0;
 async function refreshAddr(p) {
@@ -482,7 +485,7 @@ async function refresh() {
   const at = ps.pos || A.DELHI;
   if (A.geo.consent === 'granted' && (!ps.pos || !ps.pos.t || Date.now() - ps.pos.t > 60000)) relocate();
   const seq = ++cur.seq;
-  const j = await A.api.get(`/aqi?lat=${at.lat}&lon=${at.lon}`, 8000);
+  const j = await A.aqiSpot(at.lat, at.lon, 8000);
   if (seq !== cur.seq) return;          /* a newer position superseded this read */
   if (j && isNum(j.pm25)) {
     cur.aqi = j; cur.aqiAt = { lat: at.lat, lon: at.lon }; cur.aqiFetchedAt = Date.now(); cur.err = null;
@@ -577,7 +580,7 @@ function refreshSheetBits() {
 function loadIntroRead() {
   if (CS.introRead || CS.introLoading) return;
   CS.introLoading = true;
-  A.api.get(`/aqi?lat=${A.DELHI.lat}&lon=${A.DELHI.lon}`, 8000).then((j) => {
+  A.aqiSpot(A.DELHI.lat, A.DELHI.lon, 8000).then((j) => {
     CS.introLoading = false;
     if (!j || !isNum(j.pm25)) return;
     CS.introRead = j;
@@ -738,7 +741,8 @@ A.screen('home', {
       const act = e.target.closest('[data-act]');
       if (!act) return;
       const a = act.dataset.act;
-      if (a === 'consent') openConsent({ intro: false });
+      if (a === 'spot') { cur.spotShown = !cur.spotShown; paint(); }
+      else if (a === 'consent') openConsent({ intro: false });
       else if (a === 'retry') { cur.err = null; paint(); refresh(); }
       else if (a === 'pickgps') {
         if (!navigator.geolocation) { A.toast(t('csNoGeo')); return; }

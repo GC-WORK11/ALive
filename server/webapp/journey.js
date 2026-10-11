@@ -550,7 +550,14 @@ A.screen('journey', {
       setTimeout(() => { A.back(); if (!A.current()) A.show('home'); }, 60);
       return () => {};
     }
+    /* a consent sheet left open under the nav UI is unusable — hide it;
+       consent_v stays unset so home re-asks on the next visit */
+    const csEl = document.getElementById('consent');
+    if (csEl) csEl.hidden = true;
     const options = Array.isArray(params.options) && params.options.length ? params.options : [opt];
+    /* journeys whose origin is the rider's own live fix can sanity-check
+       the first fix against it (a pinned 'from' may be anywhere) */
+    const fromLive = !!from.live;
     const glyph = vehicleGlyph(params.vehicle || opt.mode || '');
     const vehKey = String(params.vehicle || glyph);
     const tripMode = ['health_max', 'petrol_health', 'time_health'].includes(params.mode) ? params.mode : null;
@@ -706,6 +713,18 @@ A.screen('journey', {
       if (S.done || S.dead) return;
       const now = Date.now();
       const prev = S.fix, prevT = S.lastFixT;
+      /* plausibility: a stale cached fix can teleport the puck a whole
+         city away. Drop a first fix far from a live origin and any fix
+         implying > ~200 km/h — unless it keeps repeating, in which case
+         the rider really did move. */
+      if (!prev && fromLive &&
+          havM(f.lat, f.lon, from.lat, from.lon) > 1500) {
+        if ((S.teleHits = (S.teleHits || 0) + 1) < 4) return;
+      } else if (prev && now - prevT < 12000 &&
+                 havM(prev.lat, prev.lon, f.lat, f.lon) /
+                   Math.max(1, (now - prevT) / 1000) > 60) {
+        if ((S.teleHits = (S.teleHits || 0) + 1) < 4) return;
+      } else S.teleHits = 0;
       S.geoErr = null;
       /* measured speed: the device's own reading when it gives one, else
          the displacement between two fixes (inside the noise = 0) */

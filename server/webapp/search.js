@@ -421,7 +421,7 @@ function scoreRow(r, ctx) {
   else prox = 0.4;
   let s = 2.2 * cov + (full ? 1.2 : 0) + (leadName ? 1.0 * leadName : 0) +
     (nameStart ? 0.3 : 0) + 0.9 * prox;
-  if (qa.core && (r._nn === qa.core || r._nk === qa.coreK || r._nk === qa.allK)) s += 0.4;   /* exact name */
+  if (qa.core && (r._nn === qa.core || r._nk === qa.coreK || r._nk === qa.allK)) s += 1.5;   /* exact whole-name: 'Panipat' the place beats 'Panipat Bus Stand' and typo/fuzzy rows at any distance */
   /* the name AND the place: locality words found in the address */
   if (leadName && locW) s += Math.min(1.4, 0.45 * locW);
   /* a provider row carrying the name knows the shop/temple we don't */
@@ -435,6 +435,23 @@ function scoreRow(r, ctx) {
   if (isNoisy) s -= 0.8;
   /* only words, no kind asked: the area/locality is the answer */
   if (!qa.hasKind && AREA_KIND.test(r.rawKind || '') && full) s += 0.3;
+  /* the asked kind ('metro', 'bakery', 'mandir') must be the row's own
+     kind, not just a word in its name — 'Huda Metro Restroom' is not the
+     metro station */
+  const kindW = qa.items.filter((it) => it.cls === 'kind');
+  if (kindW.length) {
+    if (!r._rkk) r._rkk = new Set(norm(`${r.kind} ${r.rawKind || ''}`).split(' ').filter(Boolean).map(tkey));
+    const kHit = kindW.some((it) => r._rkk.has(it.k) ||
+      (aliasOf(it.t) || []).some((a) => a.split(' ').every((w) => r._rkk.has(tkey(w)))) ||
+      /* provider kinds are all 'poi' — the species lives in the NAME
+         ('Huda Metro STATION' vs 'Huda Metro Restroom'). An alias word
+         other than the one asked counts, the asked word itself does
+         not ('restroom' named '… Metro' is still a restroom) */
+      (aliasOf(it.t) || []).some((a) => a !== it.t &&
+        a.split(' ').every((w) => r._ntk.includes(tkey(w)))));
+    if (kHit) s += 0.6;
+    else if (leadName && r._rkk.size) s -= 0.6;   /* declared kind, wrong species */
+  }
   /* the index's / provider's own order carries prominence we can't see */
   if (r.erank != null) s += 0.25 * Math.max(0, 1 - r.erank / 12);
   if (r.mrank >= 3) s -= 1.0;   /* engine's 'other' verdict — demoted rows never lead */
@@ -463,10 +480,31 @@ function scoreRow(r, ctx) {
   return s;
 }
 
+/* the kind a *place* has when it IS the answer to a bare name — a city,
+   district, area, station, airport or landmark. For 'panipat' the
+   district outranks a same-named shop at any distance. */
+const CONTAINER_KIND = /^(administrative|area|locality|town|city|village|suburb|neighbou?rhood|district|state|county|quarter|hamlet|residential|region|place|railway station|metro station|bus station|station|airport|landmark|monument|fort|tourist attraction|attraction|border crossing)$/i;
+const isContainer = (r) =>
+  CONTAINER_KIND.test(r.kind || '') || CONTAINER_KIND.test(r.rawKind || '');
+
 /* rank + filter + de-duplicate (same name at the same spot) */
 function rank(rows, ctx) {
   const kept = [];
   for (const r of rows) if (scoreRow(r, ctx) != null) kept.push(r);
+  /* same-name integrity: with a bare name as the query and an exact-name
+     container in the pool ('Panipat | Haryana'), same-named non-container
+     rows ('Panipat | 4 Sector 21 Gurugram' shop) can never lead — they
+     drop a tier, still visible below */
+  const qa = ctx.qa;
+  if (qa.core && qa.core.length >= 3) {
+    const ex = (r) => r._nn === qa.core || r._nk === qa.coreK || r._nk === qa.allK;
+    if (kept.some((r) => !r.exact && ex(r) && isContainer(r))) {
+      for (const r of kept) {
+        if (r.exact || !ex(r) || isContainer(r)) continue;
+        r._tier = Math.min(r._tier, 1);
+      }
+    }
+  }
   kept.sort((a, b) => b._tier - a._tier || b._s - a._s || (a.dist ?? 9e9) - (b.dist ?? 9e9));
   const out = [];
   const span = (x) => (AREA_KIND.test(x.rawKind || '') ? 15000 : 250);
@@ -1097,6 +1135,9 @@ function live(q, bias, onRows, opts = {}) {
   const t1 = Promise.all([
     acRows(qt, b, ctl1.signal).then((r) => {
       if (!r) return;
+      /* the index's own order IS prominence — keep it as erank so the
+         ranker can weigh it against provider junk */
+      r.rows.forEach((x, i) => { if (x.erank == null) x.erank = i; });
       rput(rkey('t1', qt, b), r.rows);
       if (dead) { handOff(r.rows); return; }
       viaAc = r.via === 'ac';

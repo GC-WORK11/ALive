@@ -146,6 +146,10 @@
 .hs-exact { margin-top: 10px; }
 .hs-spot { color: var(--ink); font-size: 14px; margin-top: 12px; }
 .hs-spotk { font-weight: 600; margin-right: 4px; }
+button.hs-spot { background: none; border: 0; padding: 0; width: 100%; text-align: left; font-family: inherit; font-size: 14px; line-height: 18px; color: var(--ink); cursor: pointer; min-height: 40px; }
+.hs-blur { filter: blur(6px); user-select: none; transition: filter .2s ease; }
+.hs-spot.shown .hs-blur { filter: none; user-select: text; }
+.hs-spothint { color: var(--ink3); font-size: 12px; margin-left: 6px; white-space: nowrap; }
 
 .hs-dose {
   display: flex; align-items: center; gap: 10px; width: 100%;

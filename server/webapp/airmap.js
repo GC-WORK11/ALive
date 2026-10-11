@@ -858,7 +858,7 @@ async function pullSpot() {
   const key = `${pos.lat.toFixed(4)},${pos.lon.toFixed(4)}`;
   if (st.spotKey === key) return;            // that read is already on its way
   st.spotKey = key;
-  const j = await A.api.get(`/aqi?lat=${pos.lat.toFixed(5)}&lon=${pos.lon.toFixed(5)}`, 9000);
+  const j = await A.aqiSpot(pos.lat, pos.lon, 9000);
   if (!st || st.spotKey !== key) return;
   st.spotKey = null;
   st.spot = { pos: { lat: pos.lat, lon: pos.lon, label: pos.label || null }, j, t: Date.now() };
@@ -988,7 +988,28 @@ A.screen('airmap', {
         return;
       }
       tapRead(e.detail.lat, e.detail.lon);
+      /* every tap is also a "planning to go out" pin: the AQI pin shows
+         the air there now, and the day card below reads that same spot */
+      const tp = e.detail;
+      st.place = { lat: tp.lat, lon: tp.lon, label: 'pinned spot' };
+      A.store.set(PICK_KEY, st.place);
+      A.search.reverse(tp.lat, tp.lon).then((n) => {
+        if (n && st && st.place && st.place.lat === tp.lat && st.place.lon === tp.lon) {
+          st.place.label = n;
+          A.store.set(PICK_KEY, st.place);
+          const lbl = st.body.querySelector('.am-place-label');
+          if (lbl) lbl.textContent = n;
+        }
+      }).catch(() => {});
+      planCard();
+      const lbl0 = st.body.querySelector('.am-place-label');
+      if (lbl0) lbl0.textContent = st.place.label;
     };
+    /* live while open: re-read the city every 5 min (the field rebuilds
+       every 15), so "updated N min ago" and every number stay current */
+    const liveTimer = setInterval(() => {
+      if (st && A.current() === 'airmap' && !st.pickOpen) { pull(); pullSpot(); }
+    }, 5 * 60000);
     document.addEventListener('alive:maptap', onTap);
 
     const onKey = (e) => {
@@ -1000,6 +1021,7 @@ A.screen('airmap', {
     const teardown = () => {
       if (torn) return;
       torn = true;
+      clearInterval(liveTimer);
       document.removeEventListener('alive:maptap', onTap);
       document.removeEventListener('alive:location', onLoc);
       document.removeEventListener('keydown', onKey);
