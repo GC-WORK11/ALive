@@ -1,12 +1,10 @@
 # Lane: web-overhaul-v2 — landing + /city + /admin component redesign
 
 ## Owner's verdict (same mandate as app-overhaul-v2 — read that file)
-"look so cheap and also too much complex it's like a fucking
-operating system… too dull… so much mini words so much cringe…
-without removing a single feature… minimalism and more functional…
-individual designed components… colorful like components add little
-liquid glassmorphism… don't even compromise over a single feature
-or numbers we are showing."
+Paraphrased: the surfaces look cheap and too complex, like an operating
+system; too dull, too many small words. Make them minimal and more
+functional with individually designed, colourful components (a little
+liquid glass), without removing a single feature or number.
 Admin specifically (earlier verbatim): "i like the way it looks dont
 remove them but the understanding is so complex so many numbers".
 

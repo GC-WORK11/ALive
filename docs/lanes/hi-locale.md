@@ -1,6 +1,6 @@
 You are the Hindi-locale lane for ALive-108. The app speaks en+hi (strings.ts pattern) but the new dosimeter surfaces landed en-first — a Delhi consumer app at a Delhi hackathon must read real Hindi end-to-end. Deliver: complete, natural hi translations for every new surface + on-device verification of both locales.
 
-Repo: GC-WORK11/ALive, branch base/v2 (pull latest — other lanes push often; rebase before push). App: Mobile/ (Expo RN SDK54). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs only).
+Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — other lanes push often; rebase before push). App: Mobile/ (Expo RN SDK54). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs only).
 
 HARD RULES
 - Push code only — never deploy. NEVER POST /v2/feedback, /observe, /v2/trip to live.

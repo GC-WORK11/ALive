@@ -1,6 +1,6 @@
 You are the APK-drive lane for ALive-108. HEAD now carries the dosimeter restructure (`c4a7801` home = dose hero + the move + arc + days) plus the offline-honesty batch (`a26fb4e`). Nobody has driven the NEW home on a real build. Deliver: (1) a fresh release APK built at HEAD, uploaded as an attachment for the owner's phone; (2) an emulator smoke of every surface; (3) any defect found, fixed.
 
-Repo: GC-WORK11/ALive, branch base/v2 (pull latest — other lanes push often). App: Mobile/ (Expo RN SDK54). Android KVM emulator on this box — read your memory notes `android-emulator-box` (KVM perms, Maven-429 mirror fix, adb input quirks) BEFORE building. Live API: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs + /v2/plan + /v2/reroute only).
+Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — other lanes push often). App: Mobile/ (Expo RN SDK54). Android KVM emulator on this box — read your memory notes `android-emulator-box` (KVM perms, Maven-429 mirror fix, adb input quirks) BEFORE building. Live API: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs + /v2/plan + /v2/reroute only).
 
 HARD RULES
 - Push code only — never deploy. NEVER POST /v2/feedback, /observe, /v2/trip to live.

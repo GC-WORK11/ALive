@@ -1,6 +1,6 @@
 # chooser-craft — the from → to → choose beat
 
-**Lane ask:** make the chooser beat feel *sexy, not functional* — owner's
+**Lane ask:** make the chooser beat feel *beautiful, not functional* — owner's
 spec: "a nice animation where it puts your from and to location → then
 shows two-three ways → then one safest and best path."
 
@@ -18,7 +18,7 @@ What read *functional*:
 
 ## What shipped — a four-act beat (all in `Mobile/src/components/RouteTint.tsx`)
 
-The sexy is choreography only: timing, staging, easing. No confetti,
+The beautiful is choreography only: timing, staging, easing. No confetti,
 no color beyond what already means air.
 
 1. **Frame** — before any line draws, a ring breathes once on the origin

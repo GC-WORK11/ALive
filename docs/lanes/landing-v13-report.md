@@ -1,7 +1,7 @@
 # landing-v13 — cognition.com × devin.ai register
 
-Owner spec (verbatim): "same fonts same no navbar dude same blogging style same
-to the last line or border dude to the same font size texture." Structure =
+Owner spec (paraphrased): the same fonts, no navbar, the same blog-style
+layout, matched down to borders, font sizes and texture. Structure =
 cognition.com, product sections = devin.ai. Final face — launch morning.
 
 ## Design read

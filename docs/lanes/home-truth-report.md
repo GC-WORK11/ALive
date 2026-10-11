@@ -4,10 +4,10 @@ Owner complaints (verbatim):
 1. "the air around you — verified with my live location it's WRONG by a lot"
 2. "what is it even showing, AQI or mixed index?"
 3. "your daily budget is cringe — no Delhi guy will get it"
-4. "your week = 0.2 — what the fuck is this number"
+4. "your week = 0.2" means nothing to a reader
 5. "hundreds of numbers nobody understands"
-6. "week should be 'your lungs' calendar' → tap opens a gorgeous
-   orgasmic weekly component"
+6. the week should be a "lungs' calendar" that opens a clear,
+   beautiful weekly view
 
 Branch `base/v2`. Gates: `tsc --noEmit` clean, `expo lint` clean,
 node:test store 84 / nav 76 / api 12 / offline 12 — 0 fail.

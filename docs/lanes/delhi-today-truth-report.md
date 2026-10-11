@@ -1,9 +1,8 @@
 # Lane report — delhi-today-truth: the phantom trips + the incidents card
 
 Owner complaints (verbatim):
-1. "Delhi Today is all bullshit hardcoded — it says I travelled, I just
-   downloaded the app and it shows no trips but Delhi Today says where I
-   travelled"
+1. Delhi Today looked hardcoded: on a fresh install with no trips, it
+   still described trips as if they were mine.
 2. "I want local pollution incidents happening — parali and all — before
    Delhi Today"
 
@@ -48,7 +47,7 @@ sits in an app whose job is counting HIS trips ("Your trips" door shows
 "no trips yet"), opens "Delhi today", and sees "hanuman lane — 16 trips"
 + "what ALive travellers did today — 5 trips". Nothing on the sheet says
 whose trips they are, so it reads as the app claiming his travel —
-"bullshit hardcoded".
+"hardcoded".
 
 ## 2. Fix — the traveller aggregates are gated on one real own trip
 

@@ -1,6 +1,6 @@
 # Air-map restyle lane — report
 
-Owner's verdict on the old field: *"the air around me is all orange map — fuck you that is shit."*
+Owner's verdict on the old field: the air map was one flat orange wash.
 The kriged PM2.5 cells painted at up to .92 fill-opacity — one flat band-colour
 blanket that hid the streets it was measuring.
 

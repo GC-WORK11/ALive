@@ -76,7 +76,7 @@ names, bundle ids, file names, repo/domain strings, and plain numbers.
   `docker-compose` image `alive108-api:dev`, `server/alive108_apis.rest`/
   `alive108-apis.rest` file names, `ios/ALive108/` dir + scheme/target,
   `Mobile/android/...` package dirs — ids, not labels.
-- **Repo/domain strings** — `github.com/GC-WORK11/ALive` links
+- **Repo/domain strings** — `github.com/<owner>/Delhi-Air-108` links
   (3 hits on landing: 2× releases, 1× blob), `alive108` in `SECURITY.md`
   contact placeholder, `alive-delhi-air` in the WAQI UA.
 - **Numbers** — seeds, coordinates (`77.1080`), SVG path data, `1080` video

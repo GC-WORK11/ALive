@@ -1,6 +1,6 @@
 # Visual thread — every surface open + recorded (iOS sim + web + Android emu)
 
-- Repo `GC-WORK11/ALive`, branch `base/v2` @ `a09411b` (post plain-words pass).
+- Repo `<owner>/Delhi-Air-108`, branch `base/v2` @ `a09411b` (post plain-words pass).
 - Lanes: iOS drive on this macOS box (iPhone 17 sim, iOS 26.5, `com.anonymous.app`, Debug build from source — contains the SIGSEGV cold-fix); web drive via headless-Chrome CDP rig at 390px + 1440px; Android drive on a Linux/KVM child session (devin-34e11ab2) with the release APK.
 - Prod: `http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com` (app uses baked `http://65.2.28.40`). GET-only discipline held everywhere; app's own `POST /v2/plan` is legitimate product traffic.
 - Media index: iOS stills `ios-drive/NN-*.png` (33), web stills `drive-web/shots/<surface>-<390|desk>-NN.png` (~90 + innerText dumps), videos `ios-drive/seg*-*.mp4` + `web-video/<surface>-scroll.mp4`. Android lane media lives on the child session's attachments (filenames prefixed `android-`).

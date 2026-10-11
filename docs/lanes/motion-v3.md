@@ -1,6 +1,6 @@
 # lane: motion-v3 — the "smoother" pass (press springs + scrub)
 
-ALive-108. Repo GC-WORK11/ALive, branch base/v2. Read
+ALive-108. Repo <owner>/Delhi-Air-108, branch base/v2. Read
 docs/20-design-research.md first — the new register you must not regress.
 
 Owner's words: "something that is very smoother when as a user I'm

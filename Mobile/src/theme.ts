@@ -142,7 +142,7 @@ const hexMix = (a: string, b: string, t: number): string => {
 export const bandWashIdx = (i: number) => hexMix(BANDS[Math.max(0, Math.min(5, i))], "#FFFFFF", 0.90);
 /** ~32% band — tile fills where the band itself must scan at a glance
  *  (the days-ahead row: five 10% washes read identical on paper)
- *  app-home-sexy: deepened 26%→32% — the subtle state holds on the warm
+ *  app-home-polish: deepened 26%→32% — the subtle state holds on the warm
  *  base but the band is unmistakable at a glance */
 export const bandWashDeepIdx = (i: number) => hexMix(BANDS[Math.max(0, Math.min(5, i))], "#FFFFFF", 0.68);
 /** ~40% band — a hairline/marker that carries the day's colour */

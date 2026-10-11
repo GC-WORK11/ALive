@@ -9,7 +9,7 @@ where it means air. Dials: VISUAL_DENSITY 8 / VARIANCE 5 / MOTION 3.
 
 Owner direction implemented verbatim-sense: "the main admin site is
 itself the landing page — the main home screen should be the number,
-very sexy." There is no landing page any more; `/` **is** the board.
+very beautiful." There is no landing page any more; `/` **is** the board.
 
 ## What changed
 

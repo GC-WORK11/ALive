@@ -135,9 +135,9 @@ Features appear *when they're true*: horizon chips only while comparing future d
 
 ---
 
-## 4. The orgasmic dashboard — what premium data-viz actually is
+## 4. The stunning dashboard — what premium data-viz actually is
 
-The user wants the maths/physics to surface as a *"sexy orgasmic dashboard of Delhi air."* Studying the references:
+The user wants the maths/physics to surface as a *"beautiful dashboard of Delhi air."* Studying the references:
 
 ### 4.1 The masters
 
@@ -145,7 +145,7 @@ The user wants the maths/physics to surface as a *"sexy orgasmic dashboard of De
 - **Spotify Wrapped**: story format (vertical snap, one idea per frame), *shareable by design* — the dataviz doubles as identity expression [S35].
 - **Dark Sky** (dead, canonized): the Nightingale eulogy calls it "a hallmark of information design" because **everything was a context-sensitive information graphic** — the 2018 "unified timeline" put current conditions + next-hour + next-24h + week in *one scrolling column anchored at now*; past data was deliberately deprioritized because "I only occasionally care about weather from hours ago" [S36]. Apple absorbed it wholesale into Apple Weather.
 - **Apple Weather**: Gestalt *common region* — small bounded boxes group related metrics so the eye files them instantly; "Aesthetic and Minimalist Design" (Nielsen #8): every element earns presence or dies [S37]. Apple's pictogram discipline (SF-style: outline for toolbars/lists, fill for selected/emphasis; strictly gridded to sit with text) is the icon-system model [S38].
-- **Windy.com**: the field rendered as a *living particle system* — wind/pollution as animated flow over cartography (see `windy-wind-layer.png` over Delhi). It feels "orgasmic" because **the data is literally moving** — physical intuition (drift, direction, turbulence) is transmitted without a single number. This is our field's true visual: kriged PM2.5 + wind advection as drifting particles.
+- **Windy.com**: the field rendered as a *living particle system* — wind/pollution as animated flow over cartography (see `windy-wind-layer.png` over Delhi). It feels "stunning" because **the data is literally moving** — physical intuition (drift, direction, turbulence) is transmitted without a single number. This is our field's true visual: kriged PM2.5 + wind advection as drifting particles.
 - **Swiss/International Typographic Style**: mathematical grid, asymmetric layout, huge tabular numerals, hairline rules, vast negative space, one accent color — information as architecture (Müller-Brockmann).
 - **Tufte**: maximize the *data-ink ratio* — erase non-data ink (chartjunk: grids, boxes, 3D, moiré); use *small multiples* (same chart shape, different slice, aligned axes); use *sparklines* — word-sized graphics living inline in text. A Tufte dashboard is a *page of sentences where numbers became shapes*.
 
@@ -162,7 +162,7 @@ The user wants the maths/physics to surface as a *"sexy orgasmic dashboard of De
 | Provenance shown as design (spec table, tick marks) | Settings-style disclaimers |
 | Reveal through scroll/motion | Everything on screen at once |
 
-**The orgasmic-dashboard insight:** it is *not* a page in the app — it's a **mode the map transforms into**, or a separate surface (the "Delhi Air" editorial view). The commute UI stays wordless; the dashboard is where the physics gets luxurious. Conflating them is exactly what produced the hated "noisy dashboard" current UI.
+**The stunning-dashboard insight:** it is *not* a page in the app — it's a **mode the map transforms into**, or a separate surface (the "Delhi Air" editorial view). The commute UI stays wordless; the dashboard is where the physics gets luxurious. Conflating them is exactly what produced the hated "noisy dashboard" current UI.
 
 ---
 
@@ -250,7 +250,7 @@ Map field layer = continuous `transparent → #E11D48 → #4C0519` opacity+color
 | 12 | `AlertBanner` | ink full-width strip, paper text, one line + X — reserved for GRAP-level / hazardous events only |
 | 13 | `LedgerSheet` | today's dose strip → expands to week (cigarette-glyph bars per day, not a chart) |
 | 14 | `AmbientMode` | opt-in full-bleed `ambientInk`; one hero number; one glyph; nothing else |
-| 15 | `CityDashboard` | §8 — the orgasmic surface; separate mode, dark editorial |
+| 15 | `CityDashboard` | §8 — the stunning surface; separate mode, dark editorial |
 
 ### 5.5 Motion
 
@@ -307,7 +307,7 @@ Keyed to the user's complaints (greenish liquid-glass, noisy dashboard, random i
 
 ---
 
-## 8. The orgasmic dashboard — "The City Breathes"
+## 8. The stunning dashboard — "The City Breathes"
 
 A separate surface (entered from the profile sheet or a map-layer toggle), full-bleed `ambientInk` canvas, editorial — the physics rendered luxurious:
 

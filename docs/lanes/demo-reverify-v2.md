@@ -1,7 +1,7 @@
 # demo-reverify-v2 — runbook truth pass on live 4eb9e1e8
 
 You are the demo-reverify lane for ALive-108 (exposure-aware Delhi product,
-AWS×WeMakeDevs Air track, Oct 8–11). Repo: GC-WORK11/ALive,
+AWS×WeMakeDevs Air track, Oct 8–11). Repo: <owner>/Delhi-Air-108,
 work on base/v2, pull first. A sibling lane verified the deploy; YOUR job is
 re-running the owner's demo runbook against the NEW live build and fixing
 drift — the admin surface changed shape since the last pass.

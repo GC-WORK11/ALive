@@ -5,7 +5,7 @@ understands what they mean" (owner). Sweep = every number/percentage/fraction
 the app can render, audited for (a) is the unit+meaning self-evident in place,
 (b) is it real — traced to data, not derived-from-derived.
 
-- **Repo/branch:** `GC-WORK11/ALive` @ `base/v2`
+- **Repo/branch:** `<owner>/Delhi-Air-108` @ `base/v2`
 - **Method:** grepped every render site of `Math.round|approx|doseUgRound|
   fmtUg|fmtKg|fmtKm|fmtCig|×|%|×|/day|streak|stage|bench| ppm|kg|km|min|cig`
   across `Mobile/src`, then traced each to its data source (wire field, ledger

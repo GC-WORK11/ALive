@@ -1,8 +1,8 @@
 # Precision-audit report — every rendered number's precision chain
 
-Lane: `precision-audit`. Owner's law, verbatim: *"not a single fucking number
-should be hardcoded, assumed, or random — exact to the very meter, detailed,
-brutally honest."* Daycount proved no rendered number is **fake**; this lane
+Lane: `precision-audit`. Owner's rule: *no number
+should be hardcoded, assumed, or random — exact to the metre, detailed,
+honest.* Daycount proved no rendered number is **fake**; this lane
 asks whether each is as **exact** as its data allows and whether its display
 implies false precision or hides real precision. Base: `base/v2` @ `e3a1183`
 (own changes land on top).

@@ -9,7 +9,7 @@ server-side + 303 to clean mount, honest-404 on miss, own rate bucket,
 log-redacted; console boot strip deleted; stale sign-out label fixed),
 **search unit-adjacency** (`d05b737` — 'b 7' binds as one unit, scattered
 covers rejected), **bug-hunt guards** (`6f799ee`+`f9e6e72` — personal-sample
-eligibility, painted-grid age). Mobile cargo: app-home-sexy diffs
+eligibility, painted-grid age). Mobile cargo: app-home-polish diffs
 (`2f683cb`, `30af6b1` — no server effect).
 
 ## Deployed

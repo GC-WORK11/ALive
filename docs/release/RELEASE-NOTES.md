@@ -131,7 +131,7 @@ MIT — see [`LICENSE`](../LICENSE) in the repo.
 - Live web demo, no install:
   http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com
   (`/` landing, `/city`, `/community`, `/admin`; `GET /health` is public)
-- Repo: https://github.com/GC-WORK11/ALive
+- Repo: https://github.com/<owner>/Delhi-Air-108
 - Privacy transform chain: `PRIVACY.md` · threat model + self-run
   pentest: `SECURITY.md`, `docs/lanes/pentest-report.md`
 - Every verification this page leans on:

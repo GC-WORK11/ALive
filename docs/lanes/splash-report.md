@@ -1,16 +1,15 @@
 # Lane report — splash-animation: 'a → alive' launch wordmark
 
-**Claim under test (owner, verbatim):** "when I opened the screen, I saw A —
-I didn't like that. I want alive comes with the animation: 'a' then 'live'
-from it, 'alive', then onboarding screen, then the things. Don't fuck many
-things up."
+**Claim under test (owner's request, paraphrased):** opening the app should
+not flash a bare "A". The splash should animate 'a' into 'alive', then go to
+onboarding, then the app, without breaking anything else.
 
 Built and verified on the booted iPhone sim: paper splash → 'a' settles →
 'l·i·v·e' sweep in letter-by-letter → beat → ~300 ms crossfade into the
 existing onboarding. Returning users (consent on disk) go straight to home —
 no wordmark, no replay.
 
-- **Repo/branch:** `GC-WORK11/ALive` @ `base/v2`, rebased on
+- **Repo/branch:** `<owner>/Delhi-Air-108` @ `base/v2`, rebased on
   `3f9245f`
 - **Device:** iOS Simulator iPhone 17, iOS 26.5, UDID
   `EDD9B083-63F1-44E6-9A7B-0A6964CC2561`, dev client `com.anonymous.app`

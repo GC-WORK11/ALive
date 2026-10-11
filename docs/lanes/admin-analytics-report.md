@@ -4,7 +4,7 @@
 **Date:** 2026-10-08 · **Branch:** `base/v2` direct push (no PR, per convention)
 **Verify:** `cd server && ALIVE_ADMIN_TOKEN=<any> uvicorn main:app --port 8108` → `http://127.0.0.1:8108/<mount>` — gate → token → board. Shots in `admin-analytics-shots/`.
 
-Owner's brief, verbatim core: *"i dont need admin backend — i want a dashboard of analytics: users and more… simple, orgasmic, playful — no technical pile."* The ~3,100-line card-heavy engine-room console is now a cognition-register analytics page (the register the landing wears since `96789a3`): warm paper `#f7f6f5`, left-rail text nav, margin indices `01–04`, serif prose, hairline-ruled data lines, zero cards/capsules/tables.
+Owner's brief, verbatim core: *"i dont need admin backend — i want a dashboard of analytics: users and more… simple, stunning, playful — no technical pile."* The ~3,100-line card-heavy engine-room console is now a cognition-register analytics page (the register the landing wears since `96789a3`): warm paper `#f7f6f5`, left-rail text nav, margin indices `01–04`, serif prose, hairline-ruled data lines, zero cards/capsules/tables.
 
 ## What the page is now
 

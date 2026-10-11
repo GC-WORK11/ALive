@@ -9,7 +9,7 @@ Two defects, both reproduced-and-fixed: **FLASH** (home painted before
 onboarding on first boot) and **REPLAY** (onboarding re-appearing on later
 opens). Verified on a fresh-installed dev client on the booted iPhone sim.
 
-- **Repo/branch:** `GC-WORK11/ALive` @ `base/v2`, commit
+- **Repo/branch:** `<owner>/Delhi-Air-108` @ `base/v2`, commit
   `347153e` (rebased on `1243cbb`)
 - **Device:** iOS Simulator iPhone 17, iOS 26.5, UDID
   `EDD9B083-63F1-44E6-9A7B-0A6964CC2561`, dev client `com.anonymous.app`

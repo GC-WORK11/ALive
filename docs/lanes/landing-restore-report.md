@@ -23,7 +23,7 @@ ruined on mobile").
 - `ios-journey-overnight-shots/f4_compare_settled.png` → `ios-choose-bold`
 - `ios-journey-overnight-shots/23-home-dose-14.png` → `ios-dose`
 
-Rejected: `app-home-sexy-shots/after-home-*.png` carry an
+Rejected: `app-home-polish-shots/after-home-*.png` carry an
 `[expo-notifications]` debug toast on the bottom edge;
 `fix-ios-nits-shots/f2_post_wipe_home.png` is Hindi — wrong for this page.
 

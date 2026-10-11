@@ -1,8 +1,8 @@
-# app-home-sexy report — the ambient number as the instrument
+# app-home-polish report — the ambient number as the instrument
 
-Lane: `app-home-sexy`. Owner's ask: *"the main home screen of Alive should be
-very sexy and orgasmic, like the main admin/landing — the number should be the
-home screen with a very sexy look. I love the subtle-state map colors — make
+Lane: `app-home-polish`. Owner's ask: *"the main home screen of Alive should be
+very beautiful and stunning, like the main admin/landing — the number should be the
+home screen with a very beautiful look. I love the subtle-state map colors — make
 them more improved."* Ported the landing's `.hnum` instrument grammar
 (`server/landing.html`) to `HomeScreen`'s hero and deepened the subtle-state
 band work — band colour still only where it means air.
@@ -10,7 +10,7 @@ band work — band colour still only where it means air.
 - **Branch:** `base/v2` @ `2f683cb` (pushed on top of `4101bd8` merge-home)
 - **Device:** iOS 26.5 sim (iPhone 17, `EDD9B083`), dev-client build of this
   tree, Metro `EXPO_PUBLIC_API_URL=http://65.2.28.40` (prod ALB, GET-only)
-- **Evidence:** `docs/lanes/app-home-sexy-shots/` — before/after PNGs + two
+- **Evidence:** `docs/lanes/app-home-polish-shots/` — before/after PNGs + two
   landing videos assembled from `simctl io screenshot` frame loops
   (`simctl io recordVideo` was wedged "host recording in progress" all session;
   frame-capture at ~2 fps is the honest substitute)

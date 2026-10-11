@@ -1,6 +1,6 @@
 # app-error-hunt (lead session, self-run) — 2026-10-07
 
-Owner report: "so many fucking errors in the app." Verdict: **the app is clean
+Owner report: the app shows a lot of errors. Verdict: **the app is clean
 at code level and at runtime** — every "error" class checked below is either
 guarded or a stale-bundle artifact.
 

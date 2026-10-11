@@ -1,6 +1,6 @@
 You are the cold-path lane for ALive-108 — server-side latency hardening for the surfaces a judge hits COLD on stage. Measured tonight on live: `/v2/plan` took_ms 6650 on a cold hit (warm re-hits are fast, but a judge's FIRST touch of the app is exactly the cold path). Reach payloads, first-byte on landing//city/admin, and whatever lazy warm-up still hides in the request path are your territory. Deliver: a measured profile of every cold-path bottleneck + focused fixes where the fix is safe.
 
-Repo: GC-WORK11/ALive, branch base/v2 (pull latest — lanes push often). Server: server/ (FastAPI). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs + /v2/plan + /v2/reroute only — NEVER POST /v2/feedback, /observe, /v2/trip). Suite: `cd server && PYTHONPATH=core/build312:. .venv312/bin/python -m pytest -q tests`.
+Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — lanes push often). Server: server/ (FastAPI). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs + /v2/plan + /v2/reroute only — NEVER POST /v2/feedback, /observe, /v2/trip). Suite: `cd server && PYTHONPATH=core/build312:. .venv312/bin/python -m pytest -q tests`.
 
 HARD RULES
 - Push code only — never deploy (the lead deploys). Full suite green before push.

@@ -6,7 +6,7 @@ storage… Profile-based backup tied to THEIR account (like Gmail) — new
 phone, they log in, data comes back — but the DB is on THEIR side, client
 side. We never host user data. Cache management for personalized user."
 
-**Repo/branch:** `GC-WORK11/ALive` @ `base/v2`
+**Repo/branch:** `<owner>/Delhi-Air-108` @ `base/v2`
 **Method:** real-store simulation — `scripts/storage-growth-sim.mjs` drives
 the actual `ledger`/`daylog`/`daysum`/`api/cache` modules against an
 in-memory expo-file-system for 30d/1y/2y/3y of a heavy-Delhi profile

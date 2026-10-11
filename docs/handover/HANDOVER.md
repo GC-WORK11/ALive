@@ -35,7 +35,7 @@ release is TODAY. Owner's X post got a "lets go" reply from WeMakeDevs. Judges,
 public scrutiny, and the owner's career ride on this shipping polished and honest.
 
 ## Repo access — READ THIS FIRST
-- Canonical: `origin` https://github.com/GC-WORK11/ALive.git —
+- Canonical: `origin` https://github.com/<owner>/Delhi-Air-108.git —
   **the owner's GitHub account is SUSPENDED locally but cloud pushes WORK**
   (bridge lane pushed 1772669 fine). Always `git fetch origin` first.
 - Mirror (fallback, always writable): https://github.com/GC-WORK11/alive-mirror.git

@@ -1,6 +1,6 @@
 You are the first-open lane for ALive-108 — the cold-install experience audit. A judge or a Delhiite installs the APK and opens it: what happens in the first 30 seconds decides everything. Deliver: a timed audit + fixes for every wall between install and the first real "my lungs" number.
 
-Repo: GC-WORK11/ALive, branch base/v2 (pull latest — lanes push often; rebase before push). App: Mobile/ (Expo RN SDK54). Android emulator on this box (KVM perms/maven mirror notes apply if it's a KVM box; if this box lacks KVM, say so and pivot to whatever device surface exists — iOS sim or a thorough static trace of the launch path).
+Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — lanes push often; rebase before push). App: Mobile/ (Expo RN SDK54). Android emulator on this box (KVM perms/maven mirror notes apply if it's a KVM box; if this box lacks KVM, say so and pivot to whatever device surface exists — iOS sim or a thorough static trace of the launch path).
 
 HARD RULES
 - Push code only — never deploy. NEVER POST /v2/feedback, /observe, /v2/trip to live.

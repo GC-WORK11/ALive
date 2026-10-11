@@ -19,7 +19,7 @@ Canonical names:
   bus+metro real feeds true.
 - **Landing:** standalone `index.html` on `main` and `landing` branches
   (identical trees, last sync `ef4cedd` v11). 4 CTAs point at
-  `github.com/GC-WORK11/ALive/releases`.
+  `github.com/<owner>/Delhi-Air-108/releases`.
 - **Tag:** `v1.0.0-demo` (release_prep default; matches versionName 1.0.0).
 
 **⚠ Two structural facts before any step:**

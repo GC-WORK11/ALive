@@ -1,17 +1,13 @@
 # Lane: app-overhaul-v2 — component-level redesign (owner mandate)
 
 ## Owner's verdict (verbatim, governs everything)
-"the ui ux of weather admin app, landing page and worse the mobile
-app — look so cheap and also too much complex it's like a fucking
-operating system… this app must be a daily driver… too dull yeah the
-light theme i wanted but it is so dull there is too much going on…
-so much mini words so much cringe… without removing a single feature
-…minimalism and more functional and productive… we really need
-individual designed components… colorful like components add little
-liquid glassmorphism… easily navigable any user no technical must use
-it flawless… the functionality we provide is so advanced but we
-aren't able to express it nicely… don't even compromise over a
-single feature or numbers we are showing."
+Paraphrased: the admin, the landing page and especially the mobile app
+look cheap and too complex, like an operating system. The app must be a
+daily driver. Keep the light theme but make it less dull, with less going
+on and fewer small words. Minimal, functional, individually designed
+colourful components (a little liquid glass), easy for a non-technical
+user to navigate. The functionality is advanced but not expressed well.
+Do not remove a single feature or number.
 
 ## The reference register (what his Dribbble/Mobbin tabs show)
 Chunky COLORFUL components on light backgrounds — saturated accent

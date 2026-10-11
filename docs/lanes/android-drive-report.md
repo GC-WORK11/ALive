@@ -1,6 +1,6 @@
 # Android drive — base/v2 on emulator (design-v4 pass)
 
-- Repo `GC-WORK11/ALive`, branch `base/v2` @ `c5762e8` (contains 31dbfdb design-v4 pass-2 + 823323e neutral ledger glyphs).
+- Repo `<owner>/Delhi-Air-108`, branch `base/v2` @ `c5762e8` (contains 31dbfdb design-v4 pass-2 + 823323e neutral ledger glyphs).
 - Build: `Mobile/android` release APK (`app-release.apk`, 137 MB, 4-ABI, debug-signed), `EXPO_PUBLIC_API_URL=http://65.2.28.40` baked into the JS bundle (verified by grepping the bundle — port 80 only).
 - Rig: `demo` AVD (pixel_7, android-35 google_apis x86_64), KVM, `-gpu swiftshader_indirect -no-window`, 1536 MB RAM. Geo via `cmd location providers set-test-provider-location` on fused+gps (dual inject — reaches both the app's fused watch and nav GNSS).
 - API discipline: only GETs + `POST /v2/plan` + `POST /v2/reroute` observed/made. **No /v2/feedback, /observe, /v2/trip POST was ever sent by me.** /health → 200, build_sha ce01ec5c.

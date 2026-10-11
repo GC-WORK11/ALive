@@ -1,6 +1,6 @@
 # Alive — FULL HANDOFF (you are the new lead session; keep working for hours)
 
-Repo: GC-WORK11/ALive. Working branch: base/v2. main is merged up to base/v2 as of this handoff. Work on base/v2: `git pull --rebase origin base/v2`, make small focused commits with `git commit -m`, `git push origin HEAD:base/v2`. Merge base/v2 → main (no-ff) at stable checkpoints after the tests pass. Never force-push. PR #4 (https://github.com/GC-WORK11/ALive/pull/4) is the historical full-product PR. The owner wants direct pushes, no new PRs.
+Repo: <owner>/Delhi-Air-108. Working branch: base/v2. main is merged up to base/v2 as of this handoff. Work on base/v2: `git pull --rebase origin base/v2`, make small focused commits with `git commit -m`, `git push origin HEAD:base/v2`. Merge base/v2 → main (no-ff) at stable checkpoints after the tests pass. Never force-push. PR #4 (https://github.com/<owner>/Delhi-Air-108/pull/4) is the historical full-product PR. The owner wants direct pushes, no new PRs.
 
 Owner: the project owner. He is building this for the AWS×WeMakeDevs Environmental Hacks, Track 01 Air, Oct 8–11 2026. The prize and the Amazon fast-track matter a lot to him. He wants you to work continuously and not stop after 1–2 hours. Message him with concise, honest progress.
 
@@ -1285,7 +1285,7 @@ Lead fixes landed + verified on sim (ios-cold-drive addenda, report @ e7db808):
 - **Landing-v5 recorded demo sent to owner** (full-scroll live-prod
   MP4). ASCII-art question dispositioned: killed deliberately in v4
   a916fc0; restore = owner taste call, flagged.
-- **Owner asks relayed**: admin "sexy/orgasmic" love → Max board; usage
+- **Owner asks relayed**: admin "beautiful" love → Max board; usage
   tab must follow same scheme (it does); coordinator syncs every ~20min
   running (sync #8 sent).
 - **Board**: me + ios-cold-drive (native rebuild + re-running its exact

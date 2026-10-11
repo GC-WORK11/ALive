@@ -23,7 +23,7 @@ disqualifies the whole team." Our private commits predate Oct 8.
 On Oct 8, on any machine:
 
 ```bash
-git clone https://github.com/GC-WORK11/ALive.git
+git clone https://github.com/<owner>/Delhi-Air-108.git
 cd Delhi-Air-108
 ./scripts/public-repo.sh https://github.com/GC-WORK11/<NEW-PUBLIC-REPO>.git
 ```

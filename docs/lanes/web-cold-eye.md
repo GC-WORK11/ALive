@@ -1,6 +1,6 @@
 # Lane: web-cold-eye — hostile comprehension pass on the overhauled WEB surfaces
 
-Repo `GC-WORK11/ALive`, branch `base/v2`, HEAD `d32801e`+.
+Repo `<owner>/Delhi-Air-108`, branch `base/v2`, HEAD `d32801e`+.
 Web overhaul `c1fbfb8` shipped: landing hero stat tile + door tiles +
 band-washed district chips + pastel steps; /city accent chips + day
 tiles; admin `.kchip` severity chips + `.cap` provenance captions. Judges

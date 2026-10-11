@@ -2,8 +2,8 @@
 
 Owner complaints (verbatim):
 1. "'vehicles like yours' — are you mocking me?"
-2. "'leave tomorrow, breathe less' — who the fuck are you to tell me go
-   tomorrow? you don't know my purpose"
+2. "'leave tomorrow, breathe less' presumes too much: the app doesn't
+   know why I'm travelling"
 3. "'journey never started' is dead crap"
 4. "complex bar graphs nobody understands"
 5. "the route colors are literal stool color on my phone"

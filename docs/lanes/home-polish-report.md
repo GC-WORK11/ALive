@@ -1,6 +1,6 @@
 # Lane report — home polish (`HomeScreen` hero)
 
-**Owner brief:** *"app HOME feel 'sexy/orgasmic'… POLISH PASS (small, real, verified — NOT a rewrite): numeral animates value changes (~600ms, no layout jump); band ink transitions cross-fade; balance the felt line + provenance; tracked-caps → normal case; field preview breathing if tasteful. Nothing moves position-wise — pure feel."*
+**Owner brief:** *"app HOME feel 'beautiful'… POLISH PASS (small, real, verified — NOT a rewrite): numeral animates value changes (~600ms, no layout jump); band ink transitions cross-fade; balance the felt line + provenance; tracked-caps → normal case; field preview breathing if tasteful. Nothing moves position-wise — pure feel."*
 **Design Read (per `docs/design/taste-skill/*/SKILL.md`):** instrument-grade editorial hero — warm neutral base, band colour only where it means air. Polish = deepen the existing grammar, never decorate.
 **Files touched:** `Mobile/src/screens/HomeScreen.tsx`, `Mobile/src/ui.tsx` (one component signature — nothing else).
 **Verified on:** iPhone 17 sim (iOS 26.5, `EDD9B083…`) running the dev client against a local `:8317` band-drive proxy (rewrites `pm25_ambient` per request → bands flipped live without touching prod).

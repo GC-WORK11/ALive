@@ -59,7 +59,7 @@ the fold.)
     `BUILD 05A3B48D` from `/health`.
   - `app-choose-strip-848.png` renders + film gate scroll-cranks through the
     3 real frames; `app-hero-708.png` renders in the mechanics section.
-  - Both CTAs → `github.com/GC-WORK11/ALive/releases`.
+  - Both CTAs → `github.com/<owner>/Delhi-Air-108/releases`.
 
 Shots: `docs/lanes/landing-sync-rename-shots/` (top live hero, film gate,
 hero shot, footer/CTAs).
@@ -67,5 +67,5 @@ hero shot, footer/CTAs).
 ## base/v2 residue check (verify-only)
 
 `server/landing.html@0c5f9cc` — grep `108` = 3 hits, all
-`github.com/GC-WORK11/ALive/…` repo URLs. Zero brand `108`.
+`github.com/<owner>/Delhi-Air-108/…` repo URLs. Zero brand `108`.
 Clean.

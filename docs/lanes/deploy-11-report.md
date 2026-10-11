@@ -29,7 +29,7 @@ corpus regen** (`7926c14`, gazetteer 124k→133k rows on the wire).
 |---|---|---|
 | `05a3b4b` admin-obscure | `server/admin_mount.py` (new, +20), `server/admin.html` +92/−40, `server/main.py`, `server/middleware.py`, `server/admin_*.py`, `server/tests/test_admin_*.py` | console mounts under `ADMIN_MOUNT = /a-AFiVSpmZ1Oc4YhaaQyhRie5yqnlKV_qs` (one file names it, all consumers import); `/admin`, `/admin/login`, `/admin/api` → honest 404; mount sends `x-robots-tag: noindex, nofollow`; all admin routes `include_in_schema=False` → zero openapi leak |
 | `7926c14` search-coverage | `server/data/corpus/*` | gazetteer regen 124k→133k rows, 39 chunks; block-preserving addresses, alt-name rescue, fused-skeleton union |
-| `34568a0` landing CTA | `server/landing.html` | 'get the app' → `github.com/GC-WORK11/ALive/releases` (nav + close) |
+| `34568a0` landing CTA | `server/landing.html` | 'get the app' → `github.com/<owner>/Delhi-Air-108/releases` (nav + close) |
 | `fbecd3e` admin-taste | `server/admin.html`, `server/admin_*.py`, `server/community.py`, `server/v2/*` | fresh-badge honesty on down feeds, jargon/plural/unit/timezone cleanup, ledger dedupe |
 
 ## Live verification (all on http://65.2.28.40, build 05a3b4bd)
@@ -40,7 +40,7 @@ corpus regen** (`7926c14`, gazetteer 124k→133k rows on the wire).
 | **(a)** `GET /a-AFiVSpmZ1Oc4YhaaQyhRie5yqnlKV_qs` | **200**, `x-robots-tag: noindex, nofollow`, 168.0 kB html — console live at the opaque mount |
 | **(b)** `/admin` honest-404 | **PASS** — `GET /admin` 404, `POST /admin` 404, `POST /admin/login` 404, `GET /admin/api` 404 (all bare 404s, no redirect/existence signal) |
 | **(c)** `/openapi.json` leak check | **PASS** — mount literal absent, `"/admin` literal absent, 0 admin-bearing paths, 57 paths total |
-| **(d)** `GET /` landing boot | **PASS** — 200, 131.3 kB; browser drive: boot strip completes, numeral **52.5 µg/m³** painted (PM2.5 · SATISFACTORY), `53 STATIONS LIVE · MAP 3 MIN FRESH · WIND 4 KM/H`, sticky chrome follows with live value; footer **`BUILD 05A3B4BD`** JS-painted from `/health`; 'get the app' CTA in nav + footer → `github.com/GC-WORK11/ALive/releases` |
+| **(d)** `GET /` landing boot | **PASS** — 200, 131.3 kB; browser drive: boot strip completes, numeral **52.5 µg/m³** painted (PM2.5 · SATISFACTORY), `53 STATIONS LIVE · MAP 3 MIN FRESH · WIND 4 KM/H`, sticky chrome follows with live value; footer **`BUILD 05A3B4BD`** JS-painted from `/health`; 'get the app' CTA in nav + footer → `github.com/<owner>/Delhi-Air-108/releases` |
 | **(e)** `GET /city`, `GET /community` | 200 `text/html` / 200 `application/json` |
 | **(f)** `GET /v2/city` | `why.cause_note` present — "15 fires in the Punjab–Haryana belt, down from 27 over ~5.9 h — the wind isn't carrying it this way right now · air barely mixing — ventilation 880 m²/s vs ~3,000 typical" |
 | **(g)** `POST /v2/plan` (CP→India Gate) | 200, honest shape — options[] with geometry+dose (mid 2.3 µg, high conf) + emissions + via_names + recommended tag, `engine=alive_core-path` |

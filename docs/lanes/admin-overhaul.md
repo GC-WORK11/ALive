@@ -1,6 +1,6 @@
 # Lane: admin-overhaul — the operator's read, not an OS
 
-Owner's ask (verbatim essence): "admin website... should be easy for non-technical... all components easily readable... should not be a complex piece of crap or an operating system... so sexy, orgasmic and easy to present around."
+Owner's ask (verbatim essence): "admin website... should be easy for non-technical... all components easily readable... should not be a complex piece of crap or an operating system... so beautiful and easy to present around."
 
 ## Files you own this pass
 `server/admin.html` (the whole page), `server/landing.html` ONLY if a nav link needs fixing. Do NOT touch server/*.py route code — admin endpoints already serve; this is presentation + clarity.
