@@ -23,3 +23,14 @@
   color: var(--accent-ink); border-radius: 999px; padding: 3px 8px;
   letter-spacing: .01em }
 .opt .strip i { display: block }
+/* option cards with no served segments don't render a phantom bar */
+.opt .strip:empty { display: none }
+
+/* the swap disc overlaps the to-row's right edge — keep the label clear of it */
+.wt-swap-row .wt-row-label { padding-right: 38px }
+
+/* armed pin-drop — the sheet folds to a hint strip so the whole map is
+   tappable (the near-full sheet left only a ~52px sliver to aim at) */
+.wt-armed .sheet { top: auto; }
+.wt-armhint { padding: 8px 2px 2px }
+.wt-armhint-t { font-size: 14.5px; font-weight: 500; line-height: 1.4 }

@@ -214,6 +214,8 @@ function openPicker() {
         <span><span class="n">your current location</span><span class="s" style="display:block">${esc(A.geo.pos.label || 'where you are')}</span></span></button>` : ''}
       <button class="srow" type="button" data-pin="1"><span class="ic">◎</span>
         <span><span class="n">drop a pin on the map</span><span class="s" style="display:block">tap anywhere — the hours are read there</span></span></button>
+      <button class="srow" type="button" data-back="1"><span class="ic">‹</span>
+        <span><span class="n">back to the air map</span></span></button>
     </div>
     <div class="row-list am-rows"><div class="muted" style="padding:10px 6px">recent places will live here</div></div>`;
 
@@ -241,6 +243,7 @@ function openPicker() {
     A.toast('tap the map — the 24-hour read moves there');
     renderMain();
   });
+  body.querySelector('[data-back]').addEventListener('click', renderMain);
 
   const draw = (list, note) => {
     rows.innerHTML = '';

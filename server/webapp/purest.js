@@ -468,7 +468,9 @@ A.screen('purest', {
       const c = idxF && idxF.properties && idxF.properties.centroid;
       if (c) openEnv(f.properties.name, c[1], c[0]);
     };
-    A.map.ready((m) => { if (m.getLayer(AREA_FILL)) m.on('click', AREA_FILL, onAreaClick); });
+    /* bind by layer name — evaluated at click time, so it's live even
+       though the areas are painted async after /v2/districts */
+    A.map.ready((m) => { m.on('click', AREA_FILL, onAreaClick); });
     A.map.setFieldVisible(false);
 
     /* teardown must survive BOTH router paths: back() calls our cleanup,

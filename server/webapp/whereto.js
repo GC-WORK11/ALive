@@ -21,6 +21,9 @@ const VEHICLES = [
 const RECENTS_KEY = 'whereto.recents';
 const LAST_KEY = 'whereto.last';
 
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 const doseOf = (o) => (o.dose && o.dose.mid != null) ? o.dose.mid
   : (o.engine_dose_ug != null ? o.engine_dose_ug : null);
 const concOf = (o) => o.dose && o.dose.avg_conc_ugm3;
@@ -85,8 +88,8 @@ function optCard(o, best, sel) {
   const vias = (o.via_names || []).slice(0, 2).join(' · ');
   el.innerHTML = `
     <div class="ot">
-      <span class="m">${o.label || o.mode}</span>
-      ${o.tag ? `<span class="otag">${o.tag}</span>` : ''}
+      <span class="m">${esc(o.label || o.mode)}</span>
+      ${o.tag ? `<span class="otag">${esc(o.tag)}</span>` : ''}
       <span class="t">${A.fmt.min(etaOf(o))} · ${A.fmt.km(kmOf(o))}</span>
     </div>
     <div class="dose">
@@ -94,8 +97,8 @@ function optCard(o, best, sel) {
       <span class="w" ${b ? `style="color:${b.color}"` : ''}>µg${b ? ' · ' + b.name : ''}</span>
       ${delta ? `<span class="r">${delta}</span>` : ''}
     </div>
-    ${o.reason_line ? `<div class="why">${o.reason_line}</div>` : ''}
-    ${vias ? `<div class="why">${vias}</div>` : ''}
+    ${o.reason_line ? `<div class="why">${esc(o.reason_line)}</div>` : ''}
+    ${vias ? `<div class="why">${esc(vias)}</div>` : ''}
     <div class="strip">${(o.segments || []).map((s) =>
       `<i style="flex:${Math.max(1, Math.round((s.end_frac - s.start_frac) * 100))};background:var(--b${A.fmt.bandIdx(s.pm25) ?? 0})" title="${Math.round(s.pm25)} µg/m³"></i>`).join('')}</div>`;
   el.addEventListener('click', () => {
@@ -128,9 +131,15 @@ function paintRoutes() {
       }
     });
   });
+  /* a smaller shown set leaves orphan wtN lines from the last paint —
+     hide every id above the new count before fitting the pick */
+  for (let i = shown.length; i < (state.painted || 0); i++) A.map.hideRoute(`wt${i}`);
+  state.painted = shown.length;
   if (state.sel) {
     const g = state.sel.geometry || state.sel.route_geojson;
-    if (g) A.map.fit(g, 110);
+    if (g) A.map.fit(g, window.innerWidth >= 720
+      ? { top: 70, bottom: 70, left: 60, right: 500 }   // stay clear of the right rail
+      : 110);
   }
 }
 
@@ -206,6 +215,7 @@ async function plan() {
       <div class="muted" style="text-align:center;padding:6px">finding the cleanest routes for you…</div>
     </div>`;
   A.map.hideAllRoutes();
+  state.painted = 0;
   const j = await A.api.post('/v2/plan', {
     from: { lat: state.from.lat, lon: state.from.lon },
     to: { lat: state.to.lat, lon: state.to.lon },
@@ -256,13 +266,15 @@ function openSearch(which) {
       <span><span class="n">drop a pin on the map</span><span class="s" style="display:block">tap anywhere — the trip starts/ends there</span></span>
     </button></div>
     ${which === 'from' && A.geo.pos ? `<div class="wt-drop"><button class="srow" type="button" data-cur="1"><span class="ic">◉</span>
-      <span><span class="n">your current location</span><span class="s" style="display:block">${A.geo.pos.label || 'where you are'}</span></span>
+      <span><span class="n">your current location</span><span class="s" style="display:block">${esc(A.geo.pos.label || 'where you are')}</span></span>
     </button></div>` : ''}
+    <div class="wt-drop"><button class="srow" type="button" data-back="1"><span class="ic">‹</span>
+      <span><span class="n">back to the trip</span></span>
+    </button></div>
     <div class="row-list wt-rows"></div>`;
 
   const input = body.querySelector('input');
   const rows = body.querySelector('.wt-rows');
-  const backTo = () => renderMain();
 
   const finish = (p) => {
     state[which] = { lat: p.lat, lon: p.lon, label: p.name || p.label || 'dropped pin' };
@@ -274,10 +286,23 @@ function openSearch(which) {
   };
 
   body.querySelector('.wt-drop .srow').addEventListener('click', () => {
+    /* armed pin-drop: fold the near-full sheet into a hint strip —
+       otherwise the whole map is covered and the tap can't land */
     state.armed = which;
-    A.toast(which === 'from' ? 'tap the map where this starts' : 'tap the map where this ends');
-    backTo();
+    state.el.classList.add('wt-armed');
+    body.innerHTML = `
+      <div class="wt-armhint">
+        <div class="wt-armhint-t">${which === 'from' ? 'tap the map where this trip starts' : 'tap the map where it ends'}</div>
+        <div class="muted" style="margin-top:2px">the sheet is folded away — the whole map is yours</div>
+        <button class="btn-ghost" type="button" data-unarm>back to the search</button>
+      </div>`;
+    body.querySelector('[data-unarm]').addEventListener('click', () => {
+      state.armed = null;
+      state.el.classList.remove('wt-armed');
+      openSearch(which);
+    });
   });
+  body.querySelector('[data-back]').addEventListener('click', () => renderMain());
   const curBtn = body.querySelector('[data-cur]');
   if (curBtn) curBtn.addEventListener('click', () => {
     finish({ lat: A.geo.pos.lat, lon: A.geo.pos.lon, name: A.geo.pos.label || 'your spot' });
@@ -290,9 +315,9 @@ function openSearch(which) {
       const el = document.createElement('button');
       el.type = 'button'; el.className = 'srow';
       el.innerHTML = `<span class="ic">◦</span><span style="min-width:0">
-        <span class="n">${r.name}</span>
-        <span class="s" style="display:block">${[r.sub, r.dist != null ? A.fmt.km(r.dist / 1000) + ' away' : null].filter(Boolean).join(' · ')}</span></span>
-        <span class="src">${r.source || ''}</span>`;
+        <span class="n">${esc(r.name)}</span>
+        <span class="s" style="display:block">${esc([r.sub, r.dist != null ? A.fmt.km(r.dist / 1000) + ' away' : null].filter(Boolean).join(' · '))}</span></span>
+        <span class="src">${esc(r.source || '')}</span>`;
       el.addEventListener('click', () => finish(r));
       rows.appendChild(el);
     });
@@ -328,7 +353,7 @@ function rowView(which) {
   const label = v ? v.label : (which === 'from' ? 'pick a start' : 'where to?');
   return `<button class="searchbar wt-row" type="button" data-which="${which}">
     <span class="sdot ${which === 'from' ? 'a' : 'b'}"></span>
-    <span class="wt-row-label ${v ? '' : 'empty'}">${label}</span>
+    <span class="wt-row-label ${v ? '' : 'empty'}">${esc(label)}</span>
   </button>`;
 }
 
@@ -364,6 +389,10 @@ function renderMain() {
       body.querySelectorAll('.mode').forEach((x) => x.classList.toggle('sel', x === b));
       if (state.plan) { state.sel = null; renderOptions(); paintRoutes(); }
     }));
+
+  /* coming back from the search surface rebuilds .wt-results empty —
+     put the served options back (their route lines never left the map) */
+  if (state.plan) renderOptions();
 }
 
 /* ── screen ─────────────────────────────────────────────────────── */
@@ -371,10 +400,11 @@ A.screen('whereto', {
   mount(el, params) {
     const chrome = A.sheetChrome(el, 'where to');
     state = {
+      el,
       body: chrome.body,
       from: null, to: null,
       mode: 'health', vehicle: 'car',
-      plan: null, sel: null, shown: [], armed: null,
+      plan: null, sel: null, shown: [], painted: 0, armed: null,
     };
 
     const last = A.store.get(LAST_KEY, null);
@@ -406,6 +436,7 @@ A.screen('whereto', {
     const onTap = (e) => {
       if (!state.armed || A.current() !== 'whereto') return;
       const which = state.armed; state.armed = null;
+      el.classList.remove('wt-armed');
       const p = e.detail;
       state[which] = { lat: p.lat, lon: p.lon, label: 'dropped pin' };
       A.search.reverse(p.lat, p.lon).then((n) => {
@@ -425,5 +456,8 @@ A.screen('whereto', {
       state = null;
     };
   },
+  /* re-shown after a stacked screen (journey cleared every route line
+     on mount) — repaint what our cards still promise */
+  show() { if (state && state.plan) paintRoutes(); },
 });
 })();
