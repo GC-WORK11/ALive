@@ -720,7 +720,7 @@ function optionCard(o, i, minDose, lightest) {
       ${d && d.avg_conc_ugm3 != null ? `<div class="wt-det-row"><span>avg along the way</span><b>${Math.round(d.avg_conc_ugm3)} µg/m³</b></div>` : ''}
       ${d && d.note ? `<div class="wt-det-row"><span>${esc(doseNote(d.note))}</span></div>` : ''}
       ${o.engine && o.engine.note ? `<div class="wt-det-row"><span>${esc(o.engine.note)}</span></div>` : ''}
-      ${S.plan && S.plan.field_age_s != null ? `<div class="wt-det-row"><span>air map age</span><b>${Math.max(0, Math.round(S.plan.field_age_s / 60))} min</b></div>` : ''}
+      ${S.plan && S.plan.field && S.plan.field.age_s != null ? `<div class="wt-det-row"><span>air map age</span><b>${Math.max(0, Math.round(S.plan.field.age_s / 60))} min</b></div>` : ''}
     </span>` : '';
   return `<button class="wt-opt${sel ? ' sel' : ''}" type="button" data-i="${i}">
     <span class="wt-selbg"></span>
@@ -838,7 +838,9 @@ function renderPlan() {
     if (!S.plan) return;
     const o = S.plan.options[S.sel];
     if (A.screensReady && A.screensReady.journey) {
-      A.show('journey', { option: o, from: S.from, to: S.to });
+      A.show('journey', { option: o, from: S.from, to: S.to,
+        options: S.plan && S.plan.options,
+        field_age_s: S.plan && S.plan.field && S.plan.field.age_s });
     } else {
       A.toast('journey is still landing');
     }
