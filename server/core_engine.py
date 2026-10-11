@@ -12,6 +12,15 @@ import itertools
 import math
 from typing import Optional
 
+if not hasattr(itertools, "pairwise"):  # py<3.10 — same sliding pairs
+    def _pairwise(iterable):
+        it = iter(iterable)
+        prev = next(it, None)
+        for cur in it:
+            yield prev, cur
+            prev = cur
+    itertools.pairwise = _pairwise
+
 import krige
 import alive_core_ref
 
@@ -480,6 +489,27 @@ def _unit_atom(t):
         or t in _SUBPLACE_STRUCT
 
 
+def _unitish(t):
+    """unit-shaped token the anchor phrase may have skipped — a digit
+    ('62') or a letter+digit compact ('t1', 'b7'). Plain words aren't
+    units ('airport', 'nagar' name places)."""
+    return t.isdigit() or (any(c.isdigit() for c in t)
+                           and any(c.isalpha() for c in t))
+
+
+def _leftover_ok(etoks, t):
+    """does the row's token set carry leftover unit t — literally ('t1'
+    on 'IGI T1 Arrival') or through the alias table ('t1' → 'terminal
+    1' on 'Terminal 1-IGI Airport')."""
+    if _tok_wanted(etoks, t):
+        return True
+    for alt in _alias_map().get(t, ()):
+        # the table stores normalized token lists, not strings
+        if set(alt) <= etoks:
+            return True
+    return False
+
+
 def _unit_pairs(base, want):
     """adjacent atom pairs on the unit side of the query — 'b 7' is
     one unit ('B-7'), not a 'b' from one unit and a '7' from another.
@@ -620,7 +650,13 @@ def _unit_leading(rows, want):
     pref = lead + " "
     out = []
     for r in rows:
-        dn = " ".join(alive_core_ref.normalize(r.get("display") or ""))
+        toks = alive_core_ref.normalize(r.get("display") or "")
+        # a display that IS the bare digit run — a non-ASCII name like
+        # 'द्वार सं. 2' collapses to '2' — isn't a place name, it's a
+        # parse artifact; it can never displace a strong literal hit
+        if toks and all(t.isdigit() for t in toks):
+            continue
+        dn = " ".join(toks)
         if dn == lead or dn.startswith(pref):
             out.append(r)
     return out
@@ -835,6 +871,7 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
             if not (kspan[0] <= j < kspan[1])]
     kind_words = set(toks[kspan[0]:kspan[1]])
     anchor = None
+    want_extra = []
     # "atm near me" — every non-kind token is filler or the me-marker
     if (rest and any(t in _ME_TOKENS for t in rest)
             and all(t in _ME_TOKENS or t in _COMPOUND_STOP
@@ -865,6 +902,11 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
             ah = search_index().query(" ".join(qt), lat, lon, 1)
             if ah and (ah[0].get("cov") or 0.0) >= 0.75:
                 anchor = ah[0]
+                # whatever the winning phrase didn't use still names the
+                # asked row when it's unit-shaped ('delhi airport t1' —
+                # the anchor ate 'delhi', 't1' filters the kind rows)
+                want_extra = [t for t in place_toks
+                              if t not in set(qt) and _unitish(t)]
                 break
         if anchor is None:
             return []
@@ -886,13 +928,25 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
              else _COMPOUND_MAX_M)
     for e, d in nearest(anchor["lat"], anchor["lon"],
                         max_m=max_m, limit=4096):
+        etoks = None
+        # unit tokens the anchor phrase never consumed stay evidence —
+        # 'delhi airport t1' anchors on 'delhi', but the row the user
+        # wants still carries 't1'; a kind row that can't satisfy it
+        # (every airline office near the centre) isn't the answer
+        if want_extra:
+            etoks = set(alive_core_ref.normalize(
+                e.get("display") or ""))
+            if not all(_leftover_ok(etoks, t) for t in want_extra):
+                continue
         # kind match is corpus-kind OR, for a single-word kind, a display
         # token equal to the kind word — "The indian gym" carries kind
         # 'named', not a gym code, but its own name honestly declares it.
         # multi-word kinds require the whole phrase ("office" alone is
         # not a post office)
         if e.get("category") not in kinds:
-            etoks = set(alive_core_ref.normalize(e.get("display") or ""))
+            if etoks is None:
+                etoks = set(alive_core_ref.normalize(
+                    e.get("display") or ""))
             if len(kind_words) > 1:
                 ok = kind_words <= etoks
             else:
@@ -1069,14 +1123,31 @@ def search(q, lat=None, lon=None, limit=8):
     weak = not hits or (hits[0].get("cov") or 0.0) < 0.9
     comp = _compound(q, weak, lat, lon, limit, hits)
     if comp:
-        # intent rows first; name hits append for breadth (deduped on
-        # pid — an entry can satisfy both readings, e.g. "Saket City
-        # Hospital" for 'hospital saket')
         seen = {r["id"] for r in comp}
+        keep = []
         for h in hits:
-            if h.get("id") not in seen and not h.get("_foreign"):
-                comp.append(h)
-        hits = comp
+            if h.get("id") in seen:
+                continue
+            # _foreign convicts a hit against ONE speculative anchor —
+            # it must never veto a row that covers the whole query:
+            # 'Terminal-2, IGIA' is the literal answer to 'terminal 2',
+            # its leftover naming the airport can't be 'foreign'. The
+            # wrong-colony protection stays for partial hits.
+            if h.get("_foreign") and (h.get("cov") or 0.0) < 1.0:
+                continue
+            keep.append(h)
+        # unit-leading comp rows (the subplace path — 'Beta 2' for
+        # 'beta 2 greater noida') keep their lead; then literal beats
+        # inferred: hits covering every query token outrank speculative
+        # kind-scan rows, partial hits come last. The pool-gap bug was
+        # blanket comp-first ordering — a wrong-anchor kind scan
+        # ('sikanderpur' → the Delhi locality, not the Gurgaon metro
+        # area) starved the station's own name hits past the limit cut.
+        units = [r for r in comp if r.get("subplace")]
+        kinds = [r for r in comp if not r.get("subplace")]
+        covered = [h for h in keep if (h.get("cov") or 0.0) >= 1.0]
+        rest = [h for h in keep if (h.get("cov") or 0.0) < 1.0]
+        hits = units + covered + kinds + rest
     hits = _dedupe_hits(hits)[:limit]
     for h in hits:
         i = h.get("id")
