@@ -331,6 +331,7 @@ const S = {
   budgetWithin: '{r} µg left of your {b} µg line for today',
   budgetWithinSugg: '{r} µg left of the suggested {b} µg line for today',
   budgetProfileQ: '{b} µg is the most fine dust you want to breathe in a day — a line you set, not a medical rule',
+  budgetProfileChange: 'change in settings',
   budgetQGeneralSugg: "{b} µg — a suggested reference: WHO 24-h fine-dust guide 15 µg/m³ × ~14.4 m³ of air a day — the volume is our assumption, not WHO's",
   budgetQSensitiveSugg: "{b} µg — a suggested reference: WHO annual fine-dust guide 5 µg/m³ × ~14.4 m³ of air a day — the volume is our assumption, not WHO's",
   budgetQChildSugg: "{b} µg — a suggested reference: WHO 24-h guide 15 µg/m³ × ~8.6 m³ of air a day — our assumed volume for a child",
@@ -933,14 +934,11 @@ function budgetHtml(totalUg) {
     : t(s.profile_set ? 'budgetWithin' : 'budgetWithinSugg', { r: doseUgRound(-over), b: budget });
   const qKey = `budgetQ${cap(s.profile)}Sugg`;
   const fine = s.profile_set ? t('budgetProfileQ', { b: budget }) : t(qKey, { b: budget });
-  const segs = ['general', 'sensitive', 'child'].map((p) =>
-    `<button class="hs-profseg ${s.profile === p ? 'sel' : ''}" data-profile="${p}">${esc(t(`profile${cap(p)}`))}</button>`).join('');
   return `<div class="hcard">
     ${cardTitle(s.profile_set ? 'budgetTitle' : 'budgetTitleSugg')}
     <div class="hs-budgetbar"><div class="hs-budgetfill" style="width:${frac * 100}%;background:${doseDotColor(total, budget) || 'var(--surface3)'}"></div></div>
     <div class="hs-budgetline">${esc(line)}</div>
-    <div class="hs-profrow">${segs}</div>
-    <div class="hs-fine">${esc(fine)}</div>
+    <div class="hs-fine">${esc(fine)} · ${esc(t('budgetProfileChange'))}</div>
   </div>`;
 }
 
@@ -1255,8 +1253,6 @@ A.screen('home', {
         lensWrap.innerHTML = lensHtml();
         return;
       }
-      const seg = e.target.closest('.hs-profseg');
-      if (seg) { setSettings({ profile: seg.dataset.profile, profile_set: true }); paint(); }
     });
 
     const chip = document.getElementById('loc-chip');
