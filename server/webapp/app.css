@@ -6,7 +6,7 @@
 @font-face { font-family: "Satoshi"; src: url("fonts/satoshi-bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
 
 :root {
-  --paper: #F4F2EC; --surface: #FFFFFF; --surface2: #EFEDE7;
+  --paper: #FAFAF7; --surface: #FFFFFF; --surface2: #EFEDE7;
   --ink: #16181D; --ink2: #4A4E57; --ink3: #6E7278; --ink4: #A6ACB8;
   --ink10: rgba(22,24,29,.06); --ink15: rgba(22,24,29,.10);
   --accent: #35614B; --accent-ink: #2A4D3B; --accent-wash: #E5E2DA;
