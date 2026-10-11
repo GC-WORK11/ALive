@@ -847,6 +847,8 @@ _HUB_RAIL = frozenset(("train_station", "railway", "railway_station",
                        "station", "halt", "subway_station",
                        "metro_station", "light_rail_station", "terminal"))
 _HUB_BUS = frozenset(("bus_station", "bus_terminal"))
+_LODGING_KINDS = frozenset(("hotel", "resort", "guest_house", "guesthouse",
+                            "hostel", "motel", "lodging", "homestay"))
 
 
 def hub_class(kind: str) -> Optional[str]:
@@ -1204,7 +1206,11 @@ class AcIndex:
         keep = []
         for r in recs:
             hc = hub_class(r[3])
-            if hc is None:
+            # lodging named after a far city at a Delhi point ("Radisson
+            # Hotel Shimla" on Lodhi Road) is the same junk as a far-named
+            # station: a sales desk or a bad source pin, never the hotel
+            lodging = (r[3] or "").lower().rsplit(":", 1)[-1] in _LODGING_KINDS
+            if hc is None and not lodging:
                 keep.append(r)
                 continue
             toks = list(r[2])
@@ -1230,7 +1236,7 @@ class AcIndex:
                     if len(far_examples) < 12:
                         far_examples.append(r[1])
                     continue
-            if _hub_mismatch(toks, hc):
+            if hc is not None and _hub_mismatch(toks, hc):
                 # the hub category's weight was the only thing lifting
                 # it — a business keeps just its own popularity
                 r[3] = "business"
@@ -1313,6 +1319,10 @@ class AcIndex:
                     continue
                 toks = tuple(sys.intern(t) for t in normalize(name).split())
                 if not toks:
+                    continue
+                # a row the purge already judged junk never sneaks back in
+                # through the outskirts file (same name at the same point)
+                if (toks, round(lat, 3), round(lon, 3)) in self.junk_keys:
                     continue
                 if any(_fast_km(lat, lon, a, b) <= 2.0
                        for a, b in have.get(toks, ())):
