@@ -129,3 +129,5 @@
 .st-ratedone { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: var(--accent); }
 
 .ic { display: inline-block; vertical-align: middle; }
+
+body[data-top="settings"] #chrome { display: none; }

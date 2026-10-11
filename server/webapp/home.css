@@ -312,3 +312,7 @@
 /* the #consent element itself is frozen chrome — my interior fills it */
 #consent { align-items: stretch; justify-content: stretch; }
 #consent.on { display: flex; }
+
+/* paper screens own their top — the frozen #chrome (wordmark + loc-chip)
+   duplicates the RN header on home; off-home screens keep it */
+body[data-top="home"] #chrome { display: none; }
