@@ -26,7 +26,7 @@
 .amc-age { font-size: 11px; color: var(--ink3); white-space: nowrap }
 
 /* ── TapReadout — the tap's compact answer card, floating top-center */
-.am-read { position: fixed; top: calc(64px + var(--sat)); left: 50%; transform: translateX(-50%);
+.am-read { position: fixed; top: calc(64px + var(--sat)); bottom: auto; left: 50%; transform: translateX(-50%);
   z-index: 40; background: rgba(255,255,255,.86); border-radius: 16px;
   border: .5px solid rgba(22,24,29,.06); box-shadow: 0 8px 22px rgba(59,52,35,.12);
   padding: 9px 7px 9px 12px; max-width: 320px; display: flex; flex-direction: column; gap: 3px; }
@@ -38,7 +38,8 @@
 .amr-unit { font-size: 13px; font-weight: 400; color: var(--ink3) }
 .amr-band { font-size: 17px; font-weight: 500 }
 .amr-plain { font-size: 13px; font-weight: 500; color: var(--ink2); white-space: nowrap }
-.amr-x { padding: 2px 2px 2px 8px; line-height: 1; flex: none }
+.amr-x { padding: 2px 2px 2px 8px; line-height: 1; flex: none; position: relative }
+.amr-x::after { content: ''; position: absolute; inset: -11px -9px -11px -11px }
 .amr-caption { font-size: 11px; color: var(--ink3); padding-left: 17px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis }
 
@@ -190,3 +191,6 @@
   .am-card { bottom: auto; top: 72px }
   .am-read { left: auto; right: 480px; transform: none }
 }
+
+/* attribution is fully covered by the open sheet — hide it while covered */
+body:has(.am-host .sheet.on) .maplibregl-ctrl-attrib { visibility: hidden }

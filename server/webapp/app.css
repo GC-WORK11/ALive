@@ -101,7 +101,7 @@ body[data-top]:not([data-top="home"]) #loc-chip { display: none; }
 .sheet-grab { width: 38px; height: 4px; border-radius: 2px; background: var(--ink15);
   margin: 9px auto 4px; flex: none }
 .sheet-body { flex: 1; overflow-y: auto; padding: 4px 18px calc(18px + var(--sab)); }
-.sheet-title { display: flex; align-items: center; gap: 10px; padding: 2px 18px 10px; flex: none }
+.sheet-title { display: flex; align-items: center; gap: 10px; padding: 2px 18px 10px; flex: none; position: relative; z-index: 2; background: var(--paper) }
 .sheet-title h2 { font-size: 19px; font-weight: 500; letter-spacing: -.01em; margin: 0; flex: 1 }
 .back-btn, .x-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--surface);
   box-shadow: var(--sh-card); display: flex; align-items: center; justify-content: center;
@@ -224,12 +224,6 @@ body[data-top]:not([data-top="home"]) #loc-chip { display: none; }
 .am-leg { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink3) }
 .am-leg span { width: 9px; height: 9px; border-radius: 3px }
 .am-hint { margin-bottom: 8px }
-.am-read { position: fixed; left: 50%; bottom: calc(20px + var(--sab)); transform: translateX(-50%);
-  background: var(--surface); border-radius: 16px; box-shadow: var(--sh-float);
-  padding: 11px 38px 11px 16px; display: flex; align-items: baseline; gap: 6px; z-index: 40 }
-.am-read .am-num { font-size: 30px; font-weight: 300; letter-spacing: -.03em }
-.am-read .am-u { font-size: 11.5px; color: var(--ink3) }
-.am-read .am-x { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--ink3); padding: 6px }
 .am-plain { font-size: 12.5px; color: var(--ink3); padding: 4px 6px }
 .am-bars { display: flex; align-items: flex-end; gap: 2px; height: 56px; margin: 10px 0 8px }
 .am-bar { flex: 1; display: flex; align-items: flex-end; height: 100%; min-width: 0 }

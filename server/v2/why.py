@@ -766,7 +766,7 @@ def _cause_note(evaluated: dict, wind: dict, series: list) -> tuple:
         # typical day (raw m²/s ventilation only an engineer can read)
         pace = max(1, round(100.0 / stag_factor))
         bits.append(
-            f"the air is barely moving — clearing at ~{pace}% of its "
+            f"the air is holding still — clearing at ~{pace}% of its "
             "usual pace")
     if trend_adm:
         bits.append(
