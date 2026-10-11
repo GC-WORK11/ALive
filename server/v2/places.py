@@ -7,6 +7,7 @@ second path when ALIVE_LOCATION_KEY is configured; a 404 naming the
 searched radius is the third — never a fabricated "Dropped pin" label.
 """
 import math
+import re
 import time
 from typing import Optional
 
@@ -14,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from . import deps
-from .gazetteer import GAZ
+from .gazetteer import GAZ, name_says_elsewhere
 
 router = APIRouter()
 
@@ -150,6 +151,31 @@ def _rev_subtitle(kind: str) -> str:
     return kind.split(":", 1)[-1].replace("_", " ")
 
 
+# a pin label should be a place a person can point at — not a row the
+# upstream join glued together. Two failure shapes seen on prod:
+# 'Tea Square,a J Vof Abu Dhabi Financial Group & Eiosoft Technologies
+# Inc' (several occupants concatenated into one display) and
+# 'Srinagar Railway Station' (far-city name parked at Delhi coords).
+_CORP_GLUED = re.compile(
+    r"(&|(?<!\d)\d+\s+(?:of\s+)?)?(inc|llc|ltd|pvt|vof|co\.?|technologies|"
+    r"industries|corporation|enterprises|financial|holdings)\b",
+    re.IGNORECASE)
+
+
+def _label_sane(display: str, kind: str = "") -> bool:
+    d = (display or "").strip()
+    if not d or len(d) > 56:
+        return False
+    # a glued name reads like a directory listing: '&' plus a corporate
+    # suffix token — 'near Apollo Tyres' stays (no &), 'Tea Square,a J
+    # Vof … & Eiosoft … Inc' goes.
+    if "&" in d and _CORP_GLUED.search(d):
+        return False
+    if name_says_elsewhere(d, kind=kind):
+        return False
+    return True
+
+
 def _gaz_reverse(lat: float, lon: float):
     """Nearest named corpus/gazetteer entry within REV_MAX_M, or None."""
     try:
@@ -161,13 +187,16 @@ def _gaz_reverse(lat: float, lon: float):
         return None
     best = None  # (rank, dist) — class first, then distance
     for e, d in hits:
+        if not _label_sane(e.get("display") or "",
+                           e.get("category") or ""):
+            continue
         cand = (_rev_rank(e.get("category") or ""), d)
         if best is None or cand < best[:2]:
             best = cand + (e,)
     if best is None:
         return None
     rank, d, e = best
-    name = e["display"]
+    name = re.sub(r",(\S)", r", \1", e["display"].strip())
     if rank == 2:
         # a pin is never AT the poi — "near X" is the honest phrasing
         name = f"near {name}"

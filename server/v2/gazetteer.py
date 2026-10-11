@@ -153,6 +153,67 @@ def normalize(s: str) -> str:
 
 _ALIAS_TABLE: Optional[dict] = None
 
+# Cities outside Delhi NCR whose names leak onto Delhi rows — upstream
+# Overture/Wikidata join artifacts ('Srinagar Railway Station' pinned
+# at NDLS, 'Heathrow International Airport London' in Chhatarpur, 687
+# such rows in the bundled gazetteer). A row that also names an NCR
+# place is kept honest ('Patna Rajdhani Express New Delhi Railway
+# Station' really is at NDLS); and when the QUERY carries the city the
+# row stays too ('jaipur column' is a real Delhi landmark — the user
+# asked for it, the name just contains the token).
+ELSEWHERE_TOKENS = frozenset("""
+srinagar jammu howrah kolkata calcutta mumbai bombay chennai madras
+bengaluru bangalore hyderabad secunderabad jaipur udaipur jodhpur
+lucknow kanpur patna amritsar ludhiana jalandhar nagpur pune surat
+indore bhopal ahmedabad vadodara rajkot nashik aurangabad varanasi
+allahabad prayagraj guwahati kochi thiruvananthapuram trivandrum
+coimbatore madurai vijayawada visakhapatnam gwalior jabalpur mysuru
+mysore dehradun shimla ranchi raipur bhubaneswar cuttack agartala
+imphal gangtok aizawl itanagar kohima dimapur siliguri asansol
+durgapur agra mathura vrindavan haridwar rishikesh nainital mussoorie
+london dubai singapore bangkok kathmandu colombo dhaka karachi lahore
+""".split())
+
+# Delhi NCR + towns the field actually reaches — a name containing one
+# is a legitimate regional row, never a contradiction.
+NCR_TOKENS = frozenset("""
+delhi ncr noida gurugram gurgaon ghaziabad faridabad meerut baghpat
+sonipat panipat rohtak jhajjar rewari palwal nuh sohna manesar
+bhiwadi dharuhera bahadurgarh kundli loni hapur bulandshahr bulandshahar
+khurja modinagar muradnagar pilkhuwa dasna dadri narela bawana
+kanjhawala mundka alipur sampla ganaur baraut jind bhiwani hisar
+karnal kurukshetra jewar tapukara neemrana behror
+""".split())
+
+
+# kinds that cannot travel: a station/airport/monument named after a
+# far city but pinned in Delhi is a join artifact, never a real place.
+# Businesses/institutions named after cities ('Kolkata Biryani House',
+# 'Agra Sweets') are everyday Delhi reality — those stay untouched.
+_IMMOBILE_KIND_SUBSTR = ("station", "rail", "airport", "platform",
+                        "ferry", "terminal", "monument", "memorial",
+                        "historic", "fort", "museum")
+
+
+def name_says_elsewhere(name: str, qn: str = "",
+                        kind: str = "") -> Optional[str]:
+    """Far-city token contradicting a Delhi row, or None when clean.
+
+    Only fires on immobile kinds (station/airport/monument/…) — a name
+    can reference a far city legitimately everywhere else.
+    qn = normalized query (may be '' for reverse/label checks)."""
+    k = (kind or "").lower()
+    if kind and not any(s in k for s in _IMMOBILE_KIND_SUBSTR):
+        return None
+    toks = set(normalize(name).split())
+    if toks & NCR_TOKENS:
+        return None
+    qtoks = set(qn.split()) if qn else set()
+    for t in toks & ELSEWHERE_TOKENS:
+        if t not in qtoks:
+            return t
+    return None
+
 
 def alias_table() -> dict:
     """{token: [[tok, ...], ...]} — builtins + roman + aliases.json.

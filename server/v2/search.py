@@ -17,7 +17,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from . import deps
-from .gazetteer import GAZ, classify, normalize
+from .gazetteer import GAZ, classify, name_says_elsewhere, normalize
 
 router = APIRouter()
 
@@ -61,6 +61,10 @@ def _engine_rows(out: object, default_source: str) -> list:
         # name/subtitle and aren't in the Place contract)
         row.setdefault("subtitle", r.get("subtitle") or r.get("category"))
         row.setdefault("kind", r.get("kind") or r.get("category"))
+        # snake_case OSM tags are not copy — 'casual_eatery' on the
+        # result row reads technical; spaces carry the same meaning
+        if isinstance(row.get("subtitle"), str) and "_" in row["subtitle"]:
+            row["subtitle"] = row["subtitle"].replace("_", " ")
         row.pop("display", None)
         row.pop("category", None)
         row["lat"], row["lon"] = float(lat), float(lon)
@@ -191,6 +195,17 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float) -> list:
                     dup["match"] = r["match"]
         else:
             merged.append(r)
+    # upstream-join sanity floor: a row whose name claims a far city at
+    # Delhi coordinates ('Srinagar Railway Station' pinned at NDLS) can
+    # never outrank an honest row — demote to 'other', never delete:
+    # the user may still be asking for it by that very name (the query
+    # carrying the token already keeps the row clean).
+    for r in merged:
+        if name_says_elsewhere(r.get("name") or "", qn,
+                               r.get("kind") or "") and \
+                (r.get("match_rank") or 3) < 3:
+            r["match_rank"] = 3
+            r["match"] = _MATCH_NAMES[3]
     merged.sort(key=lambda r: (r.get("match_rank", 3),
                                # inside a match class the engine's own
                                # order is the ranking — it already
