@@ -1,57 +1,192 @@
-/* Alive webapp — air around me. The map is the hero: the sheet only
-   takes a bottom detent so the field stays visible and tappable. */
+/* Alive webapp — air around me. Pixel twin of the RN city-day surface:
+   DelhiToday sheet + AirMapCard legend + TapReadout + DepartGraph.
+   Numbers are tabular Satoshi (RN mono = same family, NUM variant);
+   band hues only where they mean air; no emoji; lowercase. */
 
-/* mobile: bottom-detent sheet instead of the near-full sheet */
-.am-host .sheet { top: auto; max-height: 58%; }
+.num { font-variant-numeric: tabular-nums; font-family: var(--font); }
 
-/* tap readout — floats under the chrome, always over live map
-   (app.css also styles .am-read bottom-center; we take it top-center) */
-.am-read { position: fixed; top: calc(64px + var(--sat)); bottom: auto; left: 50%;
-  transform: translateX(-50%); display: block; width: min(340px, calc(100vw - 28px)); }
+/* the sheet is a tall detent — the field + cards stay live above it */
+.am-host .sheet { top: 42%; }
+
+/* ── AirMapCard — the floating field legend (Mobile/components/AirMapCard)
+   floats over the map just above the sheet — glass, 16 radius, hairline */
+.am-card { position: fixed; left: 12px; bottom: calc(58% + 12px); z-index: 40;
+  background: rgba(255,255,255,.86); border-radius: 16px;
+  border: .5px solid rgba(22,24,29,.06); box-shadow: 0 8px 22px rgba(59,52,35,.12);
+  padding: 9px 12px; display: flex; flex-direction: column; gap: 4px; max-width: 290px; }
+.amc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px }
+.amc-title { font-size: 13px; font-weight: 500; color: var(--ink) }
+.amc-stations { font-size: 11px; color: var(--ink3); flex-shrink: 1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis }
+.amc-line { font-size: 13px; color: var(--ink2) }
+.amc-foot { display: flex; align-items: center; gap: 8px }
+.amc-dots { display: flex; gap: 3px }
+.amc-dots i { width: 8px; height: 8px; border-radius: 4px }
+.amc-scale { font-size: 11px; color: var(--ink3) }
+.amc-age { font-size: 11px; color: var(--ink3); white-space: nowrap }
+
+/* ── TapReadout — the tap's compact answer card, floating top-center */
+.am-read { position: fixed; top: calc(64px + var(--sat)); left: 50%; transform: translateX(-50%);
+  z-index: 40; background: rgba(255,255,255,.86); border-radius: 16px;
+  border: .5px solid rgba(22,24,29,.06); box-shadow: 0 8px 22px rgba(59,52,35,.12);
+  padding: 9px 7px 9px 12px; max-width: 320px; display: flex; flex-direction: column; gap: 3px; }
 .am-read[hidden] { display: none }
-.am-read {
-  background: var(--surface); border-radius: 16px; box-shadow: var(--sh-float);
-  padding: 12px 14px 11px; z-index: 40; }
-.am-read-top { display: flex; align-items: center; gap: 10px }
-.am-read .am-num { font-size: 34px; font-weight: 300; letter-spacing: -.03em; line-height: 1 }
-.am-read .am-u { font-size: 11px; color: var(--ink3) }
-.am-read .am-word { font-size: 13px; font-weight: 500 }
-.am-read .am-x { margin-left: auto; align-self: flex-start;
-  font-size: 11px; color: var(--ink3); padding: 4px 6px }
-.am-read .am-note { font-size: 11.5px; color: var(--ink2); margin-top: 7px; line-height: 1.35 }
-.am-read .am-meta, .am-meta { font-size: 10.5px; color: var(--ink4); margin-top: 4px;
-  font-family: var(--mono) }
+.amr-row { display: flex; align-items: center; gap: 8px }
+.amr-read { display: flex; align-items: center; gap: 8px; flex-shrink: 1; min-width: 0 }
+.amr-dot { width: 9px; height: 9px; border-radius: 5px; flex: none }
+.amr-num { font-size: 17px; font-weight: 500; white-space: nowrap }
+.amr-unit { font-size: 13px; font-weight: 400; color: var(--ink3) }
+.amr-band { font-size: 17px; font-weight: 500 }
+.amr-plain { font-size: 13px; font-weight: 500; color: var(--ink2); white-space: nowrap }
+.amr-x { padding: 2px 2px 2px 8px; line-height: 1; flex: none }
+.amr-caption { font-size: 11px; color: var(--ink3); padding-left: 17px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis }
 
-/* legend — one compact line of six band chips */
-.am-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 6px }
-.am-leg { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink3) }
-.am-leg span { width: 9px; height: 9px; border-radius: 3px }
-.am-hint { font-size: 11.5px; line-height: 1.45; margin-bottom: 10px }
+/* ── TapPin — the read pinned at the point: washed chip + dot ─────── */
+.am-tappin { display: flex; flex-direction: column; align-items: center; pointer-events: none }
+.am-tappin-chip { padding: 3px 7px; border-radius: 9px; border: .5px solid #E3E0D7 }
+.am-tappin-num { font-size: 11px; font-weight: 500; white-space: nowrap }
+.am-tappin-dot { width: 5px; height: 5px; border-radius: 3px; margin-top: 1.5px }
 
-/* the place row — reuses .searchbar shape as a button */
-.am-place { width: 100%; text-align: left; margin-bottom: 10px }
+/* ── DelhiToday sheet content (Mobile/screens/DelhiToday.tsx) ─────── */
+.dt-wait { color: var(--ink3); font-size: 13px; margin: 10px 18px }
+.dt-center { display: flex; flex-direction: column; align-items: center; margin-top: 60px }
+.dt-retry { margin-top: 12px; padding: 10px 22px; border-radius: 20px;
+  background: var(--surface2); color: var(--accent); font-size: 15px; font-weight: 500 }
+.dt-retry:active { opacity: .55 }
+
+/* the hero — graded light of the day's band into paper, no card */
+.dt-hero { padding: 22px 22px 18px }
+.dt-herolead { color: var(--ink2); font-size: 17px; font-weight: 500 }
+.dt-herorow { display: flex; align-items: baseline; margin-top: 4px; gap: 10px }
+.dt-heronum { font-size: 96px; line-height: 102px; letter-spacing: -4px;
+  font-weight: 300; margin-left: -3px }
+.dt-herounit { color: var(--ink2); font-size: 17px; font-weight: 500;
+  align-self: flex-end; padding-bottom: 18px }
+.dt-herofelt { font-size: 30px; letter-spacing: -.4px; margin-top: -4px; font-weight: 500 }
+.dt-heroref { color: var(--ink2); font-size: 15px; line-height: 21px; margin-top: 4px;
+  white-space: pre-line }
+.dt-scale { margin-top: 10px; max-width: 210px; height: 9px; position: relative }
+.dt-scale-track { position: absolute; left: 0; right: 0; top: 2.5px; height: 4px;
+  border-radius: 2px }
+.dt-scale-seam { position: absolute; top: 0; height: 9px; border-radius: 4.5px;
+  background: #FAFAF7 }
+.dt-scale-pos { position: absolute; top: 1px; height: 7px; border-radius: 3.5px }
+.dt-herorange { color: var(--ink2); font-size: 13px; margin-top: 4px }
+.dt-whyhero { color: var(--ink2); font-size: 15px; line-height: 21px; margin-top: 10px;
+  font-style: italic }
+.dt-whynote { color: var(--ink2); font-size: 13px; line-height: 19px; margin-top: 8px }
+.dt-whynotetag { color: var(--ink3) }
+
+/* freshness chips */
+.dt-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 18px 0 }
+.dt-chip { display: flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border-radius: 999px; background: var(--surface2); font-size: 13px; color: var(--ink2) }
+
+/* section heads + ruled grids */
+.dt-sec { color: var(--ink); font-size: 15px; font-weight: 600; margin: 24px 18px 6px }
+.dt-grid { margin: 8px 16px 0; border-radius: 20px; background: var(--surface);
+  box-shadow: 0 6px 18px rgba(59,52,35,.07); padding: 0 16px }
+.dt-species { display: flex; align-items: center; padding: 12px 0 }
+.dt-species.sep, .dt-crow.sep { border-top: .5px solid #E3E0D7 }
+.dt-slab { flex: 1; color: var(--ink2); font-size: 15px; font-weight: 500 }
+.dt-sval { font-size: 17px; font-weight: 500; min-width: 64px; text-align: right }
+.dt-swho { color: var(--ink3); font-size: 13px; min-width: 84px; text-align: right }
+.dt-note { color: var(--ink3); font-size: 13px; margin: 2px 18px 0 }
+
+/* next-12h strip */
+.dt-fcrow { display: flex; margin: 8px 18px 0; align-items: flex-end }
+.dt-fccol { flex: 1; display: flex; flex-direction: column; align-items: center }
+.dt-fcval { color: var(--ink2); font-size: 13px; height: 15px }
+.dt-fcbar { width: 12px; border-radius: 6px; margin-top: 2px }
+.dt-fchr { color: var(--ink3); font-size: 13px; height: 15px; margin-top: 3px }
+
+/* fresh-install empty well + corridor rows + traveller lines */
+.dt-ownempty { margin: 24px 18px 0; padding: 16px; border-radius: 20px; background: var(--surface2) }
+.dt-ownline { color: var(--ink); font-size: 15px; line-height: 21px }
+.dt-ownsub { color: var(--ink3); font-size: 13px; line-height: 19px; margin-top: 6px }
+.dt-empty { color: var(--ink3); font-size: 15px; margin: 4px 18px 0; line-height: 21px }
+.dt-crow { display: flex; align-items: center; min-height: 58px; padding: 10px 0 }
+.dt-cglyph { width: 24px; display: flex; justify-content: center; margin-right: 12px; flex: none }
+.dt-ctext { flex: 1; margin-right: 10px; min-width: 0 }
+.dt-cname { color: var(--ink); font-size: 17px; font-weight: 500; display: block;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.dt-csub { color: var(--ink3); font-size: 13px; margin-top: 1px; display: block }
+.dt-crel { font-size: 13px; font-weight: 500; flex: none }
+.dt-dayqual { color: var(--ink3); font-size: 13px; margin: -2px 18px 2px }
+.dt-dayline { color: var(--ink2); font-size: 15px; margin: 4px 18px 0; line-height: 22px }
+
+/* CityMoves card */
+.dt-moves { margin: 16px 16px 0; padding: 16px; border-radius: 20px;
+  background: var(--surface); box-shadow: 0 6px 18px rgba(59,52,35,.07) }
+.dt-mvtitle { color: var(--ink); font-size: 17px; font-weight: 600 }
+.dt-mvsub { color: var(--ink3); font-size: 13px; margin-top: 2px }
+.dt-mvnote { color: var(--ink3); font-size: 13px; margin-top: 10px; line-height: 19px }
+.dt-mvfoot { color: var(--ink3); font-size: 13px; margin-top: 12px; line-height: 18px }
+.dt-mvbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+  margin-top: 12px; gap: 2px; background: rgba(20,24,31,.08) }
+.dt-mvbar i { min-width: 4px }
+.dt-mvrow { display: flex; align-items: center; gap: 10px; min-height: 30px; margin-top: 6px }
+.dt-mvname { color: var(--ink2); font-size: 15px; flex: 1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis }
+.dt-mvpct { color: var(--ink); font-size: 15px; font-weight: 500 }
+.dt-mvtrips { color: var(--ink3); font-size: 13px; width: 64px; text-align: right; flex: none }
+.dt-mvbrow { display: flex; align-items: center; justify-content: space-between;
+  margin-top: 12px; gap: 12px }
+.dt-mvblab { color: var(--ink3); font-size: 15px; flex: 1 }
+.dt-mvbvals { display: flex; flex-direction: column; align-items: flex-end }
+.dt-mvbmid { color: var(--ink); font-size: 15px; font-weight: 500 }
+.dt-mvbband { color: var(--ink3); font-size: 13px; margin-top: 1px }
+
+/* go-out place row + card */
+.am-place { width: 100%; text-align: left; margin: 8px 0 10px }
 .am-place-label { flex: 1; font-size: 14px; font-weight: 500; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
 .am-place-edit { font-size: 11.5px; color: var(--ink3); flex: none }
-
-/* the 24-hour strip — bar = mid, whisker = lo–hi band while anchored */
-.am-bars { display: flex; align-items: flex-end; gap: 2px; height: 58px; margin: 8px 0 2px }
-.am-bar { flex: 1; display: flex; align-items: flex-end; height: 100%;
-  min-width: 0; position: relative }
-.am-bar i { width: 100%; border-radius: 3px 3px 1px 1px; min-height: 3px; position: relative; z-index: 1 }
-.am-bar u { position: absolute; left: 15%; right: 15%; border-radius: 2px;
-  background: var(--ink10); z-index: 0 }
-.am-bar.isbest i { box-shadow: 0 0 0 1.5px var(--accent) }
-.am-bar.isworst i { opacity: .92 }
-.am-axis { display: flex; justify-content: space-between; font-size: 9.5px;
-  color: var(--ink4); font-family: var(--mono); margin-bottom: 8px }
-
-.am-verdict { font-size: 14px; font-weight: 500; margin: 2px 0 4px; line-height: 1.4 }
+.am-verdict { font-size: 14.5px; font-weight: 500; color: var(--ink); margin: 6px 0 12px;
+  line-height: 1.4 }
+.am-bestworst { margin-top: 6px }
 .am-bw { font-size: 13px; padding: 6px 0; border-bottom: .5px solid var(--ink10) }
+.am-bw:last-child { border-bottom: 0 }
 .am-bw .bw-l { color: var(--ink3); font-size: 11.5px; margin-right: 6px }
+.am-meta { font-size: 10.5px; color: var(--ink4); margin-top: 6px; font-family: var(--mono) }
 .am-quick { display: flex; flex-direction: column; margin-bottom: 4px }
+.am-rows { margin-bottom: 8px }
+
+/* ── DepartGraph — candlestick dose strip (Mobile/components/DepartGraph) */
+.dg-wrap { padding: 0 4px }
+.dg-bars { display: flex; align-items: stretch; touch-action: none }
+.dg-cell { flex: 1; min-width: 0; display: flex }
+.dg-col { flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; border-radius: 5px; position: relative }
+.dg-col.sel { background: #E5E2DA }
+.dg-bar { width: 58%; min-width: 4px; max-width: 11px; border-radius: 2px }
+.dg-whisk { position: absolute; width: 3px; border-radius: 1.5px; align-self: center }
+.dg-bestdot { position: absolute; top: 1px; width: 4px; height: 4px;
+  border-radius: 2px; background: var(--accent); align-self: center }
+.dg-axis { position: relative; height: 30px; margin-top: 3px }
+.dg-tick { position: absolute; width: 48px; display: flex; flex-direction: column;
+  align-items: center }
+.dg-tickoff { font-size: 11px; color: var(--ink2); line-height: 13px; white-space: nowrap }
+.dg-tickoff.best { color: var(--accent) }
+.dg-tickclk { font-size: 11px; color: var(--ink3); line-height: 12px; white-space: nowrap }
+.dg-caption { display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 4px; padding: 0 2px }
+.dg-cap { font-size: 13px; color: var(--ink3) }
+.dg-capval { font-size: 13px; color: var(--ink2) }
+
+/* why-this-is-an-estimate expander */
+.dt-whybtn { display: flex; align-items: center; gap: 8px; margin: 24px 18px 0;
+  padding: 13px 14px; border-radius: 13px; background: var(--surface2); width: calc(100% - 36px);
+  text-align: left }
+.dt-whybtn:active { opacity: .7 }
+.dt-whylabel { color: var(--ink); font-size: 15px; font-weight: 500; flex: 1 }
+.dt-whychev { display: flex; transition: transform .2s var(--ease) }
+.dt-whybody { margin: 10px 20px 0; display: flex; flex-direction: column; gap: 8px }
+.dt-whyline { color: var(--ink2); font-size: 13px; line-height: 19px }
 
 @media (min-width: 720px) {
-  .am-host .sheet { max-height: none; top: 0; }   /* desktop: right rail as usual */
-  .am-read { left: 24px; transform: none; width: 330px }
+  .am-host .sheet { top: 0 }
+  .am-card { bottom: auto; top: 72px }
+  .am-read { left: auto; right: 480px; transform: none }
 }
