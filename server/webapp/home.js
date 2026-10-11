@@ -363,6 +363,13 @@ function spotHtml(d) {
   if (!ps.pos || (d.state !== 'live' && d.state !== 'stale' && d.state !== 'pin')) return '';
   const p = ps.pos;
   const near = cur.addr && Math.abs(cur.addr.lat - p.lat) < 0.0015 && Math.abs(cur.addr.lon - p.lon) < 0.0015;
+  /* a coarse fix (Wi-Fi/IP, typical on laptops) is said plainly — never
+     dressed up as a street address — and offers the exact-spot pin */
+  if (d.state !== 'pin' && isNum(p.acc) && p.acc > 250) {
+    const r = p.acc >= 1000 ? `${(p.acc / 1000).toFixed(1)} km` : `${Math.round(p.acc / 10) * 10} m`;
+    return `<div class="hs-spot hs-spot-rough">${ic('pin', 14, 'hs-spotic')}<span>Approximate — your device placed you within ±${esc(r)}. Sharpening…</span></div>
+      <button class="hs-locbtn hs-exact" type="button" data-act="consent">${ic('pin', 16)}<span>Set my exact spot</span></button>`;
+  }
   const dp = A.digipin && A.digipin.encode ? A.digipin.encode(p.lat, p.lon) : null;
   const acc = d.state !== 'pin' && isNum(p.acc) ? `±${Math.max(1, Math.round(p.acc))} m` : null;
   const parts = [near ? cur.addr.text : null, acc, dp ? `DIGIPIN ${dp}` : null].filter(Boolean);
@@ -447,14 +454,23 @@ function paint() {
   setPick();
 }
 
-let relocating = false;
+let relocating = false, stopRefine = null;
+/* after a fix lands, keep listening ~90 s so a coarse Wi-Fi/IP first
+   answer sharpens into the real spot on its own */
+function startRefine() {
+  if (stopRefine) stopRefine();
+  if (!A.geo.refine || A.geo.consent !== 'granted') return;
+  stopRefine = A.geo.refine((p) => {
+    if (A.geo.consent === 'granted' && A.current && A.current() === 'home') applyPos(p);
+  }, 90000);
+}
 function relocate() {
   if (relocating || !navigator.geolocation) return;
   relocating = true;
   A.geo.locate().then((p) => {
     relocating = false;
     cur.locErr = null;
-    if (p && A.geo.consent === 'granted') applyPos(p);
+    if (p && A.geo.consent === 'granted') { applyPos(p); startRefine(); }
   }).catch((e) => {
     relocating = false;
     if (e && e.code === 1) { cur.locErr = 'denied'; paint(); }
@@ -592,6 +608,7 @@ async function chooseGps() {
     closeConsent();
     goHome();
     document.dispatchEvent(new CustomEvent('alive:location', { detail: pos }));
+    startRefine();
   } catch (e) {
     CS.busy = false;
     CS.note = e && e.code === 1 ? t('csDenied') : t('csNoFix');

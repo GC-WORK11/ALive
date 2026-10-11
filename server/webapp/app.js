@@ -54,16 +54,43 @@ const geo = {
   consent: store.get('consent'),            // 'granted' | 'picked' | null
   pos: store.get('pos'),                    // {lat,lon,label?,t}
   granted() { return geo.consent === 'granted'; },
-  async locate() {
+  /* a FRESH fix, never a cached one: laptops/phones often answer first
+     with a coarse Wi-Fi/IP fix (±1–3 km) and sharpen within seconds —
+     take the best fix of a short window, return early once it is tight */
+  async locate(opts) {
     if (!navigator.geolocation) throw new Error('no geolocation');
-    return new Promise((res, rej) => navigator.geolocation.getCurrentPosition(
-      (p) => {
+    const goodM = (opts && opts.goodM) || 100, waitMs = (opts && opts.waitMs) || 5000;
+    return new Promise((res, rej) => {
+      let best = null, done = false, id = null, tm = null;
+      const end = (err) => {
+        if (done) return; done = true;
+        clearTimeout(tm); if (id != null) navigator.geolocation.clearWatch(id);
+        if (best) { geo.pos = best; store.set('pos', best); res(best); } else rej(err || new Error('no fix'));
+      };
+      tm = setTimeout(() => (best ? end() : null), waitMs);
+      id = navigator.geolocation.watchPosition((p) => {
         const pos = { lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now(), acc: p.coords.accuracy };
-        geo.pos = pos; store.set('pos', pos);
-        res(pos);
-      },
-      rej,
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }));
+        if (!best || !(best.acc <= pos.acc)) best = pos;
+        if (pos.acc != null && pos.acc <= goodM) end();
+      }, (e) => { if (!best || (e && e.code === 1)) end(e); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    });
+  },
+  /* keep sharpening after the first answer: cb fires only when the fix
+     gets meaningfully tighter (or the device really moved) */
+  refine(cb, ms = 90000) {
+    if (!navigator.geolocation) return () => {};
+    let best = geo.pos;
+    const id = navigator.geolocation.watchPosition((p) => {
+      const pos = { lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now(), acc: p.coords.accuracy };
+      const bAcc = best && best.acc != null ? best.acc : Infinity;
+      const dM = best ? Math.hypot((pos.lat - best.lat) * 111320, (pos.lon - best.lon) * 111320 * Math.cos(pos.lat * Math.PI / 180)) : Infinity;
+      if (pos.acc != null && (pos.acc < bAcc * 0.7 || dM > Math.max(80, pos.acc + (isFinite(bAcc) ? bAcc : 0)))) {
+        best = pos; geo.pos = pos; store.set('pos', pos); cb(pos);
+      }
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+    const tm = setTimeout(() => navigator.geolocation.clearWatch(id), ms);
+    return () => { clearTimeout(tm); navigator.geolocation.clearWatch(id); };
   },
   watch(cb) {
     if (!navigator.geolocation) return null;
