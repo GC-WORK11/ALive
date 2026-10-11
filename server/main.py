@@ -1824,7 +1824,7 @@ async def webapp_index():
     import os
     return FileResponse(
         os.path.join(os.path.dirname(__file__), "webapp", "index.html"),
-        headers={"cache-control": "public, max-age=60",
+        headers={"cache-control": "no-cache",
                  # the landing's live-preview phone embeds /app/ in an iframe —
                  # SAMEORIGIN allows the same-origin embed, keeps clickjacking cover
                  "x-frame-options": "SAMEORIGIN"})
@@ -1855,8 +1855,13 @@ async def webapp_asset(asset: str):
     if not p.startswith(root + os.sep) or not os.path.isfile(p):
         from fastapi import HTTPException
         raise HTTPException(404)
-    hdrs = {"cache-control": "public, max-age=60"} if p.endswith(".html") \
-        else dict(_STATIC_CACHE)
+    # code (html/js/css) must never outlive a deploy in any CDN or browser:
+    # revalidate every time (the ETag makes that a cheap 304). A 1-hour
+    # public cache here let the Vercel edge pin the previous build's JS.
+    if p.endswith((".html", ".js", ".css", ".json")):
+        hdrs = {"cache-control": "no-cache"}
+    else:
+        hdrs = dict(_STATIC_CACHE)
     return FileResponse(p, headers=hdrs)
 
 

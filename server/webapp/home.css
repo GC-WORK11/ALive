@@ -144,6 +144,8 @@
 .hs-spot { display: flex; align-items: flex-start; gap: 6px; color: var(--ink2); font-size: 13px; line-height: 18px; margin-top: 6px; overflow-wrap: anywhere; }
 .hs-spot .hs-spotic { flex: none; margin-top: 2px; opacity: .7; }
 .hs-exact { margin-top: 10px; }
+.hs-spot { color: var(--ink); font-size: 14px; margin-top: 12px; }
+.hs-spotk { font-weight: 600; margin-right: 4px; }
 
 .hs-dose {
   display: flex; align-items: center; gap: 10px; width: 100%;

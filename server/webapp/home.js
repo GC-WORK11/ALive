@@ -182,8 +182,8 @@ const S = {
   plain3: 'Breathing discomfort for most people on long exposure.',
   plain4: 'Can cause breathing illness on long exposure.',
   plain5: 'Affects healthy people; serious for those with lung or heart disease.',
-  provFromAway: 'from {s} · {k} km away', provFrom: 'from {s}',
-  provKmAway: 'nearest monitor ~{k} km away', provAge: 'read {m} min ago',
+  provFromAway: 'measured by the {s} air monitor, {k} km from you', provFrom: 'measured by the {s} air monitor',
+  provKmAway: 'nearest air monitor ~{k} km from you', provAge: 'updated {m} min ago',
   provEdge: "outside the live air map — the nearest edge's read",
   offNote: 'Location is off — this is central Delhi, not your spot.',
   locatingNote: 'Showing central Delhi until your location comes in.',
@@ -350,8 +350,8 @@ function heroHtml(d) {
     <div class="hs-pmrow">${pmTile('PM2.5', d.pm25, p25i)}${pmTile('PM10', d.pm10, p10i)}</div>
     <div class="hs-plain">${esc(t('plain' + idx))}</div>
     ${noteHtml}
-    ${prov ? `<div class="hs-prov">${esc(prov)}</div>` : ''}
     ${spotHtml(d)}
+    ${prov ? `<div class="hs-prov">${esc(prov)}</div>` : ''}
     ${dose}`;
 }
 
@@ -374,7 +374,7 @@ function spotHtml(d) {
   const acc = d.state !== 'pin' && isNum(p.acc) ? `±${Math.max(1, Math.round(p.acc))} m` : null;
   const parts = [near ? cur.addr.text : null, acc, dp ? `DIGIPIN ${dp}` : null].filter(Boolean);
   if (!parts.length) return '';
-  return `<div class="hs-spot">${ic('pin', 14, 'hs-spotic')}<span>${esc(parts.join(' · '))}</span></div>`;
+  return `<div class="hs-spot">${ic('pin', 14, 'hs-spotic')}<span><b class="hs-spotk">You are here</b> ${esc(parts.join(' · '))}</span></div>`;
 }
 let addrSeq = 0;
 async function refreshAddr(p) {
