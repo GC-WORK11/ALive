@@ -1272,7 +1272,7 @@ A.screen('home', {
     };
     setChip();
     const setPick = () => {
-      root.classList.toggle('hs-picking', A.geo.consent === 'picked' && !A.geo.pos);
+      root.classList.toggle('hs-picking', A.geo.consent === 'picked' && !(cur.pos || A.geo.pos));
     };
     setPick();
     const pickGps = elm.querySelector('#hs-pickgps');
