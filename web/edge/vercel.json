@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    { "source": "/", "destination": "/app/", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "https://dema23bmonmu7.cloudfront.net/$1" }
   ]

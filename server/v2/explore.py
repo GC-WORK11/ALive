@@ -62,6 +62,13 @@ _EXPLORE_CACHE = deps.TTLCache(60.0, max_entries=128)
 
 _H_WINDOW = 24            # 'the next day' — the window both surfaces share
 _STAY_POOL = 40           # nearest lodging rows fully field-scored per ask
+# the pool spreads over the neighbourhood instead of the 40 roofs on one
+# block (CP's nearest 40 all sit inside ~300 m and read the same air —
+# a ranked list of ties): the few closest stays always score, then one
+# stay per ~900 m bucket out to _STAY_RADIUS_KM
+_STAY_RADIUS_KM = 5.0
+_STAY_NEAREST = 5
+_STAY_BUCKET_DEG = 0.008
 # 'sparse' = the point sits outside the served field's extent, has no
 # live monitor answer at all, or is farther than ~2x Delhi's mean
 # instrument spacing (~6 km) from a named station — the read is real but
@@ -169,6 +176,134 @@ def _band_of(pm25: Optional[float]) -> str:
         if pm25 is not None else "No data"
 
 
+def _stay_pool(rows: list, alat: float, alon: float,
+               radius_km: float) -> list:
+    """The rows /v2/stays scores: the _STAY_NEAREST closest roofs, then
+    one roof per ~900 m bucket (nearest first) out to radius_km, capped
+    at _STAY_POOL. Nothing inside the radius → the nearest _STAY_POOL
+    overall (an outskirts anchor still gets its closest stays)."""
+    dlat = radius_km / 111.0
+    dlon = radius_km / (111.0 * max(0.2, math.cos(math.radians(alat))))
+    cand = []
+    for r in rows:
+        la, lo = r["lat"], r["lon"]
+        if abs(la - alat) > dlat or abs(lo - alon) > dlon:
+            continue
+        d = _haversine_m(alat, alon, la, lo)
+        if d <= radius_km * 1000.0:
+            cand.append((d, r))
+    if not cand:
+        return sorted(rows, key=lambda r: _haversine_m(
+            alat, alon, r["lat"], r["lon"]))[:_STAY_POOL]
+    cand.sort(key=lambda t: t[0])
+    pool, seen = [], set()
+    for i, (_d, r) in enumerate(cand):
+        b = (math.floor(r["lat"] / _STAY_BUCKET_DEG),
+             math.floor(r["lon"] / _STAY_BUCKET_DEG))
+        if i >= _STAY_NEAREST and b in seen:
+            continue
+        seen.add(b)
+        pool.append(r)
+        if len(pool) >= _STAY_POOL:
+            break
+    return pool
+
+
+def _norm_name(n: Optional[str]) -> str:
+    return re.sub(r"[^a-z0-9]", "", (n or "").lower())
+
+
+def _dedupe_stays(rows: list) -> list:
+    """One row per hotel: the corpus carries the same roof under several
+    sources ('Hans Plaza' / 'The Hans Plaza' / 'Man Singh Palace' at one
+    coordinate). Same normalised name, or <400 m apart with a contained
+    name, or <25 m apart → the better-ranked row stands."""
+    out = []
+    for r in rows:
+        rn = _norm_name(r["name"])
+        dup = False
+        for o in out:
+            on = _norm_name(o["name"])
+            d = _haversine_m(o["lat"], o["lon"], r["lat"], r["lon"])
+            same = rn and on and (rn == on or (
+                d < 400 and (rn in on or on in rn)))
+            if same or d < 25:
+                dup = True
+                break
+        if not dup:
+            out.append(r)
+    return out
+
+
+def _stay_why(p: dict, anchor_mean: Optional[float]) -> str:
+    """The pick's reason, <=8 plain words, from served numbers only."""
+    m = p.get("window_mean_ug")
+    if m is not None and anchor_mean is not None \
+            and anchor_mean - m >= 2.0:
+        return f"{anchor_mean - m:.0f} µg/m³ lighter than here, next 24 h"
+    return f"cleanest next-24 h air within {_STAY_RADIUS_KM:.0f} km"
+
+
+# ---------------------------------------------------------- playtime words
+def _day_word(off: Optional[int]) -> str:
+    off = off or 0
+    return "today" if off == 0 else "tomorrow" if off == 1 else \
+        f"in {off} days"
+
+
+def _win_span(w: dict) -> str:
+    """'13:30-20:30 today' — a window's clock span plus its IST day."""
+    end = w.get("end_label")
+    span = f"{w['start_label']}-{end}" if end else f"from {w['start_label']}"
+    return f"{span} {_day_word(w.get('start_day_offset'))}"
+
+
+def play_decisions(hours: list, best: Optional[dict],
+                   worst: Optional[dict], mean: float,
+                   flat: bool) -> list:
+    """The rolling-24 h decision lines. Every 'go out' line points at
+    the CLEANEST window (or the single lightest hour when no window
+    clears the spread rule) — never 'before <heavy start>', which on a
+    horizon that rolls past midnight pointed at the hours just before
+    the heaviest one (the 'kids outdoors: before ~06:30' bug, with
+    06:30 the day's peak and 13:30-20:30 the real clean stretch)."""
+    if not hours:
+        return []
+    if flat:
+        return [{"label": "outdoors",
+                 "line": f"air barely moves — ~{mean:.0f} µg/m³ all day"}]
+    ds = []
+    if best is not None:
+        word = "cleanest" if best["pm25_mid"] <= 60.0 else "least-bad"
+        span = _win_span(best)
+        ds.append({"label": "outdoor exercise",
+                   "line": f"{span} — {word}, ~{best['pm25_mid']:.0f} µg/m³",
+                   "start_h": best["start_h"], "end_h": best["end_h"]})
+        ds.append({"label": "kids outdoors",
+                   "line": f"{span} — ~{best['pm25_mid']:.0f} µg/m³",
+                   "start_h": best["start_h"], "end_h": best["end_h"]})
+        ds.append({"label": "windows open",
+                   "line": f"{span}",
+                   "start_h": best["start_h"], "end_h": best["end_h"]})
+    else:
+        lo = min(hours, key=lambda r: r["pm25_mid"])
+        when = f"{lo['ist_label']} {_day_word(lo.get('day_offset'))}"
+        ds.append({"label": "outdoor exercise",
+                   "line": f"no clean stretch — lightest hour {when}, "
+                           f"~{lo['pm25_mid']:.0f} µg/m³",
+                   "start_h": lo["h"], "end_h": lo["h"]})
+        ds.append({"label": "kids outdoors",
+                   "line": f"lightest hour {when}, ~{lo['pm25_mid']:.0f} µg/m³",
+                   "start_h": lo["h"], "end_h": lo["h"]})
+    if worst is not None:
+        ds.append({"label": "stay in",
+                   "line": f"{_win_span(worst)} — heaviest, "
+                           f"~{worst['pm25_mid']:.0f} µg/m³",
+                   "start_h": worst["start_h"], "end_h": worst["end_h"],
+                   "avoid": True})
+    return ds
+
+
 # ------------------------------------------------------------------ stays
 @router.get("/stays")
 async def stays(near: Optional[str] = None,
@@ -209,13 +344,24 @@ async def stays(near: Optional[str] = None,
     except Exception:
         anchor_now = None
 
-    # nearest _STAY_POOL lodging rows by distance get a full score —
-    # ranking air-first inside a bounded neighbourhood, not the whole
-    # corpus (an uncapped scan would grade rows 60 km away as 'near')
+    # a bounded, spread pool gets a full score — ranking air-first
+    # inside the neighbourhood, not the whole corpus (an uncapped scan
+    # would grade rows 60 km away as 'near')
     rows = _lodging_rows()
-    pool = sorted(
-        (r for r in rows),
-        key=lambda r: _haversine_m(alat, alon, r["lat"], r["lon"]))[:_STAY_POOL]
+    pool = _stay_pool(rows, alat, alon, _STAY_RADIUS_KM)
+
+    def _mean24(la, lo):
+        vs = []
+        for h in range(_H_WINDOW):
+            try:
+                v = FORECAST.pm25(la, lo, h)
+            except Exception:
+                v = None
+            if v is not None:
+                vs.append(v)
+        return (sum(vs) / len(vs)) if vs else None
+
+    anchor_mean = _mean24(alat, alon)
 
     window_h = 0
     out_rows = []
@@ -268,6 +414,17 @@ async def stays(near: Optional[str] = None,
         r["window_mean_ug"] if r["window_mean_ug"] is not None else 1e9,
         r["pm25_now"] if r["pm25_now"] is not None else 1e9,
         r["dist_km"]))
+    out_rows = _dedupe_stays(out_rows)
+    # Alive's pick: the best next-24h air on a SOLID read (never a
+    # sparse/edge row) — moved to the top, with its reason in <=8 words
+    pick_i = next((i for i, r in enumerate(out_rows)
+                   if r["scored_on"] == "next24h" and not r["sparse"]),
+                  None)
+    if pick_i is not None:
+        p = out_rows.pop(pick_i)
+        p["pick"] = True
+        p["why"] = _stay_why(p, anchor_mean)
+        out_rows.insert(0, p)
     out_rows = out_rows[:k]
 
     fstat, fcstat = {}, {}
@@ -416,10 +573,6 @@ async def playtime(near: Optional[str] = None,
                key=lambda c: rank.get(c, -1), default=None)
     sp = _sparsity(F, alat, alon)
 
-    def _day_word(off):
-        return "today" if off == 0 else "tomorrow" if off == 1 else \
-            f"in {off} days"
-
     if flat:
         verdict = ("air barely moves across the next day — "
                    f"~{mean:.0f} µg/m³ on average, no window")
@@ -449,7 +602,10 @@ async def playtime(near: Optional[str] = None,
                "flat": flat,
                "confidence": conf,
                "verdict": verdict,
-               "decisions": fold["decisions"],
+               # rolling-horizon lines: every go-out line names the
+               # cleanest window (day.py's day-card lines assume a day
+               # that starts in the morning — 'before <heavy start>')
+               "decisions": play_decisions(hours, best, worst, mean, flat),
                "sparse": sp["sparse"],
                "beyond_edge": sp["beyond_edge"],
                "nearest_station_km": sp["nearest_station_km"]}

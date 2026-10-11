@@ -58,6 +58,13 @@ try:
 except Exception:  # another lane adds it — works before it exists
     _integrate_dose = None
 
+try:
+    # trip modes (health_max / petrol_health / time_health): fuel litres,
+    # live traffic merge, picks. Only runs when the body names a mode.
+    from . import modes_engine as _modes
+except Exception:  # pragma: no cover — a modes bug never sinks /v2/plan
+    _modes = None
+
 
 # --- modes -------------------------------------------------------------------
 # (mode, osrm profile, exposure microenv, label, AWS travel mode, time factor)
@@ -905,11 +912,12 @@ def _mode_cap_duration_s(mode: str, dist_km: float, dur_s: float) -> float:
 
 
 async def _motorized_options(flat, flon, tlat, tlon, vehicle, profile,
-                             depart_at) -> list:
+                             depart_at, want_alts: bool = False) -> list:
     """Car-family geometries: AWS CalculateRoutes when keyed (traffic +
     alternatives), else one OSRM driving route (now carrying real
     steps). Durations scale per mode by the same stated factors
-    main.py uses."""
+    main.py uses. want_alts (trip-mode plans only): the OSRM path also
+    asks for up to 2 alternative roads so the modes have real choices."""
     loc = deps.get_location()
     aws_routes = None
     if loc is not None and getattr(loc, "enabled", False):
@@ -993,13 +1001,44 @@ async def _motorized_options(flat, flon, tlat, tlon, vehicle, profile,
             return out
         return await loop.run_in_executor(_ROWS_EXEC, _aws_rows)
 
-    rt = await deps.osrm_route("driving", flon, flat, tlon, tlat)
+    alt_rts: list = []
+    if want_alts and _modes is not None:
+        rt, alt_rts = await asyncio.gather(
+            deps.osrm_route("driving", flon, flat, tlon, tlat),
+            _modes.osrm_alternatives("driving", flon, flat, tlon, tlat),
+            return_exceptions=True)
+        if isinstance(rt, Exception):
+            rt = None
+        if not isinstance(alt_rts, list):
+            alt_rts = []
+    else:
+        rt = await deps.osrm_route("driving", flon, flat, tlon, tlat)
     if not rt:
         return opts
     dist_km = rt["distance"] / 1000.0
     base = rt["duration"]  # OSRM duration ≈ free-flow — no traffic feed
     steps = rt.get("steps") or None
     src = "osrm" if steps else "endpoints"
+
+    def _same_road(a, b) -> bool:
+        da, db = float(a.get("distance") or 0), float(b.get("distance") or 0)
+        ma, mb = _geom_midpoint(a.get("geometry")), _geom_midpoint(
+            b.get("geometry"))
+        if ma is None or mb is None:
+            return True
+        return (abs(da - db) <= max(300.0, 0.02 * max(da, db))
+                and abs(ma[0] - mb[0]) < 0.0015
+                and abs(ma[1] - mb[1]) < 0.0015)
+
+    alts_ok = []
+    for a in alt_rts:
+        if (isinstance(a, dict) and a.get("geometry")
+                and float(a.get("distance") or 0) > 0
+                and float(a.get("distance") or 0)
+                <= DETOUR_MAX_VS_FAST * float(rt.get("distance") or 1e18)
+                and not _same_road(a, rt)
+                and not any(_same_road(a, b) for b in alts_ok)):
+            alts_ok.append(a)
 
     # row dosing is sync CPU (a cold task with no priced raster falls to
     # the live krige per segment, seconds per row): off the event loop,
@@ -1024,6 +1063,26 @@ async def _motorized_options(flat, flon, tlat, tlon, vehicle, profile,
                                profile, steps=steps, steps_source=src,
                                extra={"router_backend": rt.get("source")},
                                origin=o, dest=d))
+        # trip-mode alternatives: real OSRM alternative roads, car + bike
+        # rows only (the families a petrol/time trade applies to);
+        # labelled '· alt N' so _route_deltas treats them as alternatives
+        for i, a in enumerate(alts_ok, start=1):
+            a_km = a["distance"] / 1000.0
+            a_steps = a.get("steps") or None
+            for mode, label in (("car", "Car (AC)"),
+                                ("bike", "Bike / scooter")):
+                f = _MODES[mode][5]
+                dur_a = _mode_cap_duration_s(mode, a_km,
+                                             a["duration"] * f)
+                out.append(_option(mode, f"{label} · alt {i}",
+                                   a["geometry"], a_km, dur_a, dur_a,
+                                   "osrm-freeflow", vehicle, profile,
+                                   steps=a_steps,
+                                   steps_source="osrm" if a_steps
+                                   else "endpoints",
+                                   extra={"router_backend": a.get("source"),
+                                          "alternative_index": i},
+                                   origin=o, dest=d))
         return out
     return opts + await loop.run_in_executor(_ROWS_EXEC, _rows)
 
@@ -1450,11 +1509,14 @@ def _depart_at_parsed(depart_at) -> bool:
 
 
 async def _options_bounded(flat, flon, tlat, tlon, vehicle, profile,
-                           depart_at):
+                           depart_at, want_alts: bool = False):
     """_build_options under the hard budget. Returns (options, error)
     — error is a fast structured string, never an open request."""
     try:
         options, missing = await asyncio.wait_for(
+            _build_options(flat, flon, tlat, tlon, vehicle, profile,
+                           depart_at, want_alts=want_alts)
+            if want_alts else
             _build_options(flat, flon, tlat, tlon, vehicle, profile,
                            depart_at),
             timeout=PLAN_BUDGET_S)
@@ -1483,9 +1545,10 @@ def _pt(v, name: str):
 
 
 async def _build_options(flat, flon, tlat, tlon, vehicle, profile,
-                         depart_at) -> list:
+                         depart_at, want_alts: bool = False) -> list:
     """The full option set for one OD pair: motorized + slow + transit +
-    the least-inhalation engine paths."""
+    the least-inhalation engine paths. want_alts: trip-mode plans ask
+    the router arm for alternative roads too (see _motorized_options)."""
     # engine arm gets its own sub-budget: a cold-task first reweight
     # (field boot + ~1.25M sample calls) can outlast the plan budget —
     # without this its slowness cancels the WHOLE gather and motorized
@@ -1503,6 +1566,8 @@ async def _build_options(flat, flon, tlat, tlon, vehicle, profile,
     # cancelled cold arm no longer drags complete ones to zero.
     arms = [
         asyncio.ensure_future(_motorized_options(
+            flat, flon, tlat, tlon, vehicle, profile, depart_at,
+            want_alts=want_alts) if want_alts else _motorized_options(
             flat, flon, tlat, tlon, vehicle, profile, depart_at)),
         asyncio.ensure_future(_slow_mode_options(
             flat, flon, tlat, tlon, vehicle, profile)),
@@ -2223,11 +2288,17 @@ async def plan(body: dict):
         tlat, tlon = _pt(body.get("to"), "to")
     except (KeyError, TypeError, ValueError) as e:
         return {"options": [], "error": str(e)}
-    vehicle, profile = _parse_vehicle(body)
+    # trip mode (health_max / petrol_health / time_health) — None keeps
+    # today's behaviour exactly. Legacy bodies used `mode` as a vehicle
+    # alias, so a trip-mode string must never reach the vehicle parser.
+    tmode = _modes.trip_mode(body) if _modes is not None else None
+    vbody = body if tmode is None else {
+        k: v for k, v in body.items() if k not in ("mode", "trip_mode")}
+    vehicle, profile = _parse_vehicle(vbody)
     depart_at = body.get("depart_at")
     # echo what the client asked + what the engine actually modelled —
     # silent remapping would hide the fallback (fuzz-lane finding)
-    vehicle_req = str(body.get("vehicle") or body.get("mode")
+    vehicle_req = str(vbody.get("vehicle") or vbody.get("mode")
                       or vehicle)[:40]
 
     if not _service_area(flat, flon, tlat, tlon):
@@ -2247,11 +2318,19 @@ async def plan(body: dict):
     if fast:
         options, opt_err, missing = await _engine_first(
             flat, flon, tlat, tlon, vehicle, profile)
+    elif tmode is not None:
+        options, opt_err, missing = await _options_bounded(
+            flat, flon, tlat, tlon, vehicle, profile, depart_at,
+            want_alts=True)
     else:
         options, opt_err, missing = await _options_bounded(
             flat, flon, tlat, tlon, vehicle, profile, depart_at)
     rank_options(options)
     _route_deltas(options)
+    mode_block = None
+    if tmode is not None and options:
+        mode_block = await _apply_trip_mode(options, tmode, vehicle,
+                                            traffic=not fast)
     resp = {
         "from": {"lat": flat, "lon": flon},
         "to": {"lat": tlat, "lon": tlon},
@@ -2278,6 +2357,11 @@ async def plan(body: dict):
         # engine rows only — the client paints these first and swaps in
         # the full set (router + transit + engine) when it lands
         resp["partial"] = True
+    if tmode is not None:
+        resp["mode"] = tmode
+        resp["trip_mode"] = tmode   # same key /v2/reroute uses
+        if mode_block:
+            resp.update({k: v for k, v in mode_block.items() if k != "mode"})
     if missing:
         # an arm timed out/cancelled/raised — the option set is real but
         # INCOMPLETE. Silent absence is how an engine outage used to look
@@ -2288,6 +2372,29 @@ async def plan(body: dict):
     elif not options:
         resp["error"] = "no route"   # OD in-area but unroutable
     return resp
+
+
+async def _apply_trip_mode(options: list, tmode: str, vehicle: str,
+                           traffic: bool = True):
+    """modes_engine.apply, fenced: fuel litres + live traffic + the
+    mode's pick (first) + why on every row. A failure here drops the
+    mode block, never the plan (rows keep their doc-06 order)."""
+    try:
+        return await _modes.apply(
+            options, tmode, vehicle,
+            lambda m: _FAMILY.get(m, m), traffic=traffic)
+    except Exception as e:
+        _log.warning("trip mode %s failed: %r", tmode, e)
+        # keep the wire contract (one mode_pick, fields present) on the
+        # doc-06 winner — honest nulls, nothing invented
+        for i, o in enumerate(options):
+            o.setdefault("fuel_l", None)
+            o.setdefault("live_eta_s", o.get("eta_s"))
+            o.setdefault("traffic_delay_s", None)
+            o.setdefault("jams", [])
+            o["mode_pick"] = i == 0
+            o["why"] = "top route; mode check failed" if i == 0 else ""
+        return {"mode_error": "mode pick unavailable"}
 
 
 async def _engine_first(flat, flon, tlat, tlon, vehicle, profile):
@@ -2344,7 +2451,24 @@ async def reroute(body: dict):
     except (KeyError, TypeError, ValueError) as e:
         return {"route_id": rid, "options": [], "error": str(e)}
 
-    vehicle, profile = _parse_vehicle(body)
+    # trip mode: same contract as /v2/plan; never parsed as a vehicle
+    tmode = _modes.trip_mode(body) if _modes is not None else None
+    vbody = body if tmode is None else {
+        k: v for k, v in body.items() if k not in ("mode", "trip_mode")}
+    vehicle, profile = _parse_vehicle(vbody)
+    if tmode is not None:
+        _vp = vbody.get("vehicle_profile")
+        declared = vbody.get("vehicle") or (
+            _vp.get("class") if isinstance(_vp, dict) else None)
+        # no vehicle in the body: keep the family of the row being
+        # ridden (stored route's mode), else its declared vehicle
+        if not declared and rec:
+            fams = set(_FAMILY.values())
+            rfam = _FAMILY.get(rec.get("mode"), rec.get("mode"))
+            if rfam in fams:
+                vehicle = rfam
+            elif rec.get("vehicle") in fams:
+                vehicle = rec["vehicle"]
     if profile is None and (rec or {}).get("emissions_vehicle"):
         profile = {"class": rec["emissions_vehicle"].get("class")}
         for k in ("fuel", "year_bucket"):
@@ -2361,8 +2485,13 @@ async def reroute(body: dict):
 
     asyncio.ensure_future(_field_refresh_bounded())   # fire-and-forget
     depart_at = body.get("depart_at")
-    options, opt_err, missing = await _options_bounded(
-        flat, flon, tlat, tlon, vehicle, profile, depart_at)
+    if tmode is not None:
+        options, opt_err, missing = await _options_bounded(
+            flat, flon, tlat, tlon, vehicle, profile, depart_at,
+            want_alts=True)
+    else:
+        options, opt_err, missing = await _options_bounded(
+            flat, flon, tlat, tlon, vehicle, profile, depart_at)
     rank_options(options)
     _route_deltas(options)
     if not options:
@@ -2371,17 +2500,30 @@ async def reroute(body: dict):
                "error": opt_err or "routing unavailable from this position",
                "field": _field_status(),
                "took_ms": round((time.perf_counter() - t0) * 1000.0, 1)}
+        if tmode is not None:
+            out["trip_mode"] = tmode
         if depart_at is not None:
             out["depart_at_parsed"] = _depart_at_parsed(depart_at)
         return out
 
-    mode_hint = str(body.get("mode") or body.get("vehicle") or "").lower()
+    mode_block = None
     best = options[0]
-    if mode_hint:
-        fam = _VEHICLE_ALIASES.get(mode_hint, mode_hint)
-        best = next((o for o in options
-                     if _FAMILY.get(o["mode"], o["mode"]) == fam),
+    if tmode is not None:
+        # the rerouted option IS the mode's pick (inside the rider's
+        # vehicle family when it has rows) — same rule as /v2/plan, live
+        # traffic included; a modes failure keeps the doc-06 winner
+        mode_block = await _apply_trip_mode(options, tmode, vehicle,
+                                            traffic=True)
+        best = next((o for o in options if o.get("mode_pick")),
                     options[0])
+    else:
+        mode_hint = str(body.get("mode") or body.get("vehicle")
+                        or "").lower()
+        if mode_hint:
+            fam = _VEHICLE_ALIASES.get(mode_hint, mode_hint)
+            best = next((o for o in options
+                         if _FAMILY.get(o["mode"], o["mode"]) == fam),
+                        options[0])
     resp = {
         "rerouted_from": rid,
         "from_fix": {"lat": flat, "lon": flon},
@@ -2410,6 +2552,19 @@ async def reroute(body: dict):
     }
     if depart_at is not None:
         resp["depart_at_parsed"] = _depart_at_parsed(depart_at)
+    if tmode is not None:
+        # top-level `mode` stays the selected row's travel mode (legacy
+        # reroute contract) — the trip mode rides as `trip_mode`, and the
+        # pick's live fields are flattened like geometry/eta_s above
+        resp["trip_mode"] = tmode
+        for k in ("live_eta_s", "traffic_delay_s", "jams", "fuel_l",
+                  "fuel_kg", "fuel_type", "fuel_note", "fuel_saved_l",
+                  "fuel_saved_kg", "mode_pick", "why"):
+            if k in best:
+                resp[k] = best[k]
+        if mode_block:
+            resp.update({k: v for k, v in mode_block.items()
+                         if k != "mode"})
     if missing:
         resp["degraded"] = missing   # same honesty flag as /v2/plan
     # finish-on-foot honesty check: when the remaining leg is walkable

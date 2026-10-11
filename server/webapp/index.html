@@ -16,7 +16,16 @@
 <link rel="stylesheet" href="airmap.css">
 <link rel="stylesheet" href="purest.css">
 <link rel="stylesheet" href="ledger.css">
+<link rel="stylesheet" href="sidebar.css">
+<link rel="stylesheet" href="profile.css">
 <link rel="stylesheet" href="motion.css">
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  if (/\.vercel\.app$/.test(location.hostname)) {
+    var vs = document.createElement('script'); vs.defer = true; vs.src = '/_vercel/insights/script.js';
+    document.head.appendChild(vs);
+  }
+</script>
 </head>
 <body>
 <div id="map" aria-hidden="true"></div>
@@ -53,7 +62,9 @@
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="app.js"></script>
+<script src="telemetry.js"></script>
 <script src="map.js"></script>
+<script src="digipin.js"></script>
 <script src="search.js"></script>
 <script src="home.js"></script>
 <script src="settings.js"></script>
@@ -62,6 +73,8 @@
 <script src="airmap.js"></script>
 <script src="purest.js"></script>
 <script src="ledger.js"></script>
+<script src="profile.js"></script>
+<script src="sidebar.js"></script>
 <script src="motion.js"></script>
 </body>
 </html>

@@ -22,6 +22,15 @@
 #   :latest — the sha tag is immutable, deploys pin it, rollback redeploys it.
 # Env overrides: AWS_REGION (ap-south-1), ECS_CLUSTER, ECS_SERVICE, ECR_REPO,
 #   TG_NAME, IMAGE_TAG, BUILD_MODE=auto|local|codebuild, SKIP_BUILD=1.
+# Scale knobs (lane P2, Oct 11 — defaults = today's task, except +1 GB memory
+#   headroom and XFF trust from the VPC CIDR; see the two P2 notes below):
+#   TASK_CPU (1024), TASK_MEMORY (3072 / 4096 with OSRM; was 2048/3072),
+#   DESIRED_COUNT (1),
+#   WEB_CONCURRENCY (unset = 1 uvicorn worker; uvicorn reads it natively),
+#   ALIVE_RATE_RPS / ALIVE_RATE_BURST (unset = middleware defaults 10/30),
+#   ALIVE_TRUSTED_PROXIES (auto = this VPC's CIDR, see below; "off" = unset).
+#   Budget caps for /v2/p/* are divided by DESIRED_COUNT x WEB_CONCURRENCY
+#   (ALIVE_BUDGET_SHARDS) so N processes together stay inside free tiers.
 set -euo pipefail
 
 # rollback subcommand — deploy an existing ECR tag with the full
@@ -66,6 +75,14 @@ BUILD_BUCKET="alive108-build-$ACCOUNT"
 
 # ---------------------------------------------------------------- 1. build
 build_local() {
+  # docker builds the WORKING TREE but tags it with HEAD's sha: uncommitted
+  # or half-edited files (many lanes share one tree) would ship under a
+  # commit that does not contain them. CodeBuild archives exactly HEAD.
+  if [ "${ALLOW_DIRTY:-0}" != "1" ] && \
+     [ -n "$(git -C "$ROOT" status --porcelain -- server 2>/dev/null)" ]; then
+    git -C "$ROOT" status --short -- server | head -20 >&2
+    fail "server/ has uncommitted changes — commit them, or BUILD_MODE=codebuild (builds exactly HEAD), or ALLOW_DIRTY=1 to ship the working tree"
+  fi
   log "building locally (docker) -> $IMG:$TAG"
   try aws ecr describe-repositories --repository-names "$REPO" >/dev/null 2>&1 \
     || run aws ecr create-repository --repository-name "$REPO"
@@ -181,12 +198,16 @@ OSRM_TAG="${OSRM_TAG:-latest}"
 OSRM_IMG_URI="$ECR/$OSRM_REPO:$OSRM_TAG"
 OSRM_CONTAINER=""
 OSRM_ENV=""
-TASK_MEM="${TASK_MEMORY:-2048}"
+# P2 load test (Oct 11): the API process is ~0.8 GB at boot and ~2.1 GB
+# once /v2/ac, /v2/plan (GTFS) and /grid are warm under load — the old
+# 2048 / 3072 (OSRM gets 1024 of it) left no headroom => OOM-kill risk.
+# 1 vCPU Fargate allows 2-8 GB, so +1 GB is a pure headroom bump.
+TASK_MEM="${TASK_MEMORY:-3072}"
 if [ "$OSRM_SIDECAR" = "1" ]; then
   run aws ecr describe-images --repository-name "$OSRM_REPO" \
     --image-ids "imageTag=$OSRM_TAG" >/dev/null \
     || fail "no $OSRM_IMG_URI — build it first (scripts/geo/buildspec-osrm.yml via the alive108-osrm-build CodeBuild project) or deploy OSRM_SIDECAR=0"
-  TASK_MEM="${TASK_MEMORY:-3072}"
+  TASK_MEM="${TASK_MEMORY:-4096}"
   OSRM_CONTAINER=',{"name":"osrm","image":"'"$OSRM_IMG_URI"'","essential":false,
     "memory":1024,"memoryReservation":512,
     "healthCheck":{"command":["CMD-SHELL","bash -c '\''(echo > /dev/tcp/localhost/5000) && exit 0 || exit 1'\''"],
@@ -198,14 +219,85 @@ if [ "$OSRM_SIDECAR" = "1" ]; then
   log "osrm sidecar: $OSRM_IMG_URI (task mem $TASK_MEM)"
 fi
 
+# ---- optional provider keys (Ola / TomTom / Mappls -> server/v2/providers.py)
+# Wired ONLY when the secret exists, is not pending deletion and holds a
+# value: a dangling valueFrom makes ECS fail the task at start
+# (ResourceInitializationError) — an outage for a key that is optional.
+# Without a key the /v2/p/* endpoints answer {"results":[],"configured":false}.
+# Create/update them with /home/govinda/alive-dev/put-secrets.sh.
+# Plain-string secrets (SecretString = the key itself, no JSON field).
+PROVIDER_SECRETS=""
+for _pair in "OLA_API_KEY=alive108/ola" "TOMTOM_API_KEY=alive108/tomtom" \
+             "MAPPLS_API_KEY=alive108/mappls"; do
+  _env="${_pair%%=*}"; _sec="${_pair#*=}"
+  _ok="$(aws secretsmanager describe-secret --secret-id "$_sec" \
+    --query '[DeletedDate == null, VersionIdsToStages != null]' \
+    --output text 2>/dev/null || true)"
+  if [ "$(echo "$_ok" | tr -s '[:space:]' ' ' | sed 's/ $//')" = "True True" ]; then
+    PROVIDER_SECRETS="$PROVIDER_SECRETS,
+      {\"name\":\"$_env\",
+      \"valueFrom\":\"arn:aws:secretsmanager:$REGION:$ACCOUNT:secret:$_sec\"}"
+    log "secret $_sec -> $_env"
+  else
+    log "secret $_sec missing/empty/deleted — $_env NOT wired (endpoints say configured:false)"
+  fi
+done
+
+# ---- scale knobs (lane P2) — cpu/count/workers default to today's task -----
+TASK_CPU="${TASK_CPU:-1024}"
+_DC_SET="${DESIRED_COUNT:-}"
+DESIRED_COUNT="${DESIRED_COUNT:-1}"
+case "$DESIRED_COUNT" in ''|*[!0-9]*) fail "DESIRED_COUNT must be an integer" ;; esac
+SCALE_ENV=""
+_workers=1
+if [ -n "${WEB_CONCURRENCY:-}" ]; then
+  case "$WEB_CONCURRENCY" in ''|*[!0-9]*) fail "WEB_CONCURRENCY must be an integer" ;; esac
+  _workers="$WEB_CONCURRENCY"
+  SCALE_ENV="$SCALE_ENV{\"name\":\"WEB_CONCURRENCY\",\"value\":\"$WEB_CONCURRENCY\"},"
+fi
+for _v in ALIVE_RATE_RPS ALIVE_RATE_BURST; do
+  if [ -n "${!_v:-}" ]; then
+    case "${!_v}" in *[!0-9.]*) fail "$_v must be a number" ;; esac
+    SCALE_ENV="$SCALE_ENV{\"name\":\"$_v\",\"value\":\"${!_v}\"},"
+  fi
+done
+# provider daily budgets are per process -> split them across all processes
+_shards=$(( DESIRED_COUNT * _workers )); [ "$_shards" -ge 1 ] || _shards=1
+SCALE_ENV="$SCALE_ENV{\"name\":\"ALIVE_BUDGET_SHARDS\",\"value\":\"$_shards\"},"
+# Rate-limit keying. Verified Oct 11 (P2): CloudFront -> NLB -> task, and the
+# NLB (TCP, ip targets) does NOT preserve client IPs, so every request —
+# via CloudFront or straight at the NLB — reaches the task from the NLB's
+# private IP: ONE 10 rps / 30 burst bucket (and ONE 2 rps /v2/plan bucket)
+# for ALL users. Trusting X-Forwarded-For only from this VPC's CIDR lets
+# middleware.py key on the rightmost hop, which CloudFront appends (= the
+# viewer IP). Residual risk: a client that bypasses CloudFront and hits
+# the NLB directly can choose its own rightmost hop (lock the NLB to the
+# CloudFront origin-facing prefix list to close that). "off" keeps today's
+# behaviour.
+TRUSTED="${ALIVE_TRUSTED_PROXIES:-auto}"
+if [ "$TRUSTED" = "auto" ]; then
+  _sub="$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text 2>/dev/null || true)"
+  _vpc="$(aws ec2 describe-subnets --subnet-ids "$_sub" --query 'Subnets[0].VpcId' --output text 2>/dev/null || true)"
+  TRUSTED="$(aws ec2 describe-vpcs --vpc-ids "$_vpc" --query 'Vpcs[0].CidrBlock' --output text 2>/dev/null || true)"
+  case "$TRUSTED" in */*) ;; *) TRUSTED="" ;; esac
+fi
+if [ -n "$TRUSTED" ] && [ "$TRUSTED" != "off" ]; then
+  case "$TRUSTED" in *[!0-9a-fA-F.:/,]*) fail "ALIVE_TRUSTED_PROXIES must be IPs/CIDRs" ;; esac
+  SCALE_ENV="$SCALE_ENV{\"name\":\"ALIVE_TRUSTED_PROXIES\",\"value\":\"$TRUSTED\"},"
+  log "rate limiter trusts X-Forwarded-For from $TRUSTED (NLB hop)"
+else
+  log "ALIVE_TRUSTED_PROXIES off — every user shares the NLB-IP rate bucket"
+fi
+log "task cpu=$TASK_CPU mem=$TASK_MEM desired=$DESIRED_COUNT workers=$_workers budget-shards=$_shards"
+
 TD_ARN="$(run aws ecs register-task-definition \
   --family alive108 --network-mode awsvpc \
-  --requires-compatibilities FARGATE --cpu 1024 --memory "$TASK_MEM" \
+  --requires-compatibilities FARGATE --cpu "$TASK_CPU" --memory "$TASK_MEM" \
   --execution-role-arn "arn:aws:iam::$ACCOUNT:role/ecsTaskExecutionRole" \
   --task-role-arn "arn:aws:iam::$ACCOUNT:role/alive108-task" \
   --container-definitions '[{"name":"alive108","image":"'"$DEPLOY_IMG"'","essential":true,
     "portMappings":[{"containerPort":'"$PORT"',"protocol":"tcp"}],
-    "environment":['"$OSRM_ENV"'
+    "environment":['"$OSRM_ENV"''"$SCALE_ENV"'
       {"name":"AWS_REGION","value":"'"$REGION"'"},
       {"name":"COMMUNITY_BUCKET","value":"'"$BUILD_BUCKET"'"},
       {"name":"ALIVE_AIR_BUCKET","value":"alive108-air"},
@@ -218,7 +310,7 @@ TD_ARN="$(run aws ecs register-task-definition \
       {"name":"WAQI_API_KEY",
       "valueFrom":"arn:aws:secretsmanager:'"$REGION"':'"$ACCOUNT"':secret:alive108/waqi:api_key::"},
       {"name":"ALIVE_ADMIN_TOKEN",
-      "valueFrom":"arn:aws:secretsmanager:'"$REGION"':'"$ACCOUNT"':secret:alive108/admin-token"}],
+      "valueFrom":"arn:aws:secretsmanager:'"$REGION"':'"$ACCOUNT"':secret:alive108/admin-token"}'"$PROVIDER_SECRETS"'],
     "logConfiguration":{"logDriver":"awslogs","options":{
       "awslogs-group":"/ecs/alive108","awslogs-region":"'"$REGION"'",
       "awslogs-stream-prefix":"api","awslogs-create-group":"true"}}}'"$OSRM_CONTAINER"']' \
@@ -269,7 +361,7 @@ LB_SPEC="targetGroupArn=$TG,containerName=alive108,containerPort=$PORT"
 if ! aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
      --query 'services[?status==`ACTIVE`].serviceArn' --output text | grep -q .; then
   run aws ecs create-service --cluster "$CLUSTER" --service-name "$SERVICE" \
-    --task-definition "$TD_ARN" --desired-count 1 --launch-type FARGATE \
+    --task-definition "$TD_ARN" --desired-count "$DESIRED_COUNT" --launch-type FARGATE \
     --load-balancers "$LB_SPEC" --health-check-grace-period-seconds 150 \
     --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SG],assignPublicIp=ENABLED}"
 else
@@ -277,14 +369,17 @@ else
   # harmless: the service already carries loadBalancers in its own
   # config, so the flag is belt-and-suspenders. Probe first (`try`
   # never dies), fall back to the plain update if unsupported.
+  # desired count changes only when DESIRED_COUNT is passed explicitly —
+  # a plain deploy never scales a service someone resized by hand
+  DC_ARGS=(); [ -n "${_DC_SET:-}" ] && DC_ARGS=(--desired-count "$DESIRED_COUNT")
   if try aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-    --task-definition "$TD_ARN" --force-new-deployment \
+    --task-definition "$TD_ARN" --force-new-deployment ${DC_ARGS[@]+"${DC_ARGS[@]}"} \
     --load-balancers "$LB_SPEC" --health-check-grace-period-seconds 150 >/dev/null 2>&1; then
     log "update-service done (with loadBalancers spec)"
   else
     log "update-service --load-balancers unsupported — retrying without (service already carries loadBalancers)"
     run aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-      --task-definition "$TD_ARN" --force-new-deployment \
+      --task-definition "$TD_ARN" --force-new-deployment ${DC_ARGS[@]+"${DC_ARGS[@]}"} \
       --health-check-grace-period-seconds 150 >/dev/null
   fi
 fi
@@ -332,13 +427,17 @@ PRIV="$(run aws ec2 describe-network-interfaces --network-interface-ids "$ENI" \
 [ -n "$PRIV" ] && [ "$PRIV" != "None" ] || fail "ENI $ENI has no private IP"
 log "new task $TASK_ARN ENI $ENI -> $PRIV"
 
-# deregister stale targets ECS left behind (manual regs it doesn't own)
+# deregister stale targets ECS left behind (manual regs it doesn't own).
+# With DESIRED_COUNT > 1 every RUNNING task of the new task definition is
+# a live target — keep all of their IPs, not just the newest one.
+KEEP="$PRIV $(aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS \
+  --query "tasks[?taskDefinitionArn=='$TD_ARN'].attachments[].details[?name=='privateIPv4Address'].value[]" \
+  --output text 2>/dev/null || true)"
 for OLD in $(aws elbv2 describe-target-health --target-group-arn "$TG" \
     --query 'TargetHealthDescriptions[*].Target.Id' --output text); do
-  if [ "$OLD" != "$PRIV" ]; then
-    run aws elbv2 deregister-targets --target-group-arn "$TG" \
-      --targets "Id=$OLD,Port=$PORT"
-  fi
+  case " $KEEP " in *" $OLD "*) continue ;; esac
+  run aws elbv2 deregister-targets --target-group-arn "$TG" \
+    --targets "Id=$OLD,Port=$PORT"
 done
 # belt-and-suspenders: a no-op when ECS already registered $PRIV
 run aws elbv2 register-targets --target-group-arn "$TG" \

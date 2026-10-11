@@ -1,17 +1,20 @@
-/* Alive webapp — journey. Live navigation over the picked /v2/plan
-   option, then the arrival receipt. PIXEL TWIN of the Android app:
-   the nav chrome mirrors Mobile/src/components/shell/NavChrome.tsx
-   (banner + maneuver tile + instrument cluster) and the receipt
-   mirrors Mobile/src/components/shell/ReceiptSheet.tsx (+ the
-   DepartGraph-style dose card). Maneuver arrows are the same Material
-   Symbols geometry as Mobile/src/icons.tsx (960 grid).
-   Progress = real nearest-point projection on the route LineString;
-   dose-so-far = the served dose band spread along the route by the
-   per-segment pm25 strip — always labeled "plan estimate". Real GPS
-   tracking when the device has it; otherwise an explicitly-labeled
-   simulated preview at the plan's own pace (L/eta_s). Nothing here
-   invents a number: every figure traces to the option fields,
-   /v2/city, or the real clock. */
+/* Alive webapp — journey. REAL navigation over the picked /v2/plan
+   option, then a simple arrival receipt.
+   - Position = the device's own GPS (navigator.geolocation.watchPosition).
+     Stop moving → the position stops and the speed reads 0. There is no
+     simulated drive in any user flow (QA-only: ?sim=1, never linked).
+   - Turn-by-turn = the route's served maneuvers (or turns read off the
+     route line when the router served none); distance to the next one
+     is measured from the real position projected on the line.
+   - Off the line > 60 m for > 10 s → POST /v2/reroute and carry on.
+   - Live jams: POST /v2/p/route_traffic with the remaining route on
+     start and every 120 s; configured:false / errors show nothing.
+   - Intake = time actually spent × the served segment pm25 × the plan's
+     own breathing constant (plan dose ÷ plan time ÷ mean pm25), so a
+     jam you really sat in counts. Stuck stretches (< 5 km/h for > 60 s)
+     are measured from your own GPS.
+   Nothing here invents a number: every figure traces to an API field,
+   the GPS, or the real clock. */
 (() => {
 'use strict';
 
@@ -19,8 +22,21 @@ const STORE_LAST = 'journey.last';
 const STORE_HIST = 'journey.history';
 const HIST_CAP = 20;
 const ARRIVE_M = 55;          // puck this close to the destination → arrived
-const OFFROUTE_M = 80;        // farther than this from the line → off-route note
+const OFF_M = 60;             // farther than this from the line …
+const OFF_HOLD_MS = 10000;    // … for longer than this → ask /v2/reroute
+const REROUTE_GAP_MS = 30000; // never hammer the router
+const JAM_EVERY_MS = 120000;  // live traffic on the remaining route
+const TRAFFIC_PTS = 150;      // route_traffic downsample cap
+const STUCK_MIN_S = 60;       // slower than the stuck pace this long = a measured stop
+const FIX_STALE_MS = 5000;    // no new GPS fix this long → not moving (speed 0)
+const WEAK_ACC_M = 150;       // fixes vaguer than this never move progress
 const STEP_PASS_M = 25;       // arclength past a maneuver before the next cue
+/* QA-only simulated ride: reachable ONLY with ?sim=1 in the URL — never
+   linked, never offered in any user flow; its records are simulated:true
+   (home + ledger never count those). */
+const SIM_QA = (() => {
+  try { return new URLSearchParams(location.search).get('sim') === '1'; } catch (e) { return false; }
+})();
 /* WHO 24h PM2.5 guideline 15 µg/m³ × ~14.4 m³ breathed/day ≈ 216 µg —
    the same day-breath basis the engine cites in /v2/city breath.basis */
 const WHO_DAY_UG = 15 * 14.4;
@@ -270,10 +286,24 @@ function buildRoute(geom) {
   const kx = 111320 * Math.cos(lat0 * K), ky = 110540;
   const xy = pts.map((p) => [p[0] * kx, p[1] * ky]);
 
-  function project(lat, lon) {
+  function idxAt(s) {
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; (cum[m] <= s ? lo = m : hi = m); }
+    return lo;
+  }
+  /* windowed first (no snapping onto a later lap of a looping line),
+     whole line when the window has nothing within OFF_M */
+  function projectNear(lat, lon, s) {
+    const i0 = Math.min(idxAt(Math.max(0, s - 100)), n - 2);
+    const i1 = Math.max(i0 + 1, Math.min(n - 1, idxAt(s + 1000) + 1));
+    const a = projectRange(lat, lon, i0, i1);
+    return a.off <= OFF_M ? a : project(lat, lon);
+  }
+  function project(lat, lon) { return projectRange(lat, lon, 0, n - 1); }
+  function projectRange(lat, lon, i0, i1) {
     const px = lon * kx, py = lat * ky;
-    let best = Infinity, bi = 0, bt = 0;
-    for (let i = 0; i < n - 1; i++) {
+    let best = Infinity, bi = i0, bt = 0;
+    for (let i = i0; i < i1; i++) {
       const ax = xy[i][0], ay = xy[i][1];
       const dx = xy[i + 1][0] - ax, dy = xy[i + 1][1] - ay;
       const len2 = dx * dx + dy * dy || 1e-9;
@@ -298,7 +328,7 @@ function buildRoute(geom) {
     const t = (s - cum[lo]) / (cum[hi] - cum[lo] || 1e-9);
     return {
       lat: pts[lo][1] + t * (pts[hi][1] - pts[lo][1]),
-      lon: pts[lo][0] + t * (pts[lo][0] - pts[lo][0]),
+      lon: pts[lo][0] + t * (pts[hi][0] - pts[lo][0]),
     };
   }
 
@@ -307,7 +337,31 @@ function buildRoute(geom) {
     return bearingDeg(a.lat, a.lon, b.lat, b.lon);
   }
 
-  return { pts, cum, L, n, project, pointAt, bearingAt };
+  return { pts, cum, L, n, project, projectNear, idxAt, pointAt, bearingAt };
+}
+
+/* turns read off the line itself — only when the router served no
+   maneuvers (engine "least-smoke" rows carry depart + arrive only).
+   Heading change over ±25 m windows ≥ 35°, merged within 40 m. */
+function lineTurns(route) {
+  const out = [];
+  const W = 25;
+  for (let i = 1; i < route.n - 1; i++) {
+    const s = route.cum[i];
+    if (s < 30 || s > route.L - 30) continue;
+    const a = route.pointAt(s - W), b = route.pointAt(s), c = route.pointAt(s + W);
+    const d = ((bearingDeg(b.lat, b.lon, c.lat, c.lon) - bearingDeg(a.lat, a.lon, b.lat, b.lon) + 540) % 360) - 180;
+    if (Math.abs(d) < 35) continue;
+    const last = out[out.length - 1];
+    if (last && s - last.s < 40) { if (Math.abs(d) > Math.abs(last.d)) { last.s = s; last.d = d; } continue; }
+    out.push({ s, d });
+  }
+  return out.map((t) => {
+    const ad = Math.abs(t.d), side = t.d > 0 ? 'right' : 'left';
+    if (ad >= 150) return { s: t.s, instruction: 'Make a U-turn', type: 'turn', modifier: 'uturn' };
+    if (ad < 60) return { s: t.s, instruction: `Bear ${side}`, type: 'turn', modifier: `slight ${side}` };
+    return { s: t.s, instruction: `Turn ${side}`, type: 'turn', modifier: side };
+  });
 }
 
 /* ── dose: the served {lo,mid,hi} band spread by the segment strip ──
@@ -327,10 +381,17 @@ function buildDose(option, L) {
     .map((g) => ({ s0: g.start_frac * L, s1: g.end_frac * L, pm: g.pm25, dist: g.dist_m }))
     .filter((g) => g.pm != null && g.s1 > g.s0)
     .sort((a, b) => a.s0 - b.s0);
-  if (total == null) return { total: null, bandAt: () => ({ lo: null, mid: null, hi: null }), at: () => null, pmAt: () => null, heaviest: () => null };
+  /* distance-weighted mean ambient pm25 of the served strip */
+  const segLen = segs.reduce((a, g) => a + (g.s1 - g.s0), 0);
+  const meanPm = segLen > 0 ? segs.reduce((a, g) => a + g.pm * (g.s1 - g.s0), 0) / segLen : null;
+  function pmAt(s) {
+    for (const g of segs) if (s >= g.s0 && s < g.s1) return g.pm;
+    return segs.length ? segs[segs.length - 1].pm : null;
+  }
+  if (total == null) return { total: null, meanPm, bandAt: () => ({ lo: null, mid: null, hi: null }), at: () => null, pmAt, heaviest: () => null };
   if (!segs.length) {
     return {
-      total,
+      total, meanPm,
       at: (s) => total * clamp(s / L, 0, 1),
       bandAt: (s) => bandFrac(total * clamp(s / L, 0, 1)),
       pmAt: () => null,
@@ -355,10 +416,6 @@ function buildDose(option, L) {
     }
     return acc;
   }
-  function pmAt(s) {
-    for (const g of segs) if (s >= g.s0 && s < g.s1) return g.pm;
-    return segs.length ? segs[segs.length - 1].pm : null;
-  }
   function heaviest() {
     let best = null;
     for (const g of segs) if (!best || g.pm > best.pm) best = g;
@@ -366,725 +423,844 @@ function buildDose(option, L) {
       frac: ((best.s0 + best.s1) / 2) / L, dist: best.dist } : null;
   }
   return {
-    total,
+    total, meanPm,
     at: (s) => total * (watt(s) / W),
     bandAt: (s) => bandFrac(total * (watt(s) / W)),
     pmAt, heaviest,
   };
 }
 
-/* ── road names: named steps where they exist, via_names else ────── */
+/* ── road names: only where a served step names the street at a real
+   position (no spreading via_names evenly — that would be a guess) ── */
 function buildRoads(option, route) {
   const named = (option.steps || [])
     .filter((st) => st.street && st.lat != null)
     .map((st) => ({ s: route.project(st.lat, st.lon).s, street: st.street }))
     .sort((a, b) => a.s - b.s);
-  const vias = option.via_names || [];
   return function roadAt(s) {
-    if (named.length) {
-      let r = null;
-      for (const st of named) { if (st.s <= s + 8) r = st.street; else break; }
-      if (r) return r;
-    }
-    if (vias.length) {
-      const i = clamp(Math.floor((s / route.L) * vias.length), 0, vias.length - 1);
-      return vias[i];
-    }
-    return null;
+    let r = null;
+    for (const st of named) { if (st.s <= s + 8) r = st.street; else break; }
+    return r;
   };
 }
 
-/* ── next-maneuver: served steps projected onto arclength ─────────── */
+/* ── next-maneuver: served steps projected onto arclength; when the
+   router served no real maneuvers, the line's own turns + arrive ──── */
 function buildSteps(option, route) {
-  const steps = (option.steps || [])
+  let steps = (option.steps || [])
     .filter((st) => st.lat != null && st.instruction)
     .map((st) => ({
       s: route.project(st.lat, st.lon).s,
       instruction: st.instruction,
+      street: st.street || null,
       type: st.type || null,
       modifier: st.modifier || null,
-    }))
-    .sort((a, b) => a.s - b.s);
-  /* the cue a rider needs = the first step ahead; skip depart-at-0 and
-     anything we've already passed by more than a breath */
+    }));
+  const real = steps.filter((st) => st.type !== 'depart' && st.type !== 'arrive');
+  if (!real.length && route.n > 2) steps = steps.concat(lineTurns(route));
+  steps.sort((a, b) => a.s - b.s);
+  /* the cue a rider needs = the first maneuver not yet passed (held
+     until ~15 m past it, so "turn now" reads at the corner); depart
+     only before the first metres */
   return function nextStep(s) {
     for (const st of steps) {
-      if (st.s > s + (st.type === 'depart' ? -1 : STEP_PASS_M)) {
-        if (st.type === 'depart' && s > 1) continue;
-        return { instruction: st.instruction, distM: Math.max(0, st.s - s),
-          type: st.type, modifier: st.modifier };
-      }
+      if (st.type === 'depart') { if (s <= 5) return cue(st, s); continue; }
+      if (st.s > s - 15) return cue(st, s);
     }
     return null;
   };
+  function cue(st, s) {
+    return { instruction: st.instruction, street: st.street, distM: Math.max(0, st.s - s),
+      type: st.type, modifier: st.modifier, s: st.s };
+  }
 }
 
 /* ══════════════════ the screen ══════════════════ */
+const BIN_M = 20;                  // intake bins along the trip odometer (m)
+const SLOW_MPS = 5 / 3.6;          // under 5 km/h = not moving
+const TICK_MS = 1000;
+const NO_TRAFFIC = new Set(['walk', 'cycle', 'metro']);   // no car queue to sit in
+const TT_MODE = { bike: 'motorcycle', bus: 'bus', cab: 'taxi' };
+/* the verdict scale — share of a full day breathed at the WHO 24 h
+   PM2.5 guideline (WHO_DAY_UG); five plain steps, band palette */
+const VERDICT = [
+  { max: 0.05, word: 'Very light' },
+  { max: 0.15, word: 'Light' },
+  { max: 0.35, word: 'Moderate' },
+  { max: 0.70, word: 'Heavy' },
+  { max: Infinity, word: 'Very heavy' },
+];
+const r6 = (v) => Math.round(v * 1e6) / 1e6;
+const doseOf = (o) => !o ? null
+  : (o.dose && o.dose.mid != null ? o.dose.mid
+    : (o.engine_dose_ug != null ? o.engine_dose_ug : null));
+const validGeom = (g) => !!g && g.type === 'LineString' &&
+  Array.isArray(g.coordinates) && g.coordinates.length >= 2;
+/* the map painter matches NUMERIC bands; the served band is a word
+   ('Satisfactory') — hand it the index of the served pm25 instead */
+const paintSegs = (segs) => (Array.isArray(segs) ? segs : [])
+  .map((g) => Object.assign({}, g, { band: A.fmt.bandIdx(g.pm25) }));
+const thin = (arr, cap) => {
+  if (arr.length <= cap) return arr;
+  const k = Math.ceil(arr.length / cap);
+  return arr.filter((_, i) => i % k === 0 || i === arr.length - 1);
+};
+
+/* one followable line: geometry tables, dose model, cues, street names */
+function buildPlan(o) {
+  const geom = o.geometry || o.route_geojson;
+  const route = buildRoute(geom);
+  const dose = buildDose(o, route.L);
+  const etaPlan = o.eta_s > 0 ? o.eta_s : null;
+  const d = o.dose || {};
+  return {
+    o, geom, route, dose,
+    /* the plan's own breathing constant: µg per second per µg/m³ of
+       the served ambient strip — plan dose ÷ plan time ÷ mean pm25 */
+    k: dose.total != null && etaPlan && dose.meanPm > 0 ? dose.total / (etaPlan * dose.meanPm) : null,
+    etaBase: o.live_eta_s > 0 ? o.live_eta_s : etaPlan,
+    loR: d.mid > 0 && d.lo != null ? d.lo / d.mid : null,
+    hiR: d.mid > 0 && d.hi != null ? d.hi / d.mid : null,
+    roadAt: buildRoads(o, route),
+    nextStep: buildSteps(o, route),
+  };
+}
+
+/* the line still ahead of s0 as [[lat,lon],…], ≤ cap points */
+function remainingCoords(route, s0, cap) {
+  const p0 = route.pointAt(s0);
+  const out = [[r6(p0.lat), r6(p0.lon)]];
+  const rest = [];
+  for (let i = route.idxAt(s0) + 1; i < route.n; i++) rest.push([r6(route.pts[i][1]), r6(route.pts[i][0])]);
+  if (rest.length <= cap - 1) return out.concat(rest);
+  const step = (rest.length - 1) / (cap - 2);
+  for (let j = 0; j < cap - 1; j++) out.push(rest[Math.round(j * step)]);
+  return out;
+}
+
 A.screen('journey', {
   mount(el, params) {
     /* defend the handoff — anything missing goes back to whereto */
     const opt = params && params.option;
-    const geom = opt && (opt.geometry || opt.route_geojson);
     const from = params && params.from, to = params && params.to;
-    if (!opt || !geom || geom.type !== 'LineString' ||
-        !Array.isArray(geom.coordinates) || geom.coordinates.length < 2 ||
+    if (!opt || !validGeom(opt.geometry || opt.route_geojson) ||
         !from || !to || from.lat == null || from.lon == null ||
         to.lat == null || to.lon == null) {
       A.toast('no route to follow — pick a ride first');
       setTimeout(() => { A.back(); if (!A.current()) A.show('home'); }, 60);
       return () => {};
     }
-
-    const route = buildRoute(geom);
-    const dose = buildDose(opt, route.L);
-    const roadAt = buildRoads(opt, route);
-    const nextStep = buildSteps(opt, route);
-    const options = (params && Array.isArray(params.options) ? params.options : [opt]);
-    const planKm = opt.distance_km != null ? opt.distance_km : route.L / 1000;
-    const planEta = opt.eta_s != null ? opt.eta_s : null;
-    const mode = opt.mode || (params && params.vehicle) || '';
-    /* co2 accrues per km — the served band spreads uniformly over L */
-    const co2Band0 = opt.emissions && opt.emissions.co2_kg && opt.emissions.co2_kg.mid > 0
-      ? opt.emissions.co2_kg : null;
-    const pm25Band0 = opt.emissions && opt.emissions.pm25_g || null;
-    const emLabel = opt.emissions && opt.emissions.label || null;
-    const fieldAgeMin = params && params.field_age_s != null ? params.field_age_s / 60 : null;
+    const options = Array.isArray(params.options) && params.options.length ? params.options : [opt];
+    const glyph = vehicleGlyph(params.vehicle || opt.mode || '');
+    const vehKey = String(params.vehicle || glyph);
+    const tripMode = ['health_max', 'petrol_health', 'time_health'].includes(params.mode) ? params.mode : null;
+    const toName = to.label || 'your destination';
+    const plan0 = buildPlan(opt);
 
     const S = {
-      mode: null,            // 'live' | 'preview'
-      follow: true,
-      s: 0, sMax: 0,
-      pos: null,
-      watchId: null, watchTimer: null,
-      raf: 0, simMul: 1, simLast: 0, simElapsed: 0,
-      liveAcc: 0, liveT0: 0,
-      samples: [{ t: 0, dose: 0 }],
-      sampleFloor: 0,
-      bearing: null,
-      done: false,
-      offRoute: false,
-      simUsed: false,
-      gotFix: false,
-      dead: false,
-      cueKey: null,
+      P: plan0,
+      s: 0, odo: 0, sTick: 0,
+      t0: Date.now(), t1: 0, lastTick: Date.now(),
+      watchId: null, geoErr: null,
+      gotFix: false, fix: null, pos: null, lastFixT: 0, lastGoodT: 0,
+      speed: null, vShown: null, weak: false,
+      intake: 0, pmT: 0, tT: 0, doseKnown: plan0.k != null || plan0.dose.total != null,
+      bins: [], track: [],
+      offSince: 0, rerouting: false, lastReroute: 0, rerouteFail: false, reroutes: 0,
+      slowSince: 0, stuckOpen: null, stuck: [],
+      traffic: null, jams: [], jamT: 0, jamBusy: false, jamPins: 0, trafficDown: false,
+      follow: true, bearing: null, cueKey: null,
+      done: false, dead: false, simulated: false,
+      timer: 0, simTimer: 0,
     };
 
-    /* ── view — NavChrome.tsx structure: banner + pill + cluster ──── */
+    /* ── view: maneuver banner · jam + status line · ETA card ─────── */
     el.innerHTML = `
       <div class="jn">
+        <div class="jn-top">
         <div class="jn-banner">
           <div class="jn-tile"><span class="jn-mico"></span></div>
           <div class="jn-btxt">
             <div class="jn-dist"></div>
             <div class="jn-instr"></div>
+            <div class="jn-street"></div>
           </div>
-          <button class="jn-act jn-recenter" type="button" aria-label="re-centre" hidden>${ic('locate', 20, 'var(--ink2)')}</button>
-          <button class="jn-act jn-close" type="button" aria-label="end journey">${ic('close', 20, 'var(--ink2)')}</button>
+          <button class="jn-act jn-close" type="button" aria-label="end trip">${ic('close', 22, 'var(--ink2)')}</button>
         </div>
         <div class="jn-flags">
-          <div class="jn-flag" hidden>preview — simulated ride · plan pace</div>
+          <div class="jn-jam" hidden>${ic('clock', 15, 'currentColor')}<span class="jn-jtxt"></span></div>
           <div class="jn-pill" hidden><i class="jn-pdot"></i><span class="jn-ptxt"></span></div>
         </div>
+        </div>
         <div class="jn-bottom">
-          <div class="jn-fabs">
-            <button class="jn-fab jn-speed" type="button" hidden>×8</button>
-          </div>
+          <button class="jn-recenter" type="button" hidden>${ic('navigate', 18, 'var(--accent-ink)')}<span>Re-centre</span></button>
           <div class="jn-cluster">
-          <div class="jn-prog" hidden><i></i></div>
-          <div class="jn-cells">
-            <div class="jn-cell">
-              <div class="jn-cellh">${ic('dust', 14, 'var(--b2)')}<span class="jn-celll">smoke you breathe</span></div>
-              <div class="jn-cellv jn-dosev">—</div>
-              <div class="jn-btrack" hidden><i class="jn-bseg"></i><i class="jn-bmid"></i></div>
-              <div class="jn-cellb jn-doseb"></div>
+            <div class="jn-prog"><i></i></div>
+            <div class="jn-main">
+              <div class="jn-eta">
+                <div class="jn-etav">—</div>
+                <div class="jn-etas"></div>
+              </div>
+              <div class="jn-spd"><b class="jn-spdv">—</b><span>km/h</span></div>
             </div>
-            <div class="jn-cdiv" hidden></div>
-            <div class="jn-cell jn-outcell" hidden>
-              <div class="jn-cellh">${ic('smoke', 14, 'var(--ink2)')}<span class="jn-celll">smoke your ride puts out</span></div>
-              <div class="jn-cellv jn-cov">—</div>
-              <div class="jn-btrack jn-cotrack" hidden><i class="jn-bseg jn-coseg"></i><i class="jn-bmid"></i></div>
-              <div class="jn-cellb jn-cob"></div>
+            <div class="jn-air">
+              <i class="jn-adot"></i><span class="jn-aword"></span>
+              <span class="jn-alab">breathed</span><b class="jn-dosev">—</b>
             </div>
-          </div>
-          <div class="jn-meta"></div>
-          <div class="jn-ctl" hidden>
-            <button class="jn-gps" type="button" hidden>follow my gps</button>
-            <button class="jn-prev" type="button" hidden>ride a preview instead</button>
-          </div>
-          <div class="jn-confirm" hidden>
-            <span>end this ride? the receipt covers what you did</span>
-            <button class="jn-yes" type="button">end</button>
-            <button class="jn-no" type="button">keep riding</button>
-          </div>
+            <div class="jn-confirm" hidden>
+              <span>End the trip here?</span>
+              <button class="jn-no" type="button">Keep going</button>
+              <button class="jn-yes" type="button">End</button>
+            </div>
           </div>
         </div>
       </div>`;
-
     const $ = (q) => el.querySelector(q);
     const ui = {
-      banner: $('.jn-banner'), tile: $('.jn-tile'), mico: $('.jn-mico'),
-      dist: $('.jn-dist'), instr: $('.jn-instr'),
-      recenter: $('.jn-recenter'), close: $('.jn-close'),
-      flag: $('.jn-flag'), pill: $('.jn-pill'), ptxt: $('.jn-ptxt'), pdot: $('.jn-pdot'),
-      speedFab: $('.jn-speed'),
-      prog: $('.jn-prog'), progFill: $('.jn-prog i'),
-      doseV: $('.jn-dosev'), doseB: $('.jn-doseb'),
-      btrack: $('.jn-btrack'), bseg: $('.jn-bseg'), bmid: $('.jn-bmid'),
-      cdiv: $('.jn-cdiv'), outcell: $('.jn-outcell'),
-      cov: $('.jn-cov'), cob: $('.jn-cob'),
-      cotrack: $('.jn-cotrack'), coseg: $('.jn-coseg'), cobmid: $('.jn-cotrack .jn-bmid'),
-      meta: $('.jn-meta'),
-      ctl: $('.jn-ctl'), gpsBtn: $('.jn-gps'), prevBtn: $('.jn-prev'),
+      tile: $('.jn-tile'), mico: $('.jn-mico'), dist: $('.jn-dist'),
+      instr: $('.jn-instr'), street: $('.jn-street'), close: $('.jn-close'),
+      jam: $('.jn-jam'), jtxt: $('.jn-jtxt'),
+      pill: $('.jn-pill'), pdot: $('.jn-pdot'), ptxt: $('.jn-ptxt'),
+      recenter: $('.jn-recenter'), progFill: $('.jn-prog i'),
+      main: $('.jn-main'), etaV: $('.jn-etav'), etaS: $('.jn-etas'), spdV: $('.jn-spdv'),
+      air: $('.jn-air'), adot: $('.jn-adot'), aword: $('.jn-aword'), doseV: $('.jn-dosev'),
       confirm: $('.jn-confirm'),
     };
-    if (co2Band0) { ui.outcell.hidden = false; ui.cdiv.hidden = false; }
 
-    /* ── map dressing ─────────────────────────────────────────────── */
+    /* ── map: the line coloured by its air, both ends ─────────────── */
     A.map.hideAllRoutes();
     A.map.setFieldVisible(false);
-    A.map.showRoute('journey', geom, opt.segments);
-    A.map.pin('jfrom', route.pts[0][0], route.pts[0][1],
-      '<div class="pin-dot"></div>');
-    const toName = to.label || 'there';
-    A.map.pin('jto', route.pts[route.n - 1][0], route.pts[route.n - 1][1],
-      `<div class="pin-chip">${esc(toName.length > 18 ? toName.slice(0, 17) + '…' : toName)}</div>`);
-    A.map.fit(geom, 84);
-
-    /* ── band-track painter (NavChrome CounterCell band viz) ──────── */
-    function paintBand(track, seg, midEl, band, tint) {
-      const span = band && band.hi > 0 ? band.hi : 0;
-      if (!band || span <= 0) { track.hidden = true; return; }
-      track.hidden = false;
-      const pct = (v) => clamp((v / span) * 100, 0, 100);
-      seg.style.left = pct(Math.max(0, band.lo || 0)) + '%';
-      seg.style.width = Math.max(3, pct(band.hi) - pct(Math.max(0, band.lo || 0))) + '%';
-      seg.style.background = tint;
-      midEl.style.left = `calc(${pct(band.mid)}% - 1.5px)`;
+    function drawRoute() {
+      A.map.hideRoute('journey');
+      A.map.showRoute('journey', S.P.geom, paintSegs(S.P.o.segments));
+      const e = S.P.route.pts[S.P.route.n - 1];
+      A.map.pin('jto', e[0], e[1],
+        `<div class="pin-chip">${esc(toName.length > 18 ? toName.slice(0, 17) + '…' : toName)}</div>`);
     }
-    const bandText = (band, unit) => {
-      if (!band) return '';
-      const lo = Math.round(Math.max(0, band.lo || 0));
-      const hi = Math.round(Math.max(0, band.hi || 0));
-      return lo === hi ? `${lo} ${unit}` : `${lo}–${hi} ${unit}`;
-    };
-    const kgText = (kg) => kg < 1 ? `${Math.round(Math.max(0, kg * 1000))} g`
-      : `${approx(r1(Math.max(0, kg)))} kg`;
+    drawRoute();
+    A.map.pin('jfrom', plan0.route.pts[0][0], plan0.route.pts[0][1], '<div class="pin-dot"></div>');
+    A.map.fit(plan0.geom, 84);
 
-    /* ── banner cue — maneuver tile + dist + instruction ──────────── */
-    function paintCue() {
-      const next = nextStep(S.s);
-      const maneuver = next
-        ? maneuverOf(next.instruction, next.type, next.modifier)
-        : 'straight';
-      const glyph = maneuver === 'arrive' ? 'pin'
-        : (maneuver === 'walk' ? 'walk'
-        : (maneuver === 'transit' ? vehicleGlyph(mode)
-        : (MANEUVER_GLYPH[maneuver] || 'arrowUp')));
-      const gcolor = maneuver === 'arrive' ? '#E8B8A8' : '#FAFAF7';
-      const banner = next ? next.instruction : 'follow the route line';
-      const key = `${glyph}|${banner}`;
-      if (S.cueKey !== key) {           // only a new cue earns the swap
-        S.cueKey = key;
-        ui.mico.innerHTML = ic(glyph, 30, gcolor);
-        ui.instr.textContent = banner;
-        ui.instr.classList.toggle('big', !next);
-        ui.tile.classList.remove('swap'); ui.instr.classList.remove('swap');
-        void ui.tile.offsetWidth;
-        ui.tile.classList.add('swap'); ui.instr.classList.add('swap');
-      }
-      const dtxt = next ? distToStr(next.distM) : '';
-      if (ui.dist.textContent !== dtxt) ui.dist.textContent = dtxt;
-    }
-
-    /* ── HUD render (only what changed) ───────────────────────────── */
-    let lastTxt = {};
-    function set(elm, key, txt) {
-      if (lastTxt[key] !== txt) { elm.textContent = txt; lastTxt[key] = txt; }
-    }
-    function render() {
-      const frac = clamp(S.s / route.L, 0, 1);
-      const remM = Math.max(0, route.L - S.s);
-      const remS = planEta != null ? planEta * (1 - frac) : null;
-      const min = Math.max(0, Math.round((remS || 0) / 60));
-
-      /* progress hairline */
-      ui.prog.hidden = frac <= 0;
-      ui.progFill.style.width = `${frac * 100}%`;
-
-      /* breathe cell — accrued dose band (plan estimate) */
-      const dB = dose.bandAt(S.s);
-      const dTxt = dB.mid == null ? 'locating you…'
-        : `≈ ${doseUgRound(dB.mid)} µg`;
-      set(ui.doseV, 'dv', dB.mid === 0 ? '0 µg' : dTxt);
-      paintBand(ui.btrack, ui.bseg, ui.bmid, dB, 'var(--b2)');
-      set(ui.doseB, 'db', bandText(dB, 'µg'));
-
-      /* put-out cell — co2 band accrued per km */
-      if (co2Band0) {
-        const cb = { lo: co2Band0.lo * frac, mid: co2Band0.mid * frac, hi: co2Band0.hi * frac };
-        const outG = co2Band0.hi < 1;
-        set(ui.cov, 'cv', outG ? `${Math.round(Math.max(0, cb.mid * 1000))} g`
-          : `${approx(r1(Math.max(0, cb.mid)))} kg`);
-        paintBand(ui.cotrack, ui.coseg, ui.cobmid, cb, 'var(--ink2)');
-        const lo = Math.round(Math.max(0, cb.lo)), hi = Math.round(Math.max(0, cb.hi));
-        if (outG) set(ui.cob, 'cb', lo === hi ? `${lo} g` : `${lo}–${hi} g`);
-        else set(ui.cob, 'cb', r1(cb.lo) === r1(cb.hi) ? `${r1(cb.hi)} kg` : `${r1(cb.lo)}–${r1(cb.hi)} kg`);
-      }
-
-      /* meta — "N min · K km left · arrive 4:42 pm" */
-      const leftTxt = leftIsKm(remM)
-        ? `${min} min · ${(remM / 1000).toFixed(1)} km left`
-        : `${min} min · ${leftMNum(remM)} m left`;
-      const arr = remS != null ? ` · arrive ${clockLabel(Date.now() + Math.max(0, remS) * 1000)}` : '';
-      set(ui.meta, 'm', leftTxt + arr);
-
-      /* status pills — RN's single pill slot, one line at a time */
-      let pillTxt = null, pillDot = false;
-      if (S.mode === 'live' && S.offRoute) { pillTxt = 'finding a new way…'; pillDot = true; }
-      else if (S.mode === 'live' && !S.gotFix) { pillTxt = 'no location — counting the air where you started'; }
-      ui.pill.hidden = pillTxt == null;
-      ui.pdot.hidden = !pillDot;
-      if (pillTxt != null) set(ui.ptxt, 'p', pillTxt);
-
-      paintCue();
-    }
-
-    /* ── camera ───────────────────────────────────────────────────── */
-    function camera(lat, lon, instant) {
-      if (!S.follow) return;
-      const brg = route.bearingAt(S.s);
-      const b = S.bearing == null ? brg : lerpAng(S.bearing, brg, 0.4);
-      S.bearing = b;
-      A.map.ready((m) => {
-        m.easeTo({
-          center: [lon, lat], zoom: Math.max(15.4, m.getZoom()),
-          bearing: b, duration: instant ? 200 : 700,
-        });
+    function paintJams(clear) {
+      for (let i = 0; i < S.jamPins; i++) A.map.unpin(`jjam${i}`);
+      S.jamPins = 0;
+      if (clear) return;
+      S.jams.filter((j) => j.sB > S.s).slice(0, 4).forEach((j, i) => {
+        A.map.pin(`jjam${i}`, j.lon, j.lat, '<div class="jn-jampin"></div>');
+        S.jamPins = i + 1;
       });
     }
-    const onDrag = () => {               // user panned → release follow
-      if (S.dead) return;
+
+    /* ── camera: follows the puck, heading = the line ahead ───────── */
+    function camera(lat, lon, instant) {
+      const brg = S.P.route.bearingAt(S.s);
+      const b = S.bearing == null ? brg : lerpAng(S.bearing, brg, 0.35);
+      S.bearing = b;
+      A.map.ready((m) => {
+        m.easeTo({ center: [lon, lat], zoom: Math.max(16, m.getZoom()), bearing: b,
+          offset: [0, 70], duration: instant ? 300 : 800 });
+      });
+    }
+    const onDrag = () => {               // the user panned → stop following
+      if (S.dead || S.done) return;
       if (S.follow) { S.follow = false; ui.recenter.hidden = false; }
     };
     A.map.ready((m) => { m.on('dragstart', onDrag); });
     ui.recenter.addEventListener('click', () => {
       S.follow = true; ui.recenter.hidden = true;
-      const p = S.pos || route.pointAt(S.s);
+      const p = S.pos || S.P.route.pointAt(S.s);
       camera(p.lat, p.lon, true);
     });
 
-    /* ── progress intake (shared by live + preview) ───────────────── */
-    function advance(lat, lon, opts) {
-      if (S.done) return;
-      const pr = route.project(lat, lon);
-      S.s = Math.max(S.s, pr.s);          // progress only ratchets forward
-      S.sMax = Math.max(S.sMax, S.s);
-      S.offRoute = pr.off > OFFROUTE_M;
-      A.map.puckMove(lat, lon, opts && opts.acc);
-      if (S.follow) camera(lat, lon);
-      // dose sample for the receipt curve — at most ~every 1.2s of ride
-      const elapsed = elapsedNow();
-      if (elapsed - S.sampleFloor >= 1.2) {
-        S.sampleFloor = elapsed;
-        S.samples.push({ t: elapsed, dose: dose.at(S.s) });
+    /* ── the device's own GPS — errors are surfaced, never swallowed ─ */
+    function startGeo() {
+      if (!navigator.geolocation) { S.geoErr = 'unsupported'; render(); return; }
+      try {
+        S.watchId = navigator.geolocation.watchPosition((p) => {
+          const c = p.coords;
+          const f = { lat: c.latitude, lon: c.longitude, acc: c.accuracy,
+            speed: c.speed, heading: c.heading, t: Date.now() };
+          A.geo.pos = { lat: f.lat, lon: f.lon, t: f.t, acc: f.acc };
+          onFix(f);
+        }, (err) => {
+          if (S.done || S.dead) return;
+          S.geoErr = err && err.code === 1 ? 'denied' : 'unavailable';
+          render();
+        }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+      } catch (e) { S.geoErr = 'unavailable'; render(); }
+    }
+    /* QA only (?sim=1, never linked): fixes fed along the line at 4×
+       plan pace through the same path; the record is simulated:true */
+    function startSim() {
+      S.simulated = true;
+      const v = (S.P.etaBase ? S.P.route.L / S.P.etaBase : 8) * 4;
+      S.simTimer = setInterval(() => {
+        if (S.done) return;
+        const p = S.P.route.pointAt(Math.min(S.P.route.L, S.s + v));
+        onFix({ lat: p.lat, lon: p.lon, acc: 6, speed: v, heading: null, t: Date.now() });
+      }, 1000);
+    }
+
+    /* ── one GPS fix ──────────────────────────────────────────────── */
+    function onFix(f) {
+      if (S.done || S.dead) return;
+      const now = Date.now();
+      const prev = S.fix, prevT = S.lastFixT;
+      S.geoErr = null;
+      /* measured speed: the device's own reading when it gives one, else
+         the displacement between two fixes (inside the noise = 0) */
+      let v = typeof f.speed === 'number' && isFinite(f.speed) && f.speed >= 0 ? f.speed : null;
+      if (v == null && S.fix) {
+        const dt = (now - S.lastFixT) / 1000;
+        const d = havM(S.fix.lat, S.fix.lon, f.lat, f.lon);
+        v = dt >= 0.8 ? (d < 0.5 * Math.max(f.acc || 0, S.fix.acc || 0, 6) ? 0 : d / dt) : S.speed;
       }
-      render();
-      const arrived = pr.off < OFFROUTE_M &&
-        (S.s / route.L >= 0.985 || havM(lat, lon, to.lat, to.lon) < ARRIVE_M);
-      if (arrived) finish(true);
-    }
-
-    /* ride clock: preview sim-seconds + live wall-seconds, added honestly */
-    function elapsedNow() {
-      const live = S.liveAcc + (S.mode === 'live' && S.liveT0 ? (Date.now() - S.liveT0) / 1000 : 0);
-      return S.simElapsed + live;
-    }
-
-    /* ── live mode ────────────────────────────────────────────────── */
-    function startLive() {
-      S.mode = 'live';
-      S.liveT0 = Date.now();
-      ui.flag.hidden = true; ui.speedFab.hidden = true;
-      ui.ctl.hidden = true; ui.gpsBtn.hidden = true; ui.prevBtn.hidden = true;
-      S.watchId = A.geo.watch((pos) => {
-        if (S.done || S.mode !== 'live') return;
-        S.pos = pos; S.gotFix = true;
-        advance(pos.lat, pos.lon, { acc: pos.acc });
-      });
-      if (S.watchId == null) {           // no geolocation after all
-        startPreview();
+      S.speed = v == null ? 0 : v;
+      S.vShown = S.speed;
+      S.fix = f; S.lastFixT = now;
+      if (!S.gotFix) { S.gotFix = true; S.t1 = now; S.lastTick = now; }
+      S.weak = f.acc != null && f.acc > WEAK_ACC_M;
+      if (S.weak) {                         // too vague to move progress
+        A.map.puckMove(f.lat, f.lon, f.acc);
+        render();
         return;
       }
-      // honest "waiting on gps" state if the first fix is slow
-      clearTimeout(S.watchTimer);
-      S.watchTimer = setTimeout(() => {
-        if (!S.gotFix && !S.done) {
-          ui.prevBtn.hidden = false;      // 'ride a preview instead'
-          ui.ctl.hidden = false;
+      const P = S.P;
+      const pr = P.route.projectNear(f.lat, f.lon, S.s);
+      if (pr.off > OFF_M) {                 // off the line: wait, then reroute
+        if (!S.offSince) S.offSince = now;
+        /* a detour is still travel: odometer by displacement beyond the noise */
+        if (prev && !(prev.acc > WEAK_ACC_M)) {
+          const d = havM(prev.lat, prev.lon, f.lat, f.lon);
+          const gapS = Math.max(1, (now - prevT) / 1000);
+          if (d > Math.max(8, 0.5 * Math.max(f.acc || 0, prev.acc || 0)) && d < 60 + 70 * gapS) S.odo += d;
         }
-      }, 12000);
-    }
-
-    /* ── preview mode — simulated, honestly paced ─────────────────── */
-    function startPreview() {
-      if (S.done) return;
-      if (S.mode === 'live') {
-        if (S.watchId != null) { A.geo.clearWatch(S.watchId); S.watchId = null; }
-        if (S.liveT0) { S.liveAcc += (Date.now() - S.liveT0) / 1000; S.liveT0 = 0; }
-      }
-      S.mode = 'preview';
-      S.simUsed = true;
-      ui.flag.hidden = false;
-      ui.speedFab.hidden = false;
-      ui.prevBtn.hidden = true;
-      ui.gpsBtn.hidden = !navigator.geolocation;
-      ui.ctl.hidden = ui.gpsBtn.hidden;
-      ui.speedFab.textContent = S.simMul === 1 ? '×8' : '×1';
-      ui.speedFab.classList.toggle('on', S.simMul !== 1);
-      // pace = plan pace: cover L in eta_s (realistic — never a teleport)
-      const v = planEta != null && planEta > 0 ? route.L / planEta : null;
-      if (v == null) {
-        ui.flag.textContent = 'preview needs the plan eta — not served for this option';
+        S.pos = { lat: f.lat, lon: f.lon };
+        A.map.puckMove(f.lat, f.lon, f.acc);
+        if (S.follow) camera(f.lat, f.lon);
+        pushTrack(f.lat, f.lon);
+        maybeReroute(now);
+        render();
         return;
       }
-      if (!S.simLast) S.simLast = performance.now();
-      if (S.raf) return;
-      const tick = (now) => {
-        if (S.done || S.mode !== 'preview') { S.raf = 0; return; }
-        const dt = Math.min(0.5, (now - S.simLast) / 1000);   // tab-jank guard
-        S.simLast = now;
-        S.simElapsed += dt * S.simMul;
-        S.s = Math.min(route.L, S.s + v * dt * S.simMul);
-        S.sMax = S.s;
-        const p = route.pointAt(S.s);
-        S.pos = p;
-        advance(p.lat, p.lon, {});
-        if (!S.done) S.raf = requestAnimationFrame(tick);
-      };
-      S.raf = requestAnimationFrame(tick);
-    }
-    ui.speedFab.addEventListener('click', () => {
-      S.simMul = S.simMul === 1 ? 8 : 1;
-      ui.speedFab.textContent = S.simMul === 1 ? '×8' : '×1';
-      ui.speedFab.classList.toggle('on', S.simMul !== 1);
-      S.simLast = performance.now();
-    });
-    ui.gpsBtn.addEventListener('click', () => {
-      if (!navigator.geolocation) return;
-      A.geo.consent = 'granted'; A.store.set('consent', 'granted');
-      ui.gpsBtn.hidden = true; ui.ctl.hidden = true;
-      S.gotFix = false;
-      startLive();
-    });
-    ui.prevBtn.addEventListener('click', () => startPreview());
-
-    /* ── end / exit — confirm swaps with the cluster body ─────────── */
-    ui.close.addEventListener('click', () => {
-      ui.confirm.hidden = false;
-      ui.ctl.hidden = true;
-      $('.jn-cells').hidden = true; ui.meta.hidden = true; ui.prog.hidden = true;
-    });
-    $('.jn-no').addEventListener('click', () => {
-      ui.confirm.hidden = true;
-      $('.jn-cells').hidden = false; ui.meta.hidden = false;
+      S.offSince = 0; S.rerouteFail = false;
+      /* progress only ratchets forward, and never faster than a plausible
+         ride since the last good fix (a stray fix can't teleport you) */
+      const gap = S.lastGoodT ? (now - S.lastGoodT) / 1000 : 0;
+      if (pr.s > S.s && (!S.lastGoodT || pr.s - S.s <= 60 + 70 * Math.max(1, gap))) {
+        if (S.lastGoodT) S.odo += pr.s - S.s;   // the first fix places you; it isn't travel
+        S.s = pr.s;
+      }
+      S.lastGoodT = now;
+      const px = pr.off <= 25 ? P.route.pointAt(S.s) : { lat: f.lat, lon: f.lon };
+      S.pos = px;
+      A.map.puckMove(px.lat, px.lon, f.acc);
+      if (S.follow) camera(px.lat, px.lon);
+      pushTrack(px.lat, px.lon);
+      const remM = P.route.L - S.s;
+      if (remM <= 35 || (remM < 250 && havM(f.lat, f.lon, to.lat, to.lon) < ARRIVE_M)) {
+        finish(true);
+        return;
+      }
       render();
-    });
+    }
+    function pushTrack(lat, lon) {
+      const last = S.track[S.track.length - 1];
+      if (!last || havM(last[1], last[0], lat, lon) >= 12) {
+        S.track.push([r6(lon), r6(lat), S.P.dose.pmAt(S.s)]);
+      }
+    }
+
+    /* ── reroute: off the line > OFF_M for > OFF_HOLD_MS ──────────── */
+    function maybeReroute(now) {
+      if (!S.offSince || S.rerouting || S.done || !S.fix) return;
+      if (now - S.offSince < OFF_HOLD_MS || now - S.lastReroute < REROUTE_GAP_MS) return;
+      reroute(S.fix.lat, S.fix.lon);
+    }
+    async function reroute(lat, lon) {
+      S.rerouting = true; S.lastReroute = Date.now(); render();
+      /* no trip `mode` here — /v2/reroute reads it as the family hint */
+      const r = await A.api.post('/v2/reroute', {
+        route_id: S.P.o.route_id || null,
+        at: { lat: r6(lat), lon: r6(lon) },
+        to: { lat: to.lat, lon: to.lon },
+        vehicle: params.vehicle || opt.mode || 'car',
+      }, 20000);
+      if (S.done || S.dead) return;
+      S.rerouting = false; S.lastReroute = Date.now();
+      if (!S.offSince) { render(); return; }  // back on the line meanwhile — keep it
+      const o = r && (r.option || (validGeom(r.geometry) ? r : null));
+      if (!o || !validGeom(o.geometry || o.route_geojson)) { S.rerouteFail = true; render(); return; }
+      adopt(o);
+    }
+    function adopt(o) {
+      const prev = S.P;
+      const P = buildPlan(o);
+      if (P.k == null) P.k = prev.k;          // same rider, same breathing
+      if (P.loR == null) P.loR = prev.loR;
+      if (P.hiR == null) P.hiR = prev.hiR;
+      S.P = P; S.reroutes++;
+      S.s = S.fix ? P.route.project(S.fix.lat, S.fix.lon).s : 0;
+      S.sTick = S.s;
+      S.offSince = 0; S.rerouteFail = false; S.cueKey = null;
+      S.traffic = null; S.jams = []; paintJams();
+      if (!S.trafficDown) S.jamT = 0;         // live traffic for the new line next tick
+      if (P.k != null || P.dose.total != null) S.doseKnown = true;
+      drawRoute();
+      render();
+    }
+
+    /* ── live traffic on the line still ahead (TomTom via lane P) ─── */
+    async function refreshJams() {
+      if (S.jamBusy || NO_TRAFFIC.has(glyph)) return;
+      S.jamT = Date.now();
+      const P = S.P, s0 = S.s, remM = P.route.L - s0;
+      if (remM < 300) return;
+      S.jamBusy = true;
+      const r = await A.api.post('/v2/p/route_traffic', {
+        coords: remainingCoords(P.route, s0, TRAFFIC_PTS), mode: TT_MODE[glyph] || 'car',
+      }, 9000);
+      S.jamBusy = false;
+      if (S.done || S.dead || P !== S.P) return;
+      S.trafficDown = !r;
+      if (!r) S.jamT = Date.now() + 4 * JAM_EVERY_MS;   // endpoint down/missing → ask rarely
+      if (!r || r.configured === false || (r.live_s == null && !Array.isArray(r.jams))) {
+        S.traffic = null; S.jams = [];       // 404 / unconfigured / failed → show nothing
+      } else {
+        S.traffic = r.live_s > 0 ? { remM, live_s: r.live_s } : null;
+        S.jams = (Array.isArray(r.jams) ? r.jams : [])
+          .filter((j) => j && j.lat != null && j.lon != null && j.delay_s > 0)
+          .map((j) => {
+            const guess = s0 + (j.from_m || 0);
+            const pr = P.route.projectNear(j.lat, j.lon, Math.max(0, guess - 50));
+            const sA = pr.off <= 120 ? pr.s : guess;
+            return { sA, sB: sA + Math.max(0, (j.to_m || 0) - (j.from_m || 0)),
+              delay_s: j.delay_s, road: String(j.road || '').trim() || null, lat: j.lat, lon: j.lon };
+          })
+          .sort((a, b) => a.sA - b.sA);
+      }
+      paintJams();
+      render();
+    }
+
+    /* ── the 1 s clock: intake by time actually spent, stuck stretches,
+       stale-fix speed, reroute + traffic timers ─────────────────── */
+    function tick(final) {
+      if (S.done || S.dead) return;
+      const now = Date.now();
+      const dt = clamp((now - S.lastTick) / 1000, 0, 600);
+      S.lastTick = now;
+      const P = S.P;
+      if (S.gotFix && now - S.lastFixT > FIX_STALE_MS) S.vShown = 0;   // no new fix = not moving
+      if (S.gotFix && dt > 0) {
+        const pm = P.dose.pmAt(S.s);
+        let dd = 0;
+        if (P.k != null && pm != null) dd = P.k * pm * dt;
+        else if (P.dose.total != null) dd = Math.max(0, P.dose.at(S.s) - P.dose.at(S.sTick));
+        S.sTick = S.s;
+        S.intake += dd;
+        if (pm != null) { S.pmT += pm * dt; S.tT += dt; }
+        const bi = Math.floor(S.odo / BIN_M);
+        let b = S.bins[bi];
+        if (!b) {
+          const p = S.pos || P.route.pointAt(S.s);
+          b = S.bins[bi] = { dose: 0, pmT: 0, tT: 0, lat: p.lat, lon: p.lon, street: P.roadAt(S.s) };
+        }
+        b.dose += dd;
+        if (pm != null) { b.pmT += pm * dt; b.tT += dt; }
+        stuckStep(now);
+      }
+      if (final) return;
+      maybeReroute(now);
+      if (now - S.jamT >= JAM_EVERY_MS) refreshJams();
+      render();
+    }
+    /* measured stuck: under 5 km/h for over a minute, after setting off */
+    function stuckStep(now) {
+      const v = S.vShown;
+      if (v != null && v < SLOW_MPS && S.odo >= 30) {
+        if (!S.slowSince) S.slowSince = now;
+        if (!S.stuckOpen && now - S.slowSince >= STUCK_MIN_S * 1000) {
+          const p = S.pos || S.P.route.pointAt(S.s);
+          S.stuckOpen = { t0: S.slowSince, odo: S.odo, lat: p.lat, lon: p.lon, street: S.P.roadAt(S.s) };
+        }
+      } else {
+        if (S.stuckOpen) closeStuck(now);
+        S.slowSince = 0;
+      }
+    }
+    function closeStuck(now) {
+      const st = S.stuckOpen;
+      S.stuckOpen = null;
+      st.t1 = now; st.dur_s = Math.round((now - st.t0) / 1000);
+      S.stuck.push(st);
+    }
+
+    /* ── ETA: live traffic (else the plan) for what's left, leaning on
+       your own measured pace as the trip proves itself ─────────────── */
+    function remainingS(remM) {
+      const P = S.P;
+      let base = null;
+      if (S.traffic && S.traffic.remM > 0) base = S.traffic.live_s * (remM / S.traffic.remM);
+      else if (P.etaBase) base = P.etaBase * (remM / P.route.L);
+      const el = S.t1 ? (Date.now() - S.t1) / 1000 : 0;
+      if (S.odo >= 300 && el >= 60) {
+        const obs = remM / (S.odo / el);
+        if (base == null) return obs;
+        const w = clamp(S.odo / 3000, 0, 0.6);
+        return (1 - w) * base + w * Math.min(obs, base * 4);
+      }
+      return base;
+    }
+
+    /* ── render (only what changed) ───────────────────────────────── */
+    const last = {};
+    const set = (node, key, txt) => { if (last[key] !== txt) { node.textContent = txt; last[key] = txt; } };
+    function render() {
+      if (S.done || S.dead) return;
+      const P = S.P;
+      const remM = Math.max(0, P.route.L - S.s);
+      const tot = S.odo + remM;
+      const pf = `scaleX(${(tot > 0 ? clamp(S.odo / tot, 0, 1) : 0).toFixed(4)})`;
+      if (last.pf !== pf) { ui.progFill.style.transform = pf; last.pf = pf; }
+      const remS = remainingS(remM);
+      set(ui.etaV, 'ev', remS == null ? '—' : fmtDur(remS));
+      set(ui.etaS, 'es', distToStr(remM) +
+        (remS != null ? ` · arrive ${clockLabel(Date.now() + remS * 1000)}` : ''));
+      set(ui.spdV, 'sv', S.vShown == null ? '—' : String(Math.round(S.vShown * 3.6)));
+      const b = A.fmt.band(P.dose.pmAt(S.s));
+      const bc = b ? b.color : 'var(--ink4)';
+      if (last.bc !== bc) { ui.adot.style.background = bc; last.bc = bc; }
+      set(ui.aword, 'aw', b ? `${b.name[0].toUpperCase()}${b.name.slice(1)} air` : 'Air here');
+      set(ui.doseV, 'dv', S.gotFix && S.doseKnown ? `≈ ${doseUgRound(S.intake)} µg` : '—');
+
+      /* live jam ahead — the nearest one not yet behind you */
+      const j = S.offSince ? null : S.jams.find((x) => x.sB > S.s);
+      const jt = j ? `${j.sA <= S.s ? 'Slow traffic' : 'Jam ahead'}${j.road ? ` on ${j.road}` : ''} · +${Math.max(1, Math.round(j.delay_s / 60))} min` : '';
+      ui.jam.hidden = !j;
+      set(ui.jtxt, 'jt', jt);
+
+      /* one status line at a time */
+      let pill = null, dot = false;
+      if (S.geoErr === 'denied') pill = 'Location is blocked — allow it to navigate';
+      else if (S.geoErr === 'unsupported') pill = "This browser can't share your location";
+      else if (!S.gotFix) { pill = S.geoErr ? 'No GPS signal yet…' : 'Finding your location…'; dot = true; }
+      else if (S.rerouting) { pill = 'Off route — finding a new way…'; dot = true; }
+      else if (S.offSince) pill = S.rerouteFail ? "Off route — couldn't get a new way yet" : 'Off route';
+      else if (S.weak) pill = 'Weak GPS signal';
+      ui.pill.hidden = pill == null;
+      ui.pdot.hidden = !dot;
+      if (pill != null) set(ui.ptxt, 'pt', pill);
+      paintCue(remM);
+    }
+
+    /* ── banner cue: next maneuver, distance from where you really are ─ */
+    function paintCue(remM) {
+      const next = S.P.nextStep(S.s);
+      let gname = 'arrowUp', gcolor = '#FAFAF7', instr = 'Follow the route', street = '';
+      if (next) {
+        const m = maneuverOf(next.instruction, next.type, next.modifier);
+        gname = m === 'arrive' ? 'pin' : m === 'walk' ? 'walk'
+          : m === 'transit' ? glyph : (MANEUVER_GLYPH[m] || 'arrowUp');
+        if (m === 'arrive') { instr = `Arrive at ${toName}`; gcolor = '#E8B8A8'; }
+        else instr = next.instruction;
+        if (next.street && instr.toLowerCase().indexOf(String(next.street).toLowerCase()) < 0) {
+          street = next.street;
+        }
+      }
+      const key = `${gname}|${instr}`;
+      if (S.cueKey !== key) {                // only a new cue earns the swap
+        S.cueKey = key;
+        ui.mico.innerHTML = ic(gname, 30, gcolor);
+        ui.instr.textContent = instr;
+        ui.tile.classList.remove('swap'); ui.instr.classList.remove('swap');
+        void ui.tile.offsetWidth;
+        ui.tile.classList.add('swap'); ui.instr.classList.add('swap');
+      }
+      set(ui.street, 'st', street);
+      set(ui.dist, 'di', !next ? distToStr(remM) : (next.type === 'depart' ? '' : distToStr(next.distM)));
+    }
+
+    /* ── end ──────────────────────────────────────────────────────── */
+    const showConfirm = (on) => {
+      ui.confirm.hidden = !on; ui.main.hidden = on; ui.air.hidden = on;
+    };
+    ui.close.addEventListener('click', () => showConfirm(true));
+    $('.jn-no').addEventListener('click', () => { showConfirm(false); render(); });
     $('.jn-yes').addEventListener('click', () => finish(false));
 
-    /* ── the receipt — ReceiptSheet.tsx mirrored ──────────────────── */
-    function finish(arrived) {
-      if (S.done) return;
-      S.done = true;
-      if (S.watchId != null) { A.geo.clearWatch(S.watchId); S.watchId = null; }
-      if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
-      clearTimeout(S.watchTimer);
-
-      const takenS = elapsedNow();
-      const coveredM = S.sMax;
-      const frac = clamp(coveredM / route.L, 0, 1);
-      const doseBand = dose.bandAt(coveredM);
-      const doseDone = doseBand.mid;
-      const heavy = dose.heaviest();
-      const neverStarted = !arrived && coveredM < 100;
-
-      /* comparisons against the OTHER served options (NavSession's rule:
-         the taken mode can't compare against itself) */
-      const others = options.filter((o) => o !== opt);
-      const worstDose = Math.max(0, ...others.map((o) => (o.dose && o.dose.mid) || 0));
-      const worstOpt = worstDose > 0 ? others.find((o) => ((o.dose && o.dose.mid) || 0) === worstDose) : null;
-      const altEmit = others
-        .filter((o) => o.emissions && o.emissions.co2_kg && o.emissions.co2_kg.mid > 0)
-        .sort((a, b) => a.emissions.co2_kg.mid - b.emissions.co2_kg.mid)[0];
-
-      // persist — the local ledger
-      const rec = {
-        t: Date.now(), arrived,
-        from: { lat: from.lat, lon: from.lon, label: from.label || 'start' },
-        to: { lat: to.lat, lon: to.lon, label: to.label || 'there' },
-        vehicle: (params && params.vehicle) || (opt.mode || '').split('_')[0] || null,
-        label: opt.label || opt.mode || null,
-        km_plan: opt.distance_km ?? null, eta_plan_s: opt.eta_s ?? null,
-        covered_km: coveredM / 1000, taken_s: Math.round(takenS),
-        dose_ug: doseDone, dose_plan_ug: dose.total,
-        simulated: S.simUsed,
-      };
-      A.store.set(STORE_LAST, rec);
-      const hist = A.store.get(STORE_HIST, []);
-      hist.unshift(rec);
-      A.store.set(STORE_HIST, hist.slice(0, HIST_CAP));
-
-      renderReceipt(rec, { frac, heavy, doseBand, worstDose, worstOpt, altEmit, neverStarted });
+    function stopAll() {
+      if (S.watchId != null) { try { navigator.geolocation.clearWatch(S.watchId); } catch (e) {} S.watchId = null; }
+      clearInterval(S.timer); clearInterval(S.simTimer);
+      S.timer = 0; S.simTimer = 0;
     }
 
-    async function renderReceipt(rec, x) {
+    function finish(arrived) {
+      if (S.done) return;
+      tick(true);                            // the last seconds count too
+      S.done = true;
+      stopAll();
+      const now = Date.now();
+      if (S.stuckOpen) closeStuck(now);
+      const takenS = Math.round((now - S.t0) / 1000);
+      const km = S.odo / 1000;
+      const frac = arrived ? 1 : clamp(S.odo / plan0.route.L, 0, 1);
+      const measured = S.gotFix && S.doseKnown && (arrived || S.odo >= 50);
+      const intake = S.intake;
+      const lo = S.P.loR != null ? intake * S.P.loR : null;
+      const hi = S.P.hiR != null ? intake * S.P.hiR : null;
+      const doses = options.map((o) => ({ o, d: doseOf(o) })).filter((x) => x.d != null);
+      const cleanest = doses.length ? doses.reduce((a, b) => (b.d < a.d ? b : a)) : null;
+      const smokiest = doses.length ? doses.reduce((a, b) => (b.d > a.d ? b : a)) : null;
+      const co2 = opt.emissions && opt.emissions.co2_kg && opt.emissions.co2_kg.mid != null
+        ? Math.max(0, opt.emissions.co2_kg.mid) * frac : null;
+
+      if (measured) {                        // the local ledger (only ADDED fields)
+        const rec = {
+          t: now, arrived,
+          from: { lat: from.lat, lon: from.lon, label: from.label || 'start' },
+          to: { lat: to.lat, lon: to.lon, label: to.label || 'there' },
+          vehicle: params.vehicle || (opt.mode || '').split('_')[0] || null,
+          label: opt.label || opt.mode || null,
+          mode: tripMode,
+          km_plan: opt.distance_km ?? null, eta_plan_s: opt.eta_s ?? null,
+          covered_km: r2(km), taken_s: takenS,
+          dose_ug: r2(intake), dose_lo_ug: lo != null ? r2(lo) : null, dose_hi_ug: hi != null ? r2(hi) : null,
+          dose_plan_ug: plan0.dose.total,
+          emit_kg: co2 != null ? Math.round(co2 * 1000) / 1000 : null,
+          avoided_ug: smokiest ? r2(Math.max(0, smokiest.d * frac - intake)) : 0,
+          stuck: S.stuck.map((st) => ({ dur_s: st.dur_s, street: st.street || null })),
+          reroutes: S.reroutes,
+          measured: 'gps',
+          simulated: S.simulated,
+        };
+        A.store.set(STORE_LAST, rec);
+        const hist = A.store.get(STORE_HIST, []) || [];
+        hist.unshift(rec);
+        A.store.set(STORE_HIST, hist.slice(0, HIST_CAP));
+      }
+      trackEnd(arrived);
+      renderReceipt({ arrived, measured, intake, frac, takenS, cleanest, co2 });
+    }
+    /* anonymous counter (telemetry.js whitelists these props; no location) */
+    let tracked = false;
+    function trackEnd(arrived) {
+      if (tracked || S.simulated || !A.track) return;
+      tracked = true;
+      const frac = arrived ? 1 : clamp(S.odo / plan0.route.L, 0, 1);
+      const fastest = options.filter((o) => o.eta_s > 0).sort((a, b) => a.eta_s - b.eta_s)[0] || null;
+      const fastD = doseOf(fastest);
+      A.track('journey_end', {
+        completed: !!arrived, mode: tripMode, vehicle: vehKey,
+        dose_ug: r2(S.intake), dose_saved_ug: fastD != null ? r2(fastD * frac - S.intake) : null,
+        km: r2(S.odo / 1000), minutes: r1((Date.now() - S.t0) / 60000),
+      });
+    }
+
+    /* ── the receipt: hero, verdict, one band-coloured graph, a mini map ─ */
+    function renderReceipt(x) {
       const jn = $('.jn');
       if (jn) jn.remove();
-      const optDose = dose.total;
-      const isSim = rec.simulated;
-      const doseB = x.doseBand;
-      const dShown = doseB.mid;
-      const co2 = co2Band0 ? { lo: co2Band0.lo * x.frac, mid: co2Band0.mid * x.frac, hi: co2Band0.hi * x.frac } : null;
-      const pm25 = pm25Band0 ? { lo: pm25Band0.lo * x.frac, mid: pm25Band0.mid * x.frac, hi: pm25Band0.hi * x.frac } : null;
-      const co2Zero = co2 != null && co2.hi <= 0;
-      const worst = x.worstDose;
-      const fullRun = rec.arrived;
-      const mins = Math.max(1, Math.round(rec.taken_s / 60));
+      paintJams(true);
       const chip = modeLabel(opt.mode || '', opt.label || '');
-
-      /* dose ruler — ReceiptSheet DoseScale: mid fill on the trip-or-1cig
-         scale; whiskers = the honest lo/hi band; ring = smokiest option */
-      const scaleMax = Math.max(doseB.hi || 0, worst || 0, dShown || 0, 1);
-      const pct = (v) => clamp((v / scaleMax) * 100, 0, 100);
-      const doseScale = dShown != null ? `
-        <div class="jr-scale" role="img" aria-label="dose on this trip's scale">
-          <div class="jr-strack">
-            <i class="jr-sfill" style="width:${pct(doseB.mid)}%"></i>
-            ${(doseB.hi - doseB.lo) >= 1 ? `<i class="jr-swhisk" style="left:${pct(doseB.lo)}%"></i><i class="jr-swhisk" style="left:${pct(doseB.hi)}%"></i>` : ''}
-            ${worst != null && worst > doseB.mid * 1.02 ? `<i class="jr-sworst" style="left:${pct(worst)}%"></i>` : ''}
-          </div>
-          ${ic('dust', 13, 'var(--ink3)')}
-        </div>` : '';
-
-      /* "about N× less smoke than by X" — same fraction/× copy as RN */
-      const ratio = doseB.mid != null && worst != null && doseB.mid > 0.5
-        ? Math.round((worst / doseB.mid) * 10) / 10 : null;
-      const fracW = ratio != null && ratio > 1.05 && fullRun ? smokeFraction(ratio) : null;
-      const worstLabel = x.worstOpt ? modeLabel(x.worstOpt.mode || '', x.worstOpt.label || '') : null;
-      const worstIsWalk = (x.worstOpt && x.worstOpt.mode) === 'walk';
-      const ratioTxt = ratio != null && ratio > 1.05 && fullRun
-        ? (fracW != null
-          ? (worstLabel ? (worstIsWalk ? `about ${fracW} of walking` : `about ${fracW} of ${worstLabel}`)
-              : `about ${fracW} of the smokiest option`)
-          : (worstLabel ? (worstIsWalk ? `about ${ratio}× less smoke than on foot`
-              : `about ${ratio}× less smoke than by ${worstLabel}`)
-            : `about ${ratio}× less smoke than the smokiest option`))
-        : null;
-      const savedUg = doseB.mid != null && worst != null ? Math.max(0, worst - doseB.mid) : null;
-
-      /* dose-over-ride card — DepartGraph bars: one column per time
-         bucket, height = dose added in that bucket, breath ramp by
-         share of the max, accent dot on the heaviest stretch's bucket */
-      const samples = S.samples.length ? S.samples : [{ t: 0, dose: 0 }];
-      const tMax = Math.max(rec.taken_s, samples[samples.length - 1].t, 1);
-      const cumAt = (t) => {
-        if (t <= 0) return 0;
-        let prev = samples[0];
-        for (const p of samples) {
-          if (p.t >= t) {
-            const span = p.t - prev.t || 1;
-            return (prev.dose || 0) + ((p.dose || 0) - (prev.dose || 0)) * ((t - prev.t) / span);
-          }
-          prev = p;
-        }
-        return samples[samples.length - 1].dose || 0;
-      };
-      const NCOL = 14, dt = tMax / NCOL;
-      const cols = [];
-      for (let i = 0; i < NCOL; i++) {
-        const v = Math.max(0, cumAt((i + 1) * dt) - cumAt(i * dt));
-        cols.push({ t0: i * dt, t1: (i + 1) * dt, v });
-      }
-      const colMax = Math.max(1e-6, ...cols.map((c) => c.v));
-      const breathRamp = (f) => f > 0.66 ? 'var(--b4)' : f > 0.33 ? 'var(--b3)' : 'var(--b2)';
-      /* which bucket holds the heaviest stretch → accent column + dot */
-      let heavyCol = -1;
-      if (x.heavy) {
-        const tA = tAtS(Math.max(0, x.heavy.sMid - (x.heavy.dist || 0) / 2));
-        const tB = tAtS(Math.min(rec.covered_km * 1000, x.heavy.sMid + (x.heavy.dist || 0) / 2));
-        const tMid = (tA + tB) / 2;
-        heavyCol = clamp(Math.floor(tMid / dt), 0, NCOL - 1);
-      }
-      const graph = `
-        <div class="jr-g">
-          <div class="jr-gbars" style="height:64px">
-            ${cols.map((c, i) => {
-              const col = i === heavyCol ? 'var(--accent)' : breathRamp(c.v / colMax);
-              const h = Math.max(2, (c.v / colMax) * 64);
-              return `<div class="jr-gcell">${i === heavyCol ? '<i class="jr-gdot"></i>' : ''}` +
-                `<i class="jr-gbar" style="height:${h.toFixed(0)}px;background:${col}"></i></div>`;
-            }).join('')}
-          </div>
-          <div class="jr-gax">
-            <span>0</span><span>${tMax < 90 ? Math.round(tMax) + ' sec' : Math.round(tMax / 60) + ' min'}</span>
-          </div>
-          <div class="jr-gcap"><span>est.</span><span class="jr-gcapv">${dShown != null ? `≈ ${doseUgRound(dShown)} µg across the ride` : 'no dose estimate'}</span></div>
+      const head = `
+        <div class="jr-head">
+          <div class="jr-title">${x.arrived ? "You're here." : 'Trip ended.'}</div>
+          ${chip ? `<div class="jr-chip">${ic(glyph, 14, 'var(--ink2)')}<span>${esc(chip)}</span></div>` : ''}
         </div>`;
-      function tAtS(sM) {
-        const dAt = dose.at(sM);
-        let best = 0, bd = Infinity;
-        for (const p of samples) {
-          const dd = Math.abs((p.dose || 0) - dAt);
-          if (dd < bd) { bd = dd; best = p.t; }
+      const rc = document.createElement('div');
+      rc.className = 'jr';
+      if (!x.measured) {
+        const why = S.geoErr === 'denied' ? 'Location was blocked, so nothing was measured.'
+          : !S.gotFix ? 'No GPS fix came through, so nothing was measured.'
+          : !S.doseKnown ? 'No air reading came back for this route.'
+          : 'You hardly moved along the route, so nothing was counted.';
+        rc.innerHTML = `<div class="jr-sheet">${head}<div class="jr-none">${esc(why)}</div>
+          <div class="jr-btns"><button class="jr-done" type="button">Done</button></div></div>`;
+      } else {
+        const meanPm = S.tT > 0 ? S.pmT / S.tT : null;
+        const band = A.fmt.band(meanPm);
+        const share = x.intake / WHO_DAY_UG;
+        const vi = Math.max(0, VERDICT.findIndex((v) => share < v.max));
+        const pct = share * 100 >= 1 ? `${Math.round(share * 100)}%` : 'under 1%';
+        let cmp = null;
+        if (x.cleanest) {
+          const cd = x.cleanest.d * x.frac;
+          const extra = x.intake - cd;
+          const lbl = modeLabel(x.cleanest.o.mode || '', x.cleanest.o.label || '');
+          if (x.cleanest.o === opt) cmp = 'You took the cleanest way there';
+          else if (extra > Math.max(0.05, cd * 0.05)) cmp = `≈ ${doseUgRound(extra)} µg more than the cleanest way${lbl ? ` (${lbl})` : ''}`;
+          else cmp = `As clean as the cleanest way${lbl ? ` (${lbl})` : ''}`;
         }
-        return best || (sM / route.L) * rec.taken_s;
-      }
 
-      /* emissions footnotes — RN detail lines verbatim */
-      const detail = [];
-      if (co2 != null) {
-        if (co2Zero) detail.push('your ride put out nothing — no exhaust');
-        else {
-          let t1 = 'estimated for this kind of ride';
-          if (co2.hi < 1) {
-            const lo = Math.round(Math.max(0, co2.lo * 1000)), hi = Math.round(Math.max(0, co2.hi * 1000));
-            t1 += `  ·  ${lo === hi ? `${hi} g` : `${lo}–${hi} g`}`;
-          } else if (co2.hi - co2.lo > 0.05) {
-            t1 += `  ·  ${r1(co2.lo) === r1(co2.hi) ? `${r1(co2.hi)} kg` : `${r1(co2.lo)}–${r1(co2.hi)} kg`}`;
-          }
-          detail.push(t1);
-          if (pm25 != null && pm25.hi > 0) {
-            const lo = r2(pm25.lo), hi = r2(pm25.hi);
-            detail.push(lo === hi
-              ? (hi === 0 ? 'includes a trace of fine dust (PM2.5)' : `includes ${hi} g of fine dust (PM2.5)`)
-              : `includes ${lo}–${hi} g of fine dust (PM2.5)`);
-          }
-          if (x.altEmit && x.altEmit.emissions.co2_kg.mid != null) {
-            /* RN renders kg only — a sub-50 g alt would read "0 kg",
-               which hides the number; grams keep it honest */
-            const altKg = Math.max(0, x.altEmit.emissions.co2_kg.mid);
-            const altTxt = altKg >= 0.1 ? `${approx(r1(altKg))} kg`
-              : `${approx(Math.round(altKg * 1000))} g`;
-            detail.push(`${modeLabel(x.altEmit.mode || '', x.altEmit.label || '')} would have put out ${altTxt}`);
-          }
-        }
-      }
-
-      /* stats grid — put out · distance · time */
-      const stats = `
-        <div class="jr-grid">
-          <div class="jr-cell"><div class="jr-cv">${co2 == null ? '—' : kgText(co2.mid)}</div><div class="jr-ck">put out</div></div>
-          <div class="jr-cell"><div class="jr-cv">${r1(Math.max(0, rec.covered_km))} km</div><div class="jr-ck">distance</div></div>
-          <div class="jr-cell"><div class="jr-cv">${mins} min</div><div class="jr-ck">time</div></div>
-        </div>`;
-
-      const rcEl = document.createElement('div');
-      rcEl.className = 'jr';
-      rcEl.innerHTML = `
-        <div class="jr-sheet">
-          <div class="jr-head">
-            <div class="jr-title">${x.neverStarted ? 'ended before it really started' : (rec.arrived ? "You're here." : 'Trip ended.')}</div>
-            ${chip && !x.neverStarted ? `<div class="jr-chip">${ic(vehicleGlyph(opt.mode || ''), 14, 'var(--ink2)')}<span>${esc(chip)}</span></div>` : ''}
-          </div>
-          ${x.neverStarted ? `
-            <div class="jr-sub">under 100 m — nothing counted</div>
-            <div class="jr-btns"><button class="jr-done" type="button">done</button></div>` : `
-          ${isSim ? `<div class="jr-simflag">preview — simulated ride · the receipt uses plan pace</div>` : ''}
-          <div class="jr-ebrow">${ic('dust', 15, 'var(--b2)')}<span>You breathed</span></div>
-          ${dShown == null ? `<div class="jr-heronone">no dose estimate came back for this option — nothing to total up</div>` : `
-            <div class="jr-hero"><span class="jr-est">about</span> ≈ ${doseUgRound(dShown)} µg</div>
-            ${(doseB.hi - doseB.lo) >= 1 ? `<div class="jr-bandtxt">about ${doseUgRound(doseB.lo)}–${doseUgRound(doseB.hi)} µg</div>` : ''}
-            ${doseScale}
-            ${ratioTxt ? `<div class="jr-sub">${esc(ratioTxt)}</div>` : ''}
-            ${savedUg != null && savedUg >= 6 && fullRun ? `<div class="jr-sub">the smokiest way would have added ${approx(doseUgRound(savedUg))} µg</div>` : ''}
-          `}
-          ${stats}
-          ${detail.length ? `<div class="jr-detail">${detail.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
-          <div class="jr-glabel">dose over the ride <span>· ${isSim ? 'simulated' : 'along your track'} · plan estimate</span></div>
-          ${graph}
-          <div class="jr-heavy"></div>
-          <div class="jr-ctx"></div>
-          <div class="jr-foot"></div>
-          <div class="jr-btns">
-            <button class="jr-done" type="button">done</button>
-            <button class="jr-back" type="button">plan the way back</button>
-          </div>`}
-        </div>`;
-      el.appendChild(rcEl);
-      requestAnimationFrame(() => requestAnimationFrame(() =>
-        rcEl.querySelector('.jr-sheet').classList.add('on')));
-
-      if (!x.neverStarted) {
-        /* heaviest stretch — real segment pm25 + where it sits */
-        const heavyEl = rcEl.querySelector('.jr-heavy');
-        if (x.heavy) {
-          const h = x.heavy;
-          const b = A.fmt.band(h.pm25);
-          const where = roadAt(h.sMid) || null;
-          const fracOf = (hv) => clamp((rec.covered_km * 1000 - (hv.sMid - (hv.dist || 0) / 2)) / (hv.dist || 1), 0, 1);
-          const paint = (place) => {
-            heavyEl.innerHTML =
-              `heaviest stretch · <b style="color:${b ? b.color : 'var(--ink)'}">${Math.round(h.pm25)} µg/m³</b>` +
-              `${b ? ` · ${b.name}` : ''}${place ? ` — around ${esc(place)}` : ''}` +
-              (fracOf(h) < 1 ? ` <span class="muted">(you${rec.arrived ? '' : ' only'} rode ${Math.round(fracOf(h) * 100)}% of it)</span>` : '');
-          };
-          if (where) paint(where);
-          else {
-            const pt = route.pointAt(h.sMid);
-            A.search.reverse(pt.lat, pt.lon).then((n) => { if (rcEl.isConnected) paint(n || 'mid-route'); });
-          }
-        } else heavyEl.remove();
-
-        /* context rows — WHO guideline + delhi field mean, live fetch */
-        const ctxEl = rcEl.querySelector('.jr-ctx');
-        if (dShown != null) {
-          const pctTxt = (p) => p >= 1 ? `${Math.round(p)}%` : '<1%';
-          ctxEl.innerHTML = `<div>≈ ${pctTxt((dShown / WHO_DAY_UG) * 100)} of a day at the WHO 24h guideline (15 µg/m³, ~216 µg breathed)</div><div class="muted">reading today's delhi average for the honest comparison…</div>`;
-          A.api.get('/v2/city', 9000).then((city) => {
-            const m = city && city.pm25_stats && city.pm25_stats.mean;
-            if (!ctxEl.isConnected) return;
-            if (m != null && m > 0) {
-              const dayUg = m * 14.4;
-              const pctRaw = (dShown / dayUg) * 100;
-              const pct = pctRaw >= 1 ? `${Math.round(pctRaw)}%` : '<1%';
-              const conc = opt.dose && opt.dose.avg_conc_ugm3;
-              let eq = null;
-              if (conc && rec.eta_plan_s) {
-                const vent = (optDose || dShown) / (conc * (rec.eta_plan_s / 60));
-                if (vent > 0) eq = Math.round(dShown / (m * vent));
-              }
-              ctxEl.innerHTML =
-                `<div>≈ ${pctTxt((dShown / WHO_DAY_UG) * 100)} of a day at the WHO 24h guideline (15 µg/m³, ~216 µg breathed)</div>` +
-                `<div>≈ <b>${pct}</b> of a day breathing delhi's current average ` +
-                `(${Math.round(m)} µg/m³ field mean now)` +
-                (eq != null && eq >= 1 ? ` — like <b>${eq} min</b> in that average air` : '') + `</div>`;
-            } else {
-              ctxEl.lastElementChild.textContent = "delhi's average didn't come back — the per-ride numbers above still stand";
+        /* the graph: intake per stretch of the trip, coloured by the air
+           of that stretch; a jam you sat in stands tall where it happened */
+        const nb = S.bins.length;
+        let G = null;
+        if (nb >= 2) {
+          const N = Math.min(28, nb);
+          const cols = [];
+          for (let c = 0; c < N; c++) {
+            const b0 = Math.floor((c * nb) / N), b1 = Math.max(b0 + 1, Math.floor(((c + 1) * nb) / N));
+            let v = 0, pmT = 0, tT = 0, at = null;
+            for (let i = b0; i < b1; i++) {
+              const b = S.bins[i];
+              if (!b) continue;
+              v += b.dose; pmT += b.pmT; tT += b.tT;
+              if (!at || b.dose > at.dose) at = b;
             }
+            cols.push({ v, pm: tT > 0 ? pmT / tT : null, at });
+          }
+          const max = Math.max(...cols.map((c) => c.v));
+          if (max > 0) G = { cols, N, nb, max };
+        }
+        const longest = S.stuck.slice().sort((a, b) => b.dur_s - a.dur_s)[0] || null;
+        let jamC = -1, maxC = -1;
+        if (G) {
+          if (longest) jamC = clamp(Math.floor((Math.floor(longest.odo / BIN_M) * G.N) / G.nb), 0, G.N - 1);
+          G.cols.forEach((c, i) => { if (maxC < 0 || c.v > G.cols[maxC].v) maxC = i; });
+        }
+        const maxAt = G && maxC >= 0 ? G.cols[maxC].at : null;
+        const jamMin = longest ? Math.max(1, Math.round(longest.dur_s / 60)) : 0;
+        /* the jam IS where most went in → one marker, not two stacked */
+        const same = !!(longest && maxAt && (jamC === maxC || havM(longest.lat, longest.lon, maxAt.lat, maxAt.lon) < 60));
+        const tags = [];
+        if (G && longest) tags.push({ c: jamC, icon: 'clock', txt: `jammed here · ${jamMin} min${same ? ' · most intake' : ''}`, cls: 'jam' });
+        if (G && maxAt && !same) tags.push({ c: maxC, icon: 'dust', txt: 'most intake here', cls: 'max' });
+        const tagHtml = tags.map((t, row) => {
+          const p = (((t.c + 0.5) / G.N) * 100).toFixed(1);
+          return `<div class="jr-tag jr-tag-${t.cls}" style="top:${row * 28}px;left:${p}%;transform:translateX(-${p}%)">` +
+            `${ic(t.icon, 13, 'currentColor')}<span>${esc(t.txt)}</span></div>`;
+        }).join('');
+        const graph = G ? `
+          <div class="jr-g">
+            ${tags.length ? `<div class="jr-tags" style="height:${tags.length * 28}px">${tagHtml}</div>` : ''}
+            <div class="jr-bars" role="img" aria-label="intake along the trip">
+              ${G.cols.map((c, i) => {
+                const h = c.v > 0 ? Math.max(3, Math.round((c.v / G.max) * 76)) : 2;
+                const bi = A.fmt.bandIdx(c.pm);
+                const col = c.v > 0 && bi != null ? `var(--b${bi})` : 'var(--ink15)';
+                const mk = i === jamC ? '<b class="jr-mk jam"></b>' : (i === maxC && maxAt ? '<b class="jr-mk max"></b>' : '');
+                return `<div class="jr-col">${mk}<i style="height:${h}px;background:${col}"></i></div>`;
+              }).join('')}
+            </div>
+            <div class="jr-ax"><span>start</span><span>${distToStr(S.odo)}</span></div>
+          </div>` : '';
+
+        const marks = [];
+        if (longest) marks.push({ lat: longest.lat, lon: longest.lon, icon: 'clock' });
+        if (maxAt && !same) marks.push({ lat: maxAt.lat, lon: maxAt.lon, icon: 'dust' });
+        const legend = [];
+        if (longest) legend.push(`<div class="jr-leg" data-k="jam">${ic('clock', 14, 'var(--ink)')}<span>Jammed ${jamMin} min${same ? ', most intake' : ''}<b class="jr-where">${longest.street ? ` · ${esc(longest.street)}` : ''}</b></span></div>`);
+        if (maxAt && !same) legend.push(`<div class="jr-leg" data-k="max">${ic('dust', 14, 'var(--ink)')}<span>Most intake<b class="jr-where">${maxAt.street ? ` · ${esc(maxAt.street)}` : ''}</b></span></div>`);
+
+        const stuckTot = S.stuck.reduce((a, st) => a + st.dur_s, 0);
+        const ex = opt.emissions && opt.emissions.co2_kg;
+        let fuel = null;
+        if (ex && ex.hi != null && ex.hi <= 0) fuel = 'No exhaust from this ride';
+        else if (opt.fuel_l > 0) fuel = `≈ ${r2(opt.fuel_l * x.frac)} L fuel${x.co2 > 0 ? ` · ${x.co2 < 1 ? `${Math.round(x.co2 * 1000)} g` : `${r1(x.co2)} kg`} CO₂` : ''}`;
+        else if (x.co2 > 0) fuel = `≈ ${x.co2 < 1 ? `${Math.round(x.co2 * 1000)} g` : `${r1(x.co2)} kg`} CO₂ from the ride`;
+
+        rc.innerHTML = `
+          <div class="jr-sheet">
+            ${head}
+            <div class="jr-hero">
+              <div class="jr-hk">You breathed</div>
+              <div class="jr-hv">≈ ${doseUgRound(x.intake)}<span> µg</span></div>
+              ${band ? `<div class="jr-band"><i style="background:${band.color}"></i><span>${esc(band.name)} air on the way</span></div>` : ''}
+            </div>
+            <div class="jr-v">
+              <div class="jr-vscale" aria-hidden="true">${VERDICT.map((v, i) =>
+                `<i class="${i === vi ? 'on' : ''}" style="background:var(--b${i})"></i>`).join('')}</div>
+              <div class="jr-vtxt"><b>${VERDICT[vi].word}</b> · ${pct} of a day at the WHO limit</div>
+              ${cmp ? `<div class="jr-vcmp">${esc(cmp)}</div>` : ''}
+            </div>
+            ${graph}
+            ${marks.length || S.track.length >= 2 ? `<div class="jr-mapw">${miniMap(marks)}</div>` : ''}
+            ${legend.length ? `<div class="jr-legs">${legend.join('')}</div>` : ''}
+            <div class="jr-grid">
+              <div class="jr-cell"><b>${distToStr(S.odo)}</b><span>travelled</span></div>
+              <div class="jr-cell"><b>${fmtDur(x.takenS)}</b><span>on the way</span></div>
+              ${stuckTot >= 60 ? `<div class="jr-cell"><b>${fmtDur(stuckTot)}</b><span>stuck</span></div>` : ''}
+            </div>
+            ${fuel ? `<div class="jr-fuel">${esc(fuel)}</div>` : ''}
+            <div class="jr-btns">
+              <button class="jr-done" type="button">Done</button>
+              <button class="jr-back" type="button">Plan the way back</button>
+            </div>
+          </div>`;
+        /* a street for the markers when the route named none there */
+        if (A.search && A.search.reverse) {
+          [['jam', longest], ['max', same ? null : maxAt]].forEach(([k, m]) => {
+            if (!m || m.street) return;
+            A.search.reverse(m.lat, m.lon).then((nm) => {
+              const w = rc.querySelector(`.jr-leg[data-k="${k}"] .jr-where`);
+              if (nm && w && rc.isConnected) w.textContent = ` · ${nm}`;
+            }).catch(() => {});
           });
-        } else ctxEl.remove();
-
-        /* provenance */
-        const foot = [];
-        if (fieldAgeMin != null) foot.push(`updated ${Math.max(0, Math.round(fieldAgeMin))} min ago`);
-        if (isSim) foot.push('preview — simulated ride · plan pace');
-        /* "this phone" on RN is the store; on web the same local ledger
-           lives in localStorage — the honest noun here is the browser */
-        foot.push('kept in this browser only');
-        const footEl = rcEl.querySelector('.jr-foot');
-        footEl.textContent = foot.join('  ·  ');
-
-        rcEl.querySelector('.jr-back').addEventListener('click', () => {
-          const swap = {
-            from: { lat: to.lat, lon: to.lon, label: to.label || 'here' },
-            to: { lat: from.lat, lon: from.lon, label: from.label || 'back' },
-          };
-          A.back();                                   // cleans this screen fully
-          A.show('whereto', swap, true);              // replaces old whereto
-        });
+        }
       }
-      const doneFns = () => A.back();
-      rcEl.querySelector('.jr-done').addEventListener('click', doneFns);
-      // keep the route on the map behind the receipt — it's the story
+      el.appendChild(rc);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const sh = rc.querySelector('.jr-sheet');
+        if (sh) sh.classList.add('on');
+      }));
+      const back = rc.querySelector('.jr-back');
+      if (back) back.addEventListener('click', () => {
+        const swap = {
+          from: { lat: to.lat, lon: to.lon, label: to.label || 'here' },
+          to: { lat: from.lat, lon: from.lon, label: from.label || 'back' },
+        };
+        A.back();                                   // cleans this screen fully
+        A.show('whereto', swap, true);              // replaces the old whereto
+      });
+      rc.querySelector('.jr-done').addEventListener('click', () => A.back());
+      A.map.ready((m) => { if (m.getBearing() !== 0) m.easeTo({ bearing: 0, duration: 500 }); });
+    }
+
+    /* the receipt's mini map — the planned line faint, what you rode
+       coloured by its air, the two markers */
+    function miniMap(marks) {
+      const W = 320, H = 128, pad = 16;
+      const plan = thin(plan0.route.pts, 300);
+      const trk = thin(S.track, 400);
+      const all = plan.concat(trk, marks.map((m) => [m.lon, m.lat]));
+      const lat0 = all.reduce((a, p) => a + p[1], 0) / all.length;
+      const kx = Math.cos(lat0 * K);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const p of all) {
+        const xx = p[0] * kx, yy = p[1];
+        if (xx < x0) x0 = xx; if (xx > x1) x1 = xx;
+        if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
+      }
+      const sc = Math.min((W - 2 * pad) / Math.max(x1 - x0, 1e-5), (H - 2 * pad) / Math.max(y1 - y0, 1e-5));
+      const ox = (W - (x1 - x0) * sc) / 2, oy = (H - (y1 - y0) * sc) / 2;
+      const X = (lon) => (ox + (lon * kx - x0) * sc).toFixed(1);
+      const Y = (lat) => (H - oy - (lat - y0) * sc).toFixed(1);
+      const poly = (pts) => pts.map((p) => `${X(p[0])},${Y(p[1])}`).join(' ');
+      const line = (pts, stroke, w) => `<polyline points="${poly(pts)}" style="fill:none;stroke:${stroke};stroke-width:${w};stroke-linecap:round;stroke-linejoin:round"/>`;
+      let svg = line(plan, 'var(--ink15)', 6);
+      const runs = [];
+      for (let i = 1; i < trk.length; i++) {
+        const bi = A.fmt.bandIdx(trk[i][2]);
+        const r = runs[runs.length - 1];
+        if (r && r.b === bi) r.pts.push(trk[i]);
+        else runs.push({ b: bi, pts: [trk[i - 1], trk[i]] });
+      }
+      for (const r of runs) svg += line(r.pts, r.b == null ? 'var(--ink3)' : `var(--b${r.b})`, 4);
+      const st = trk.length ? trk[0] : plan[0];
+      svg += `<circle cx="${X(st[0])}" cy="${Y(st[1])}" r="4" style="fill:var(--paper);stroke:var(--ink);stroke-width:2"/>`;
+      if (trk.length) {
+        const e = trk[trk.length - 1];
+        svg += `<circle cx="${X(e[0])}" cy="${Y(e[1])}" r="4.5" style="fill:var(--ink)"/>`;
+      }
+      for (const m of marks) {
+        svg += `<g transform="translate(${X(m.lon)},${Y(m.lat)})">` +
+          `<circle r="11" style="fill:var(--paper);stroke:var(--ink);stroke-width:1.5"/>` +
+          `<svg x="-7" y="-7" width="14" height="14" viewBox="0 -960 960 960">` +
+          `<path d="${ICONS[m.icon][0]}" style="fill:var(--ink)"/></svg></g>`;
+      }
+      return `<svg class="jr-map" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="your trip on a map">${svg}</svg>`;
     }
 
     /* Escape steps back one level: dismiss the end-confirm, leave the
@@ -1100,18 +1276,21 @@ A.screen('journey', {
     };
     document.addEventListener('keydown', onKey);
 
-    /* ── choose the mode, start the engine ────────────────────────── */
-    if (navigator.geolocation && A.geo.consent === 'granted') startLive();
-    else startPreview();
-
+    /* ── go ───────────────────────────────────────────────────────── */
+    if (SIM_QA) startSim();
+    else {
+      startGeo();
+      if (A.track) A.track('journey_start', { mode: tripMode, vehicle: vehKey });
+    }
+    S.timer = setInterval(() => tick(false), TICK_MS);
     render();
 
     return () => {
       document.removeEventListener('keydown', onKey);
+      if (!S.done) trackEnd(false);          // left mid-trip: an ended, not completed, trip
       S.dead = true; S.done = true;
-      if (S.watchId != null) A.geo.clearWatch(S.watchId);
-      if (S.raf) cancelAnimationFrame(S.raf);
-      clearTimeout(S.watchTimer);
+      stopAll();
+      paintJams(true);
       A.map.ready((m) => { m.off('dragstart', onDrag); });
       A.map.hideRoute('journey');
       A.map.unpin('jfrom'); A.map.unpin('jto');

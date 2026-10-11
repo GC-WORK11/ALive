@@ -123,6 +123,11 @@ function toast(msg, ms = 2600) {
 const SCREENS = {};
 const stack = [];
 function screen(id, def) { SCREENS[id] = def; }
+/* every change of the top screen is announced (sidebar/profile listen):
+   document 'alive:screen' {id, prev} — purely informational */
+function announce(id, prev) {
+  try { document.dispatchEvent(new CustomEvent('alive:screen', { detail: { id, prev } })); } catch (e) {}
+}
 function show(id, params, replace = false) {
   const def = SCREENS[id];
   if (!def) return;
@@ -139,6 +144,7 @@ function show(id, params, replace = false) {
   document.body.dataset.top = id;
   const cleanup = def.mount(el, params || {});
   rec.cleanup = cleanup;
+  announce(id, cur ? cur.id : null);
 }
 function back() {
   const cur = stack.pop();
@@ -146,7 +152,7 @@ function back() {
   if (cur.cleanup) cur.cleanup();
   cur.el.remove();
   const top = stack[stack.length - 1];
-  if (top) { top.el.classList.add('on'); if (top.def.show) top.def.show(); document.body.dataset.top = top.id; }
+  if (top) { top.el.classList.add('on'); if (top.def.show) top.def.show(); document.body.dataset.top = top.id; announce(top.id, cur.id); }
   else {
     /* stack empty — never strand on a bare map: route home via the hash
        handler (or mount directly if the hash is already home) */
@@ -156,6 +162,8 @@ function back() {
   }
 }
 function current() { const c = stack[stack.length - 1]; return c && c.id; }
+/* ids of every mounted screen, bottom → top (e.g. a journey under a sheet) */
+function stackIds() { return stack.map((r) => r.id); }
 
 /* ── sheet helper: builds standard chrome around a screen's body ─── */
 function sheetChrome(el, title, onBack) {
@@ -216,7 +224,7 @@ function boot() {
 }
 
 window.A = {
-  api: { get, post }, geo, store, fmt, toast, screen, show, back, current,
+  api: { get, post }, geo, store, fmt, toast, screen, show, back, current, stackIds,
   sheetChrome, DELHI, BOUNDS, screensReady: SCREENS,
 };
 

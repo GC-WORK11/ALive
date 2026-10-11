@@ -1,421 +1,614 @@
-/* Alive webapp — purest places. Where the air is lightest right now:
-   every row is a served /v2/districts area ranked by its live pm25,
-   painted as that area's real boundary; stays come from /v2/stays,
-   ranked on the next-24h mean at each stay's own coordinates.
-   Nothing here invents a number — names, pm25, distances and ranks
-   all trace to served fields. */
+/* Alive webapp — purest places + hotels.
+   Places: /v2/purest — named localities/parks NEAR you, solid data only
+   (a named live monitor close by, inside the field, area fully
+   covered), ranked by the live pm2.5 at each place. Before that
+   endpoint is deployed the screen falls back to /v2/districts rows that
+   carry the same honesty flags (confidence 'field', not partial).
+   Hotels: /v2/stays (24 h average at each stay's own coordinates,
+   Alive's pick on top), any hotel by name via search, and an env card
+   built from /v2/playtime at the hotel — the SAME numbers /v2/stays
+   ranks on (now = field read, 24 h avg = the next-24 h mean).
+   Nothing here invents a number. */
 (() => {
 'use strict';
 
-const AREA_SRC = 'pm-areas';
-const AREA_FILL = 'pm-areas-fill';
-const AREA_LINE = 'pm-areas-line';
-const TOP_N = 8;                 // ranked rows that also get numbered pins
-const ANCHOR_KEY = 'purest.anchor';
+const RADIUS_KM = 15;
+const PLACES_N = 6;
+const HOTELS_N = 6;
 
-const BAND_HEX = ['#6E93AE', '#C7A34F', '#CF8A50', '#C05F3A', '#A83D30', '#6E2D28'];
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const r0 = (v) => (v == null || !isFinite(v) ? '—' : String(Math.round(v)));
+
+/* ONE scale, the same as home + the air map: the CPCB national AQI from
+   PM2.5 + PM10 at the spot (A.map.cpcbAqi / aqiBand / BANDS). The read
+   is /aqi?lat&lon — the exact call home makes — so one spot shows one
+   number in one colour on every screen. PM2.5-only numbers (the 24 h
+   forecast) are labelled PM2.5 and take the PM2.5 sub-index band, as
+   home's PM2.5 tile does. */
+const INK = '#16181D';
+const BAND_WORD = ['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very poor', 'Severe'];
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const hexMix = (a, b, t) => {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (sh) => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+};
+function aqiOf(pm25, pm10) {
+  const M = A.map;
+  if (!M || typeof M.cpcbAqi !== 'function') return null;
+  const a25 = isNum(pm25) ? pm25 : null, a10 = isNum(pm10) ? pm10 : null;
+  const aqi = M.cpcbAqi(a25, a10);
+  if (aqi == null) return null;
+  const c = typeof M.cpcb === 'function' ? M.cpcb(a25, a10) : null;
+  return { aqi, over: !!(c && c.over), band: M.aqiBand(aqi) };
+}
+const pmBand = (pm25) => (isNum(pm25) && A.map && A.map.cpcbAqi
+  ? A.map.aqiBand(A.map.cpcbAqi(pm25, null)) : null);
+/* number ink = the band colour 20 % toward ink (home's hero number) */
+const bandInk = (i) => (i == null || !A.map || !A.map.BANDS ? 'var(--ink)' : hexMix(A.map.BANDS[i], INK, 0.20));
+const bandCol = (i) => (i == null || !A.map || !A.map.BANDS ? 'var(--ink4)' : A.map.BANDS[i]);
+const aqiTxt = (c) => (c ? `${c.aqi}${c.over ? '+' : ''}` : '—');
+/* distances: always our own haversine from the user's spot (or the
+   "near …" point) — never a provider's distance_m */
+const kmTxt = (d) => (d == null || !isFinite(d) ? null
+  : Math.round(d * 10) / 10 < 10 ? `${Math.max(0.1, Math.round(d * 10) / 10).toFixed(1)} km` : `${Math.round(d)} km`);
+const distFrom = (ref, lat, lon) => (ref && isNum(ref.lat) && isNum(ref.lon) && isNum(+lat) && isNum(+lon)
+  && lat !== null && lon !== null ? hav(ref.lat, ref.lon, +lat, +lon) : null);
+function hav(aLat, aLon, bLat, bLon) {
+  const R = 6371, dLa = (bLat - aLat) * Math.PI / 180, dLo = (bLon - aLon) * Math.PI / 180;
+  const s = Math.sin(dLa / 2) ** 2 + Math.cos(aLat * Math.PI / 180) *
+    Math.cos(bLat * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+const norm = (n) => (n || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const nice = (n) => (n && n.length > 3 && n === n.toUpperCase() && /[A-Z]/.test(n)
+  ? n.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : n || '');
+const LODGE_KIND = /hotel|hostel|lodg|resort|guest|motel|dharamshala|accommodation|apartment|\binn\b/i;
+const LODGE_NAME = /\b(hotel|hostel|resort|inn|lodge|guest ?house|homestay|oyo|suites?|dharamshala|motel)\b/i;
+function isLodging(r) {
+  const k = (r.kind || '').toLowerCase();
+  if (k && !/^(place|poi|establishment|point_of_interest|address)$/.test(k)) return LODGE_KIND.test(k);
+  return LODGE_NAME.test(r.name || '');
+}
 
 let state = null;
 
-/* ── geometry index: name → {centroid, feature} from the two geojsons ── */
-async function areaIndex() {
-  const [ncr, sub] = await Promise.all([
-    A.api.get('/ncr.geojson', 15000),
-    A.api.get('/delhi_subdistricts.geojson', 15000),
-  ]);
-  const idx = new Map();
-  for (const fc of [ncr, sub]) {
-    if (!fc || !Array.isArray(fc.features)) continue;
-    for (const f of fc.features) {
-      const n = f && f.properties && f.properties.name;
-      if (n && !idx.has(n)) idx.set(n, f);
-    }
-  }
-  return idx;
+/* ── map pins ─────────────────────────────────────────────────────── */
+function clearPins() {
+  if (!state) return;
+  state.pinIds.forEach((id) => A.map.unpin(id));
+  state.pinIds = [];
 }
-
-/* paint the ranked areas as their real boundaries, band-colored */
-function paintAreas(rows, idx) {
-  const feats = [];
-  for (const r of rows) {
-    const f = idx.get(r.name);
-    if (!f || !f.geometry) continue;
-    if (r.name === 'Delhi NCT') continue;      // parent boundary = union of its children
-    feats.push({
-      type: 'Feature',
-      properties: { name: r.name, pm25: r.pm25, band: A.fmt.bandIdx(r.pm25), rank: r._rank },
-      geometry: f.geometry,
-    });
-  }
-  if (!feats.length) return;
-  A.map.ready((m) => {
-    if (m.getSource(AREA_SRC)) m.getSource(AREA_SRC).setData({ type: 'FeatureCollection', features: feats });
-    else {
-      m.addSource(AREA_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: feats } });
-      m.addLayer({
-        id: AREA_FILL, type: 'fill', source: AREA_SRC,
-        paint: {
-          'fill-color': ['match', ['get', 'band'],
-            0, BAND_HEX[0], 1, BAND_HEX[1], 2, BAND_HEX[2],
-            3, BAND_HEX[3], 4, BAND_HEX[4], 5, BAND_HEX[5], '#A6ACB8'],
-          'fill-opacity': 0.24,
-        },
-      });
-      m.addLayer({
-        id: AREA_LINE, type: 'line', source: AREA_SRC,
-        paint: { 'line-color': '#ffffff', 'line-width': 1, 'line-opacity': 0.8 },
-      });
-    }
-    if (m.getLayer(AREA_FILL)) m.setLayoutProperty(AREA_FILL, 'visibility', 'visible');
-    if (m.getLayer(AREA_LINE)) m.setLayoutProperty(AREA_LINE, 'visibility', 'visible');
+function addPin(id, lon, lat, html) {
+  A.map.pin(id, lon, lat, html);
+  state.pinIds.push(id);
+}
+function pinPlaces(rows) {
+  rows.forEach((p, i) => {
+    const nm = p.name.length > 18 ? p.name.slice(0, 17) + '…' : p.name;
+    addPin(`pm-p-${i}`, p.lon, p.lat,
+      `<div class="pin-chip pm-chip"><i class="pm-dot" style="background:${bandCol(p.cp ? p.cp.band : null)}"></i>${esc(nm)}</div>`);
   });
 }
 
-function setAreasVisible(v) {
-  A.map.ready((m) => {
-    [AREA_FILL, AREA_LINE].forEach((l) => {
-      if (m.getLayer(l)) m.setLayoutProperty(l, 'visibility', v ? 'visible' : 'none');
-    });
-  });
+/* the air at one spot — /aqi, exactly as home asks for it */
+function aqiAt(lat, lon) {
+  const key = `${(+lat).toFixed(4)},${(+lon).toFixed(4)}`;
+  if (state.aqiCache.has(key)) return state.aqiCache.get(key);
+  const cache = state.aqiCache;
+  const p = A.api.get(`/aqi?lat=${lat}&lon=${lon}`, 8000)
+    .then((j) => (j && isNum(j.pm25) ? j : null));
+  cache.set(key, p);
+  p.then((j) => { if (!j) cache.delete(key); });
+  return p;
 }
-
-/* numbered pin chips for the top rows */
-function pinTop(rows, idx) {
-  rows.slice(0, TOP_N).forEach((r) => {
-    const f = idx.get(r.name);
-    const c = f && f.properties && f.properties.centroid;
-    if (!c) return;
-    A.map.pin(`pm-a-${r._rank}`, c[0], c[1],
-      `<div class="pin-chip pm-chip"><b>${r._rank}</b> ${esc(r.name.length > 16 ? r.name.slice(0, 15) + '…' : r.name)}</div>`);
+/* attach the CPCB AQI (pm2.5 + pm10 at the row's own spot) to rows */
+async function withAqi(rows) {
+  const reads = await Promise.all(rows.map((r) => aqiAt(r.lat, r.lon)));
+  rows.forEach((r, i) => {
+    const j = reads[i];
+    r.read = j ? { pm25: j.pm25, pm10: isNum(j.pm10) ? j.pm10 : null } : null;
+    r.cp = j ? aqiOf(j.pm25, j.pm10) : null;
   });
+  return rows;
 }
-function pinStays(stays) {
-  const prev = state.stayPinCount || 0;
-  for (let i = 0; i < prev; i++) A.map.unpin(`pm-s-${i}`);
-  state.stayPinCount = 0;
-  stays.forEach((s, i) => {
+function pinHotels(rows) {
+  rows.forEach((s, i) => {
     if (s.lat == null || s.lon == null) return;
-    A.map.pin(`pm-s-${i}`, s.lon, s.lat,
-      `<div class="pin-dot pm-stay-dot" title="stay"></div>`);
-    state.stayPinCount = i + 1;
+    addPin(`pm-s-${i}`, s.lon, s.lat, '<div class="pin-dot pm-stay-dot"></div>');
   });
 }
-function unpinAll(rows, stays) {
-  (rows || []).forEach((r) => A.map.unpin(`pm-a-${r._rank}`));
-  (stays || []).forEach((s, i) => A.map.unpin(`pm-s-${i}`));
+function repin() {
+  clearPins();
+  if (state.places && state.places.length) pinPlaces(state.places.slice(0, PLACES_N));
+  if (state.stays && state.stays.length) pinHotels(state.stays.slice(0, HOTELS_N));
+}
+function fitPlaces() {
+  const me = state.me;
+  const pts = (state.places || []).slice(0, PLACES_N).map((p) => [p.lon, p.lat]);
+  if (me) pts.push([me.lon, me.lat]);
+  if (pts.length >= 2) A.map.fit(pts, 70);
+  else if (pts.length === 1) A.map.fly(pts[0][1], pts[0][0], 12.5);
 }
 
-/* ── the env card: one place's air + its next 24 h ──────────────────
-   lives inside the screen element so it dies with the screen even when
-   the router removes us without calling our cleanup. */
-function envCard() {
+/* ── the env card: one place's air now + its next 24 h ───────────── */
+function envEl() {
   if (!state.envEl) {
     state.envEl = document.createElement('div');
     state.envEl.className = 'pm-env';
+    state.envEl.hidden = true;
     state.el.appendChild(state.envEl);
   }
   return state.envEl;
 }
+function closeEnv() { if (state && state.envEl) state.envEl.hidden = true; }
 
-async function openEnv(name, lat, lon, extra) {
-  const el = envCard();
-  el.hidden = false;
-  el.innerHTML = `
-    <div class="pm-env-top"><div class="pm-env-name">${esc(name)}</div>
-      <button class="pm-x" type="button" aria-label="close">✕</button></div>
-    <div class="sk" style="height:34px;width:170px"></div>`;
-  el.querySelector('.pm-x').addEventListener('click', () => { el.hidden = true; });
-  const [aqi, pt] = await Promise.all([
-    A.api.get(`/aqi?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`, 9000),
-    A.api.get(`/v2/playtime?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`, 18000),
-  ]);
-  if (!state || el.hidden) return;
-  if (!aqi || aqi.pm25 == null) {
-    el.innerHTML = `
-      <div class="pm-env-top"><div class="pm-env-name">${esc(name)}</div>
-        <button class="pm-x" type="button" aria-label="close">✕</button></div>
-      <div class="pm-plain">no honest read for this spot right now</div>`;
-    el.querySelector('.pm-x').addEventListener('click', () => { el.hidden = true; });
-    return;
-  }
-  const b = A.fmt.band(aqi.pm25);
-  const meta = [];
-  if (aqi.nearest_station_km != null) meta.push(`station ${A.fmt.km(aqi.nearest_station_km)}`);
-  const f = aqi.field;
-  const ep = f && (f.built_epoch || (f.age_s != null ? Date.now() / 1000 - f.age_s : null));
-  if (ep) meta.push(`field ${A.fmt.ago(ep)}${f.stale ? ' (stale)' : ''}`);
-  let strip = '';
-  if (pt && Array.isArray(pt.hours) && pt.hours.length) {
-    const mids = pt.hours.map((h) => h.pm25_mid || 0);
-    const max = Math.max(...mids), min = Math.min(...mids);
-    const span = Math.max(1, max - min);
-    strip = `<div class="pm-strip">${pt.hours.map((h) => {
-      const hb = A.fmt.band(h.pm25_mid);
-      const fh = 0.18 + 0.82 * (((h.pm25_mid || 0) - min) / span);
-      return `<i style="height:${Math.round(fh * 100)}%;background:${hb ? hb.color : 'var(--ink4)'}"
-        title="${h.ist_label || ''} — ${Math.round(h.pm25_mid || 0)} µg/m³"></i>`;
-    }).join('')}</div>
-    ${pt.best_window ? `<div class="pm-env-line">lightest ${esc(pt.best_window.start_label || '')}${pt.best_window.end_label ? '–' + esc(pt.best_window.end_label) : ''} · ${A.fmt.ugm3(pt.best_window.pm25_mid)}</div>` : ''}`;
-  }
-  el.innerHTML = `
-    <div class="pm-env-top"><div class="pm-env-name">${esc(name)}</div>
-      <button class="pm-x" type="button" aria-label="close">✕</button></div>
-    <div class="pm-env-num">
-      <span class="v" style="color:${b ? b.color : 'var(--ink)'}">${Math.round(aqi.pm25)}</span>
-      <span class="u">µg/m³${b ? ` · <b style="color:${b.color}">${b.name}</b>` : ''}</span>
-    </div>
-    ${extra || ''}
-    ${aqi.beyond_field_edge ? `<div class="pm-note">at the field’s edge — treat this as a guess</div>` : ''}
-    ${strip}
-    ${meta.length ? `<div class="pm-meta">${esc(meta.join(' · '))}</div>` : ''}`;
-  el.querySelector('.pm-x').addEventListener('click', () => { el.hidden = true; });
+async function playAt(lat, lon) {
+  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  if (state.playCache.has(key)) return state.playCache.get(key);
+  const p = A.api.get(`/v2/playtime?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`, 20000);
+  state.playCache.set(key, p);
+  const j = await p;
+  if (!j) state.playCache.delete(key);
+  return j;
 }
 
-/* ── stays: dedupe same-hotel rows by place proximity + name ──────── */
-function normName(n) { return (n || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-function dedupeStays(rows) {
+function cardTop(name, sub) {
+  return `<div class="pm-env-top">
+      <div class="pm-env-head"><div class="pm-env-name">${esc(name)}</div>
+        ${sub ? `<div class="pm-env-sub">${esc(sub)}</div>` : ''}</div>
+      <button class="pm-x" type="button" aria-label="close">✕</button></div>`;
+}
+
+async function openEnv(o) {
+  const el = envEl();
+  const seq = (state.envSeq = (state.envSeq || 0) + 1);
+  el.hidden = false;
+  el.innerHTML = `${cardTop(o.name, o.sub)}<div class="sk" style="height:40px;width:180px;margin-top:6px"></div>`;
+  el.querySelector('.pm-x').addEventListener('click', closeEnv);
+  const me = state.me;
+  const away = me && hav(me.lat, me.lon, o.lat, o.lon) > 0.3;
+  const [pt, mine, rd, myRd] = await Promise.all([
+    playAt(o.lat, o.lon),
+    away ? playAt(me.lat, me.lon) : Promise.resolve(null),
+    aqiAt(o.lat, o.lon),
+    away ? aqiAt(me.lat, me.lon) : Promise.resolve(null),
+  ]);
+  if (!state || seq !== state.envSeq || el.hidden) return;
+  const hours = pt && Array.isArray(pt.hours) ? pt.hours.filter((h) => isNum(h.pm25_mid)) : [];
+  const c = rd ? aqiOf(rd.pm25, rd.pm10) : null;
+  const pmNow = rd ? rd.pm25 : (pt && isNum(pt.now_pm25) ? pt.now_pm25 : null);
+  if (!c && pmNow == null) {
+    el.innerHTML = `${cardTop(o.name, o.sub)}
+      <div class="pm-plain">${pt && pt.error ? 'outside the area we cover' : 'no honest read for this spot right now'}</div>`;
+    el.querySelector('.pm-x').addEventListener('click', closeEnv);
+    return;
+  }
+  const avg = pt && isNum(pt.mean_pm25) ? pt.mean_pm25 : null;
+  let best = null, worst = null;
+  hours.forEach((h) => {
+    if (!best || h.pm25_mid < best.pm25_mid) best = h;
+    if (!worst || h.pm25_mid > worst.pm25_mid) worst = h;
+  });
+  const dayW = (h) => (h && h.day_offset === 1 ? ' tmrw' : '');
+  const mc = myRd ? aqiOf(myRd.pm25, myRd.pm10) : null;
+  const mAvg = mine && isNum(mine.mean_pm25) ? mine.mean_pm25 : null;
+  /* a PM2.5 value in its CPCB PM2.5 sub-index band; an AQI in its band */
+  const pmCell = (v) => `<b style="color:${bandInk(pmBand(v))}">${r0(v)}</b>`;
+  const aqCell = (x) => `<b style="color:${bandInk(x ? x.band : null)}">${aqiTxt(x)}</b>`;
+  let strip = '';
+  if (hours.length > 3) {
+    const vals = hours.map((h) => h.pm25_mid);
+    const max = Math.max(...vals), min = Math.min(...vals), span = Math.max(1, max - min);
+    strip = `<div class="pm-strip" aria-hidden="true">${hours.map((h) => {
+      const fh = 0.18 + 0.82 * ((h.pm25_mid - min) / span);
+      return `<i style="transform:scaleY(${fh.toFixed(3)});background:${bandCol(pmBand(h.pm25_mid))}"></i>`;
+    }).join('')}</div>
+    <div class="pm-strip-ax"><span>${esc(hours[0].ist_label || 'now')}</span><span>PM2.5 next 24 h</span><span>${esc(hours[hours.length - 1].ist_label || '')}</span></div>`;
+  }
+  const pmLine = [`PM2.5 ${r0(pmNow)}`, rd && isNum(rd.pm10) ? `PM10 ${r0(rd.pm10)}` : null]
+    .filter(Boolean).join(' · ') + ' µg/m³';
+  const head = c
+    ? `<span class="v" style="color:${bandInk(c.band)}">${aqiTxt(c)}</span>
+      <span class="u"><b>AQI now</b> · <span style="color:${bandInk(c.band)}">${BAND_WORD[c.band]}</span><br>${pmLine}</span>`
+    : `<span class="v" style="color:${bandInk(pmBand(pmNow))}">${r0(pmNow)}</span>
+      <span class="u"><b>PM2.5 now</b><br>µg/m³</span>`;
+  const stats = hours.length || avg != null ? `
+    <div class="pm-env-sec">PM2.5 µg/m³ · next 24 h${pt && pt.sparse ? ' · thin read here' : ''}</div>
+    <div class="pm-stats">
+      <div><span>24 h avg</span>${avg != null ? pmCell(avg) : '—'}</div>
+      <div><span>best${dayW(best)}</span>${best ? `${pmCell(best.pm25_mid)}<em>${esc(best.ist_label)}</em>` : '—'}</div>
+      <div><span>worst${dayW(worst)}</span>${worst ? `${pmCell(worst.pm25_mid)}<em>${esc(worst.ist_label)}</em>` : '—'}</div>
+    </div>
+    ${strip}` : '';
+  const cmpRows = [
+    c && mc ? `<div><span>AQI now</span>${aqCell(c)}${aqCell(mc)}</div>` : '',
+    avg != null && mAvg != null ? `<div><span>PM2.5 24 h avg</span>${pmCell(avg)}${pmCell(mAvg)}</div>` : '',
+  ].join('');
+  el.innerHTML = `${cardTop(o.name, o.sub)}
+    <div class="pm-env-num">${head}</div>
+    ${stats}
+    ${cmpRows ? `<div class="pm-cmp">
+      <div class="pm-cmp-h"><span></span><span>here</span><span>where you are</span></div>
+      ${cmpRows}
+    </div>` : ''}`;
+  el.querySelector('.pm-x').addEventListener('click', closeEnv);
+}
+
+/* ── places ───────────────────────────────────────────────────────── */
+async function areaCentroids() {
+  if (state.idx) return state.idx;
+  const [ncr, sub] = await Promise.all([
+    A.api.get('/ncr.geojson', 15000), A.api.get('/delhi_subdistricts.geojson', 15000)]);
+  const idx = new Map();
+  for (const fc of [ncr, sub]) {
+    if (!fc || !Array.isArray(fc.features)) continue;
+    for (const f of fc.features) {
+      const p = f && f.properties;
+      if (p && p.name && Array.isArray(p.centroid) && !idx.has(p.name)) idx.set(p.name, p.centroid);
+    }
+  }
+  if (state) state.idx = idx;
+  return idx;
+}
+
+async function loadPlaces() {
+  const me = state.me;
+  const q = me ? `lat=${me.lat.toFixed(5)}&lon=${me.lon.toFixed(5)}` : '';
+  const scope = state.scope;
+  const url = `/v2/purest?${q}${scope === 'ncr' ? '&scope=ncr' : `&radius_km=${RADIUS_KM}`}`;
+  state.places = null;
+  renderBody();
+  const d = await A.api.get(url, 20000);
+  if (!state || scope !== state.scope) return;
+  const ref = me || state.anchor;
+  let rows = [];
+  if (d && Array.isArray(d.places)) {
+    state.placesSrc = 'places';
+    rows = d.places.filter((p) => p && isNum(p.lat) && isNum(p.lon));
+    state.pickWhy = d.pick ? d.pick.why : null;
+    state.placesErr = d.error || null;
+  } else {
+    /* /v2/purest not deployed yet: same honesty flags on district rows */
+    const [dd, idx] = await Promise.all([A.api.get('/v2/districts', 20000), areaCentroids()]);
+    if (!state || scope !== state.scope) return;
+    rows = (dd && Array.isArray(dd.districts) ? dd.districts : [])
+      .filter((r) => r && r.pm25 != null && r.confidence === 'field' && !r.partial_field_coverage
+        && r.name !== 'Delhi NCT' && idx.has(r.name))
+      .map((r) => {
+        const c = idx.get(r.name);
+        return { name: r.name, kind: 'area', lat: c[1], lon: c[0], pm25: r.pm25,
+          area: r.parent || r.state || null };
+      })
+      .sort((a, b) => a.pm25 - b.pm25);
+    state.placesSrc = 'areas';
+    state.pickWhy = scope === 'ncr' ? 'cleanest air in NCR right now' : 'cleanest air near you right now';
+    state.placesErr = null;
+  }
+  /* distance = our haversine from you; "15 km" means within 15 km */
+  rows.forEach((p) => { p.dist_km = distFrom(ref, p.lat, p.lon); });
+  if (scope !== 'ncr') rows = rows.filter((p) => p.dist_km == null || p.dist_km <= RADIUS_KM);
+  /* the number on each row is the CPCB AQI at that spot (pm2.5 + pm10,
+     the /aqi read home shows) — rank on that same number */
+  rows = await withAqi(rows.slice(0, 10));
+  if (!state || scope !== state.scope) return;
+  rows.sort((a, b) => (a.cp ? a.cp.aqi : 9e9) - (b.cp ? b.cp.aqi : 9e9)
+    || (a.read ? a.read.pm25 : a.pm25) - (b.read ? b.read.pm25 : b.pm25)
+    || (a.dist_km ?? 9e9) - (b.dist_km ?? 9e9));
+  state.places = rows;
+  if (!rows.length || !rows[0].cp) state.pickWhy = null;
+  repin();
+  renderBody();
+  fitPlaces();
+}
+
+/* ── hotels ───────────────────────────────────────────────────────── */
+async function loadStays() {
+  const a = state.anchor;
+  state.stays = null;
+  state.nearby = [];
+  renderBody();
+  const [d, nb] = await Promise.all([
+    A.api.get(`/v2/stays?lat=${a.lat.toFixed(5)}&lon=${a.lon.toFixed(5)}&k=10`, 20000),
+    A.api.get(`/v2/p/nearby?lat=${a.lat.toFixed(5)}&lon=${a.lon.toFixed(5)}&kind=lodging&radius_m=3000`, 6000),
+  ]);
+  if (!state || a !== state.anchor) return;
+  const rows = d && Array.isArray(d.stays) ? d.stays : [];
+  /* one row per hotel — the corpus repeats a roof under several sources */
   const out = [];
   for (const r of rows) {
+    if (r.window_mean_ug == null && r.pm25_now == null) continue;
     const dup = out.some((o) => {
-      const dn = normName(o.name), rn = normName(r.name);
-      const sameName = dn && rn && (dn === rn || dn.includes(rn) || rn.includes(dn));
-      const dKm = (o.lat != null && r.lat != null)
-        ? Math.hypot((o.lat - r.lat) * 111, (o.lon - r.lon) * 111 * Math.cos(o.lat * Math.PI / 180))
-        : 9;
-      return sameName || dKm < 0.12;
+      const on = norm(o.name), rn = norm(r.name);
+      const dk = hav(o.lat, o.lon, r.lat, r.lon);
+      return (on && rn && (on === rn || (dk < 0.4 && (on.includes(rn) || rn.includes(on))))) || dk < 0.025;
     });
     if (!dup) out.push(r);
   }
-  return out;
-}
-
-/* ── body render ─────────────────────────────────────────────────── */
-function renderBody() {
-  const body = state.body;
-  const rows = state.rows, stays = state.stays;
-  body.innerHTML = '';
-
-  const h1 = document.createElement('div');
-  h1.className = 'sec-label';
-  h1.textContent = 'lightest air right now';
-  body.appendChild(h1);
-
-  if (!rows) {
-    body.insertAdjacentHTML('beforeend',
-      `<div class="sk" style="height:52px;border-radius:12px"></div>
-       <div class="sk" style="height:52px;border-radius:12px;margin-top:6px"></div>`);
-  } else if (!rows.length) {
-    body.insertAdjacentHTML('beforeend',
-      `<div class="muted" style="padding:8px 4px">the field didn’t answer — nothing honest to rank</div>`);
-  } else {
-    const list = document.createElement('div');
-    list.className = 'row-list';
-    rows.slice(0, TOP_N + 2).forEach((r) => {
-      const b = A.fmt.band(r.pm25);
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.className = 'srow pm-row';
-      el.innerHTML = `
-        <span class="pm-rank">${r._rank}</span>
-        <span class="pm-row-main">
-          <span class="n">${esc(r.name)}${r._rank === 1 ? ' <i class="pm-pick">alive suggests</i>' : ''}</span>
-          <span class="s">${esc([r.state || r.parent || '', r.partial_field_coverage ? 'field only partly reaches here' : (r.confidence && r.confidence !== 'field' ? `${r.confidence} read` : '')].filter(Boolean).join(' · '))}</span>
-        </span>
-        <span class="pm-v">
-          <b style="color:${b ? b.color : 'var(--ink)'}">${r.pm25 != null ? Math.round(r.pm25) : '—'}</b>
-          <i>µg/m³</i>
-        </span>`;
-      el.addEventListener('click', () => {
-        const f = state.idx.get(r.name);
-        const c = f && f.properties && f.properties.centroid;
-        if (c) {
-          A.map.fly(c[1], c[0], 10.6);
-          openEnv(r.name, c[1], c[0]);
-        } else A.toast('no boundary for this one — list number only');
-      });
-      list.appendChild(el);
-    });
-    body.appendChild(list);
-    if (state.fieldAgeS != null) {
-      body.insertAdjacentHTML('beforeend',
-        `<div class="pm-meta" style="padding:4px 2px">ranked on live field pm2.5 · field ${esc(A.fmt.ago(Date.now() / 1000 - state.fieldAgeS))}</div>`);
+  /* Alive's pick: the server marks it; older servers don't — then the
+     best 24 h air on a solid (non-thin) read */
+  if (!out.some((s) => s.pick)) {
+    const i = out.findIndex((s) => s.window_mean_ug != null && !s.sparse);
+    if (i >= 0) {
+      const p = out.splice(i, 1)[0];
+      p.pick = true;
+      p.why = `cleanest next-24 h air near ${a.me ? 'you' : 'here'}`;
+      out.unshift(p);
     }
   }
-
-  /* stays */
-  const h2 = document.createElement('div');
-  h2.className = 'sec-label';
-  h2.textContent = 'stays that breathe easier';
-  body.appendChild(h2);
-
-  const chip = document.createElement('button');
-  chip.type = 'button';
-  chip.className = 'searchbar pm-anchor';
-  chip.innerHTML = `<span class="sdot a"></span>
-    <span class="pm-anchor-label">near ${esc((state.anchor.label || 'central delhi').replace(/^near\s+/i, ''))}</span>
-    <span class="pm-anchor-edit">change</span>`;
-  chip.addEventListener('click', openPicker);
-  body.appendChild(chip);
-
-  if (!stays) {
-    body.insertAdjacentHTML('beforeend',
-      `<div class="sk" style="height:46px;border-radius:12px"></div>`);
-  } else if (!stays.length) {
-    body.insertAdjacentHTML('beforeend',
-      `<div class="muted" style="padding:8px 4px">${state.staysNote || 'no stays read back honestly here'}</div>`);
-  } else {
-    const list = document.createElement('div');
-    list.className = 'row-list';
-    stays.forEach((s, i) => {
-      const b = A.fmt.band(s.window_mean_ug);
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.className = 'srow pm-row';
-      el.innerHTML = `
-        <span class="ic pm-stay-ic">◍</span>
-        <span class="pm-row-main">
-          <span class="n">${esc(s.name)}</span>
-          <span class="s">${esc([s.dist_km != null ? A.fmt.km(s.dist_km) : null,
-            s.nearest_station_km != null ? `station ${A.fmt.km(s.nearest_station_km)}` : null,
-            s.sparse ? 'thin read' : null].filter(Boolean).join(' · '))}</span>
-        </span>
-        <span class="pm-v">
-          <b style="color:${b ? b.color : 'var(--ink)'}">${s.window_mean_ug != null ? Math.round(s.window_mean_ug) : '—'}</b>
-          <i>24 h mean</i>
-        </span>`;
-      el.addEventListener('click', () => {
-        if (s.lat == null || s.lon == null) return;
-        A.map.fly(s.lat, s.lon, 12.2);
-        const extra = `<div class="pm-env-line">${[
-          s.pm25_now != null ? `now ${A.fmt.ugm3(s.pm25_now)}` : null,
-          s.cleaner_by_ug != null && Math.round(s.cleaner_by_ug) > 0 ? `${Math.round(s.cleaner_by_ug)} µg/m³ lighter than around you` : null,
-          s.scored_on ? `scored on ${s.scored_on === 'next24h' ? 'the next 24 h' : esc(s.scored_on)}` : null,
-        ].filter(Boolean).join(' · ')}</div>`;
-        openEnv(s.name, s.lat, s.lon, extra);
-      });
-      list.appendChild(el);
-    });
-    body.appendChild(list);
-    if (state.rankedOn) {
-      body.insertAdjacentHTML('beforeend',
-        `<div class="pm-meta" style="padding:4px 2px">${esc(state.rankedOn)}</div>`);
-    }
-  }
-}
-
-/* ── loads ────────────────────────────────────────────────────────── */
-async function loadAreas() {
-  const [d, idx] = await Promise.all([A.api.get('/v2/districts', 18000), areaIndex()]);
-  if (!state) return;
-  state.idx = idx;
-  if (!d || !Array.isArray(d.districts)) {
-    state.rows = [];
-    renderBody();
-    return;
-  }
-  state.fieldAgeS = d.field_age_s != null ? d.field_age_s : null;
-  state.rows = d.districts
-    .filter((r) => r && r.pm25 != null)
-    .sort((a, b) => a.pm25 - b.pm25)
-    .map((r, i) => ({ ...r, _rank: i + 1 }));
-  paintAreas(state.rows, idx);
-  pinTop(state.rows, idx);
-  renderBody();
-  const first = state.rows[0] && idx.get(state.rows[0].name);
-  const c = first && first.properties && first.properties.centroid;
-  if (c) A.map.fly(c[1], c[0], 9.6);
-}
-
-async function loadStays() {
-  const a = state && state.anchor;
-  if (!a) return;
-  const d = await A.api.get(`/v2/stays?lat=${a.lat.toFixed(5)}&lon=${a.lon.toFixed(5)}`, 18000);
+  /* each row: our own distance from the "near …" point, and the AQI now
+     at the hotel (the same /aqi read + CPCB index as home) */
+  const stays = out.slice(0, HOTELS_N);
+  stays.forEach((s) => { s.dist_km = distFrom(a, s.lat, s.lon); });
+  await withAqi(stays);
   if (!state || a !== state.anchor) return;
-  if (!d || !Array.isArray(d.stays) || !d.stays.length) {
-    state.stays = [];
-    state.staysNote = d && d.beyond_edge
-      ? 'this point is past the field’s edge — no honest stays read'
-      : 'no stays read back honestly here';
-    renderBody();
-    return;
+  const pick = stays.filter((s) => s.pick);
+  const rest = stays.filter((s) => !s.pick).sort((x, y) => (x.cp ? x.cp.aqi : 9e9) - (y.cp ? y.cp.aqi : 9e9)
+    || (x.dist_km ?? 9e9) - (y.dist_km ?? 9e9));
+  state.stays = pick.concat(rest);
+  state.staysErr = d && d.error ? 'outside the area we cover' : (!d ? 'hotels didn’t load — try again' : null);
+  if (nb && nb.configured !== false && Array.isArray(nb.results)) {
+    state.nearby = nb.results
+      .filter((r) => r && r.lat != null && r.lon != null && r.name)
+      .filter((r) => !state.stays.some((s) => norm(s.name) === norm(r.name)))
+      .map((r) => ({ ...r, dist_km: distFrom(a, r.lat, r.lon) }))
+      .sort((x, y) => (x.dist_km ?? 9e9) - (y.dist_km ?? 9e9))
+      .slice(0, 5);
   }
-  state.rankedOn = d.ranked_on || null;
-  state.stays = dedupeStays(d.stays).slice(0, 8);
-  pinStays(state.stays);
+  repin();
   renderBody();
 }
 
-/* ── anchor picker ───────────────────────────────────────────────── */
+/* hotel search — lodging only. A.search.live when present (streams
+   tiers), else A.search.search; plus the index asked for the name
+   with 'hotel' so a bare brand ('radisson') still finds the roof. */
+function hotelSearch(q, bias, onRows) {
+  const seen = [];
+  const merge = (rows) => {
+    for (const r of rows || []) {
+      if (!r || r.lat == null || r.lon == null || !r.name || !isLodging(r)) continue;
+      const dup = seen.some((o) => norm(o.name) === norm(r.name) && hav(o.lat, o.lon, +r.lat, +r.lon) < 0.3);
+      /* distance: our haversine from the bias point — provider/index
+         distance_m fields have been seen measured from elsewhere */
+      if (!dup) seen.push({ ...r, lat: +r.lat, lon: +r.lon, dist_km: distFrom(bias, r.lat, r.lon) });
+    }
+    seen.sort((a, b) => (a.dist_km ?? 9e9) - (b.dist_km ?? 9e9));
+    onRows(seen.slice(0, 8));
+  };
+  const idx = async (qq) => {
+    const p = new URLSearchParams({ q: qq, lat: bias.lat, lon: bias.lon });
+    const j = await A.api.get(`/v2/search?${p}`, 6000);
+    return j && Array.isArray(j.results) ? j.results.map((r) => ({
+      name: r.name, sub: r.subtitle || '', kind: r.kind, lat: r.lat, lon: r.lon,
+      source: 'index' })) : [];
+  };
+  const jobs = [];
+  if (!LODGE_NAME.test(q)) jobs.push(idx(`${q} hotel`).then(merge));
+  jobs.push(idx(q).then(merge));
+  try {
+    if (A.search && typeof A.search.live === 'function') {
+      A.search.live(q, bias, (rows) => merge(rows));
+      return Promise.all(jobs).then(() => seen);
+    }
+  } catch (e) { /* the index jobs still answer */ }
+  /* the wider public-layer search only when the index found no roof */
+  return Promise.all(jobs).then(async () => {
+    if (!seen.length && A.search && A.search.search) {
+      try { merge(await A.search.search(q, bias)); } catch (e) { /* honest empty */ }
+    }
+    return seen;
+  });
+}
+
+/* ── anchor picker for "hotels near …" ───────────────────────────── */
 function openPicker() {
   const body = state.body;
+  state.picking = true;
   body.innerHTML = `
-    <div class="searchbar">
+    <div class="searchbar pm-search">
       <span class="sdot a"></span>
       <input type="text" autocomplete="off" autocorrect="off" spellcheck="false"
-        placeholder="where should stays be ranked around?">
+        placeholder="hotels near…" aria-label="hotels near a place">
     </div>
     <div class="pm-quick">
-      ${A.geo.pos ? `<button class="srow" type="button" data-me="1"><span class="ic">◉</span>
-        <span><span class="n">your current location</span><span class="s" style="display:block">${esc(A.geo.pos.label || 'where you are')}</span></span></button>` : ''}
-      <button class="srow" type="button" data-pin="1"><span class="ic">◎</span>
-        <span><span class="n">drop a pin on the map</span><span class="s" style="display:block">tap anywhere — stays rank around it</span></span></button>
+      ${state.me ? `<button class="srow" type="button" data-me="1"><span class="ic">◉</span>
+        <span class="pm-row-main"><span class="n">near you</span></span></button>` : ''}
       <button class="srow" type="button" data-back="1"><span class="ic">‹</span>
-        <span><span class="n">back to the rankings</span></span></button>
+        <span class="pm-row-main"><span class="n">back</span></span></button>
     </div>
-    <div class="row-list am-rows"></div>`;
-
+    <div class="row-list pm-results"></div>`;
   const input = body.querySelector('input');
-  const rows = body.querySelector('.am-rows');
-
+  const list = body.querySelector('.pm-results');
   const finish = (p) => {
-    state.anchor = { lat: p.lat, lon: p.lon, label: p.name || p.label || 'dropped pin' };
-    A.store.set(ANCHOR_KEY, state.anchor);
-    state.stays = null;
+    state.picking = false;
+    state.anchor = { lat: p.lat, lon: p.lon, label: p.label || p.name, me: !!p.me };
     renderBody();
     loadStays();
   };
-
   const meBtn = body.querySelector('[data-me]');
-  if (meBtn) meBtn.addEventListener('click', () =>
-    finish({ lat: A.geo.pos.lat, lon: A.geo.pos.lon, name: A.geo.pos.label || 'your spot' }));
-  body.querySelector('[data-pin]').addEventListener('click', () => {
-    state.armed = true;
-    A.toast('tap the map — stays rank around that point');
-    renderBody();
-  });
-  body.querySelector('[data-back]').addEventListener('click', renderBody);
-
+  if (meBtn) meBtn.addEventListener('click', () => finish({ ...state.me, label: 'you', me: true }));
+  body.querySelector('[data-back]').addEventListener('click', () => { state.picking = false; renderBody(); });
   let deb = null, seq = 0;
-  const draw = (list, note) => {
-    rows.innerHTML = '';
-    if (note) rows.innerHTML = `<div class="muted" style="padding:10px 6px">${note}</div>`;
-    list.forEach((r) => {
-      const el = document.createElement('button');
-      el.type = 'button'; el.className = 'srow';
-      el.innerHTML = `<span class="ic">◦</span><span style="min-width:0">
-        <span class="n">${esc(r.name)}</span>
-        <span class="s" style="display:block">${esc([r.sub, r.dist != null ? A.fmt.km(r.dist / 1000) + ' away' : null].filter(Boolean).join(' · '))}</span></span>
-        <span class="src">${esc(r.source || '')}</span>`;
-      el.addEventListener('click', () => finish(r));
-      rows.appendChild(el);
-    });
-  };
-  draw([], 'type to search — connaught place, saket, noida…');
   input.addEventListener('input', () => {
     clearTimeout(deb);
-    const q = input.value;
-    if (q.trim().length < 2) { draw([], 'type to search — connaught place, saket, noida…'); return; }
-    rows.innerHTML = `<div class="muted" style="padding:10px 6px">searching…</div>`;
+    const q = input.value.trim();
+    if (q.length < 2) { list.innerHTML = ''; return; }
     deb = setTimeout(async () => {
       const my = ++seq;
-      const res = await A.search.search(q, (state && state.anchor) || A.geo.pos || A.DELHI);
-      if (my !== seq) return;
-      draw(res, res.length ? '' : 'nothing found — try a landmark, a block, a sector');
+      list.innerHTML = '<div class="pm-plain">searching…</div>';
+      const res = await A.search.search(q, state.me || A.DELHI);
+      if (!state || my !== seq) return;
+      list.innerHTML = res.length ? '' : '<div class="pm-plain">nothing found</div>';
+      res.slice(0, 8).forEach((r) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'srow';
+        b.innerHTML = `<span class="ic">◦</span><span class="pm-row-main"><span class="n">${esc(r.name)}</span>
+          <span class="s">${esc([r.sub, kmTxt(distFrom(state.me || A.DELHI, r.lat, r.lon))].filter(Boolean).join(' · '))}</span></span>`;
+        b.addEventListener('click', () => finish(r));
+        list.appendChild(b);
+      });
     }, 260);
   });
   requestAnimationFrame(() => input.focus());
+}
+
+/* ── body ─────────────────────────────────────────────────────────── */
+function placeRow(p, i) {
+  const c = p.cp;
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'srow pm-row';
+  const isPick = i === 0 && state.pickWhy;
+  const dist = kmTxt(p.dist_km);
+  const sub = [isPick ? state.pickWhy : (p.kind === 'park' ? 'park' : (p.area || '')),
+    dist].filter(Boolean).join(' · ');
+  const pm = p.read ? p.read.pm25 : null;
+  el.innerHTML = `
+    <span class="pm-rank">${i + 1}</span>
+    <span class="pm-row-main">
+      <span class="n">${esc(p.name)}${isPick ? ' <i class="pm-pick">alive pick</i>' : ''}</span>
+      <span class="s">${esc(sub)}</span>
+    </span>
+    <span class="pm-v">
+      <b style="color:${bandInk(c ? c.band : null)}">${aqiTxt(c)}</b>
+      <i>${c ? `AQI now${pm != null ? ` · PM2.5 ${r0(pm)}` : ''}` : 'no read now'}</i>
+    </span>`;
+  el.addEventListener('click', () => {
+    A.map.fly(p.lat, p.lon, p.kind === 'area' && state.placesSrc === 'areas' ? 11.5 : 14);
+    openEnv({ name: p.name, sub: [p.kind === 'park' ? 'park' : p.area, dist ? `${dist} away` : null].filter(Boolean).join(' · '), lat: p.lat, lon: p.lon });
+  });
+  return el;
+}
+
+function hotelRow(s, opts = {}) {
+  const c = s.cp;
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'srow pm-row';
+  const dist = kmTxt(s.dist_km);
+  const sub = [s.pick ? s.why : null, dist, s.sparse ? 'thin read' : null].filter(Boolean).join(' · ');
+  el.innerHTML = `
+    <span class="ic pm-stay-ic" aria-hidden="true"></span>
+    <span class="pm-row-main">
+      <span class="n">${esc(nice(s.name))}${s.pick ? ' <i class="pm-pick">alive pick</i>' : ''}</span>
+      <span class="s">${esc(sub || s.sub || '')}</span>
+    </span>
+    ${opts.noValue ? '<span class="pm-v pm-go">›</span>' : `<span class="pm-v">
+      <b style="color:${bandInk(c ? c.band : null)}">${aqiTxt(c)}</b>
+      <i>${c ? 'AQI now' : 'no read now'}</i>
+    </span>`}`;
+  el.addEventListener('click', () => {
+    A.map.fly(s.lat, s.lon, 14.5);
+    clearPins(); repin();
+    addPin('pm-h-sel', s.lon, s.lat, '<div class="pin-dot pm-stay-dot pm-sel"></div>');
+    openEnv({ name: nice(s.name), sub: dist ? `${dist} away` : (s.sub || ''), lat: s.lat, lon: s.lon });
+  });
+  return el;
+}
+
+function renderBody() {
+  if (!state || state.picking) return;
+  const body = state.body;
+  body.innerHTML = '';
+
+  /* places */
+  const head = document.createElement('div');
+  head.className = 'pm-head';
+  head.innerHTML = `<div class="sec-label">cleanest air ${state.scope === 'ncr' ? 'in NCR' : 'near you'}</div>
+    <div class="pm-seg" role="tablist">
+      <button type="button" data-s="near" class="${state.scope === 'near' ? 'on' : ''}">${RADIUS_KM} km</button>
+      <button type="button" data-s="ncr" class="${state.scope === 'ncr' ? 'on' : ''}">all NCR</button>
+    </div>`;
+  head.querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => {
+    if (state.scope === b.dataset.s) return;
+    state.scope = b.dataset.s;
+    loadPlaces();
+  }));
+  body.appendChild(head);
+
+  if (!state.places) {
+    body.insertAdjacentHTML('beforeend',
+      '<div class="sk pm-sk"></div><div class="sk pm-sk"></div><div class="sk pm-sk"></div>');
+  } else if (!state.places.length) {
+    body.insertAdjacentHTML('beforeend', `<div class="pm-plain">${state.placesErr
+      ? 'outside the area we cover'
+      : (state.scope === 'near' ? `no solid air reads within ${RADIUS_KM} km — try all NCR` : 'no solid air reads right now')}</div>`);
+  } else {
+    const list = document.createElement('div');
+    list.className = 'row-list';
+    state.places.slice(0, PLACES_N).forEach((p, i) => list.appendChild(placeRow(p, i)));
+    body.appendChild(list);
+  }
+
+  /* hotels */
+  const h2 = document.createElement('div');
+  h2.className = 'sec-label pm-sec2';
+  h2.textContent = 'hotels';
+  body.appendChild(h2);
+
+  const sb = document.createElement('div');
+  sb.className = 'searchbar pm-search';
+  sb.innerHTML = `<span class="sdot a"></span>
+    <input type="search" autocomplete="off" autocorrect="off" spellcheck="false"
+      placeholder="find any hotel" aria-label="find any hotel" value="${esc(state.hq || '')}">`;
+  body.appendChild(sb);
+  const results = document.createElement('div');
+  results.className = 'row-list pm-results';
+  body.appendChild(results);
+  const input = sb.querySelector('input');
+  const drawResults = (rows, note) => {
+    results.innerHTML = note ? `<div class="pm-plain">${note}</div>` : '';
+    rows.forEach((r) => results.appendChild(hotelRow(r, { noValue: true })));
+  };
+  let deb = null;
+  input.addEventListener('input', () => {
+    clearTimeout(deb);
+    const q = input.value.trim();
+    state.hq = input.value;
+    if (q.length < 2) { results.innerHTML = ''; anchorWrap.hidden = false; return; }
+    anchorWrap.hidden = true;
+    deb = setTimeout(() => {
+      const my = (state.hseq = (state.hseq || 0) + 1);
+      drawResults([], 'searching…');
+      let got = false;
+      hotelSearch(q, state.me || state.anchor || A.DELHI, (rows) => {
+        if (!state || my !== state.hseq) return;
+        if (rows.length) { got = true; drawResults(rows); }
+      }).then(() => {
+        if (state && my === state.hseq && !got) drawResults([], 'no hotel by that name here');
+      });
+    }, 240);
+  });
+
+  const anchorWrap = document.createElement('div');
+  if ((state.hq || '').trim().length >= 2) anchorWrap.hidden = true;
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'pm-anchor';
+  chip.innerHTML = `<span class="pm-anchor-label">near ${esc(state.anchor.me ? 'you' : (state.anchor.label || 'this point'))}</span>
+    <span class="pm-anchor-edit">change</span>`;
+  chip.addEventListener('click', openPicker);
+  anchorWrap.appendChild(chip);
+
+  if (!state.stays) {
+    anchorWrap.insertAdjacentHTML('beforeend', '<div class="sk pm-sk"></div><div class="sk pm-sk"></div>');
+  } else if (!state.stays.length) {
+    anchorWrap.insertAdjacentHTML('beforeend',
+      `<div class="pm-plain">${state.staysErr || 'no hotels with an honest read here'}</div>`);
+  } else {
+    const list = document.createElement('div');
+    list.className = 'row-list';
+    state.stays.forEach((s) => list.appendChild(hotelRow(s)));
+    anchorWrap.appendChild(list);
+  }
+  if (state.nearby && state.nearby.length) {
+    const more = document.createElement('div');
+    more.className = 'row-list';
+    state.nearby.forEach((r) => more.appendChild(hotelRow(r, { noValue: true })));
+    anchorWrap.appendChild(more);
+  }
+  body.appendChild(anchorWrap);
 }
 
 /* ── the screen ──────────────────────────────────────────────────── */
@@ -423,59 +616,28 @@ A.screen('purest', {
   mount(el) {
     const chrome = A.sheetChrome(el, 'purest places');
     el.classList.add('pm-host');
+    const pos = A.geo.pos && A.geo.pos.lat != null ? { lat: A.geo.pos.lat, lon: A.geo.pos.lon } : null;
     state = {
       el,
       body: chrome.body,
-      anchor: A.store.get(ANCHOR_KEY, null) || A.geo.pos || { ...A.DELHI, label: 'central delhi' },
-      armed: false,
-      rows: null, stays: null, idx: new Map(),
-      fieldAgeS: null, rankedOn: null, staysNote: null,
-      envEl: null, stayPinCount: 0,
+      me: pos,
+      anchor: pos ? { ...pos, label: 'you', me: true } : { ...A.DELHI, label: 'central Delhi', me: false },
+      scope: 'near',
+      places: null, placesSrc: null, pickWhy: null, placesErr: null,
+      stays: null, staysErr: null, nearby: [],
+      idx: null, envEl: null, pinIds: [], playCache: new Map(), aqiCache: new Map(),
+      picking: false, hq: '',
     };
-    renderBody();
-    loadAreas();
-    loadStays();
-    if (state.anchor && !state.anchor.label) {
-      A.search.reverse(state.anchor.lat, state.anchor.lon).then((n) => {
-        if (n && state.anchor) { state.anchor.label = n; renderBody(); }
-      });
-    }
-
-    const onTap = (e) => {
-      if (A.current() !== 'purest' || !state) return;
-      if (state.armed) {
-        state.armed = false;
-        const p = e.detail;
-        state.anchor = { lat: p.lat, lon: p.lon, label: 'dropped pin' };
-        A.search.reverse(p.lat, p.lon).then((n) => {
-          if (n && state.anchor && state.anchor.label === 'dropped pin') {
-            state.anchor.label = n; renderBody();
-          }
-        });
-        A.store.set(ANCHOR_KEY, state.anchor);
-        state.stays = null;
-        renderBody();
-        loadStays();
-        return;
-      }
-    };
-    document.addEventListener('alive:maptap', onTap);
-
-    const onAreaClick = (e) => {
-      const f = e.features && e.features[0];
-      if (!f) return;
-      const r = state.rows && state.rows.find((x) => x.name === f.properties.name);
-      const idxF = state.idx.get(f.properties.name);
-      const c = idxF && idxF.properties && idxF.properties.centroid;
-      if (c) openEnv(f.properties.name, c[1], c[0]);
-    };
-    /* bind by layer name — evaluated at click time, so it's live even
-       though the areas are painted async after /v2/districts */
-    A.map.ready((m) => { m.on('click', AREA_FILL, onAreaClick); });
     A.map.setFieldVisible(false);
+    if (pos && A.map.puckMove) A.map.puckMove(pos.lat, pos.lon);
+    renderBody();
+    loadPlaces();
+    loadStays();
 
     const onKey = (e) => {
-      if (e.key === 'Escape' && chrome.sheetEl.classList.contains('on')) chrome.close();
+      if (e.key !== 'Escape') return;
+      if (state && state.envEl && !state.envEl.hidden) closeEnv();
+      else if (chrome.sheetEl.classList.contains('on')) chrome.close();
     };
     document.addEventListener('keydown', onKey);
 
@@ -486,13 +648,10 @@ A.screen('purest', {
     const teardown = () => {
       if (torn) return;
       torn = true;
-      document.removeEventListener('alive:maptap', onTap);
       document.removeEventListener('keydown', onKey);
       mo.disconnect();
-      A.map.ready((m) => { if (m.getLayer(AREA_FILL)) m.off('click', AREA_FILL, onAreaClick); });
-      setAreasVisible(false);
-      unpinAll(state && state.rows, state && state.stays);
-      if (state.envEl) state.envEl.hidden = true;
+      clearPins();
+      if (state && state.envEl) state.envEl.hidden = true;
       state = null;
     };
     const mo = new MutationObserver(() => {

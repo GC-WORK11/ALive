@@ -1,17 +1,110 @@
-/* Alive webapp — the map. MapLibre GL + CARTO Positron (free, light,
-   no key) + the live field painted as a fill layer from /grid cells.
-   A.map.ready(cb) — the map loads once and is shared by all screens.
-   Layers are namespaced per caller: A.map.field(), A.map.route(),
-   A.map.pins(), A.map.puck() — each idempotent. */
+/* Alive webapp — the shared map. MapLibre GL + OpenFreeMap Positron
+   (free, no key, the whole planet — every street of Delhi, the NCR and
+   the UP/Haryana outskirts). If the remote style can't load, the same
+   OpenMapTiles-schema roads come from the server's own pmtiles
+   (/tiles/tilejson.json) — an offline fallback, never the primary.
+
+   The live field (/grid PM2.5 + PM10 cells — the same surface /aqi
+   reads) becomes the CPCB AQI (same index + words as the home hero)
+   and is painted two ways, both in the existing band palette only:
+     · a smooth tint under the roads: the cell centres bilinearly
+       interpolated, each pixel coloured by its band, alpha = the cell's
+       own confidence (distance to the nearest real sample) — it fades
+       out where the field is thin and stops at the field's edge;
+     · street level (A.map.airRoads): the roads in view re-drawn in the
+       band of the field at their spot — thin-confidence cells are left
+       uncoloured rather than guessed.
+
+   API (backward compatible): init, ready, loadField, setFieldVisible,
+   fieldEpoch, showRoute, hideRoute, hideAllRoutes, pin, unpin,
+   clearPins, puckMove, puckRemove, fly, fit, center, map.
+   New: traffic(map, on), airRoads(on), sampleField(lat, lon),
+   fieldInfo(), cpcbAqi(pm25, pm10) → number, cpcb(pm25, pm10) →
+   {aqi, over, band, basis}, aqiBand(aqi), segBand(segment), BANDS.
+   showRoute segments may carry band as the CPCB word ('Very Poor') or
+   the 0-5 index — both paint. */
 (() => {
 'use strict';
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+const OMT = 'openmaptiles';                 // the vector source id in the style
+const BANDS = ['#6E93AE', '#C7A34F', '#CF8A50', '#C05F3A', '#A83D30', '#6E2D28'];
+const CONF_W = { hi: 1, med: 0.72, lo: 0.22 };   // tint alpha per cell confidence
+const ROAD_W = { hi: 1, med: 0.78, lo: 0 };      // roads: thin cells stay uncoloured
+const API_ORIGIN = (() => {
+  const q = new URLSearchParams(location.search).get('api');
+  return q ? q.replace(/\/$/, '') : location.origin;
+})();
+
 let map = null, ready = false, queue = [];
-let fieldSrc = null, fieldData = null, fieldEpoch = null;
+let fieldEpoch = null, field = null, fieldWanted = false, fieldTimer = null;
+let styleOk = false, fellBack = false, omtTileOk = false, omtErrors = 0;
+
+/* ── basemap ─────────────────────────────────────────────────────── */
+/* the offline fallback: our own pmtiles, quiet positron-like paint, no
+   glyph/sprite dependency (labels need the remote font server) */
+/* direct tile URLs, not the TileJSON: behind CloudFront the server's
+   own base_url is the ALB's http host (mixed content from https) */
+const LOCAL_TILES = () => ({
+  type: 'vector', tiles: [`${API_ORIGIN}/tiles/delhi/{z}/{x}/{y}.mvt`],
+  minzoom: 0, maxzoom: 14, bounds: [76.8, 28.2, 77.9, 28.95],
+  attribution: '© OpenStreetMap contributors',
+});
+function offlineStyle() {
+  const road = (id, classes, color, w0, w1, minzoom) => ({
+    id, type: 'line', source: OMT, 'source-layer': 'transportation', minzoom: minzoom || 0,
+    filter: ['in', ['get', 'class'], ['literal', classes]],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': color, 'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 10, w0, 18, w1] },
+  });
+  return {
+    version: 8, name: 'alive-offline',
+    sources: { [OMT]: LOCAL_TILES() },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': 'rgb(242,243,240)' } },
+      { id: 'park', type: 'fill', source: OMT, 'source-layer': 'park', paint: { 'fill-color': 'rgb(230,233,229)' } },
+      { id: 'water', type: 'fill', source: OMT, 'source-layer': 'water', paint: { 'fill-color': 'rgb(194,200,202)' } },
+      { id: 'building', type: 'fill', source: OMT, 'source-layer': 'building', minzoom: 14, paint: { 'fill-color': 'rgb(234,234,229)', 'fill-outline-color': 'rgb(219,219,218)' } },
+      road('highway_minor_casing', ['minor', 'service', 'tertiary'], 'rgb(220,220,218)', 0.6, 16, 12),
+      road('highway_minor', ['minor', 'service', 'tertiary'], '#ffffff', 0.4, 13, 12),
+      road('highway_major_casing', ['primary', 'secondary', 'trunk', 'motorway'], 'rgb(213,213,213)', 1.6, 24),
+      road('highway_major_inner', ['primary', 'secondary', 'trunk', 'motorway'], '#ffffff', 1, 20),
+    ],
+  };
+}
+
+/* quiet Uber-light tweaks on top of Positron: streets a touch firmer so
+   the grid reads at street zoom; labels keep Positron's soft greys */
+function tuneBasemap(m) {
+  const set = (id, k, v) => { try { if (m.getLayer(id)) m.setPaintProperty(id, k, v); } catch (e) { /* layer shape changed upstream — keep the stock paint */ } };
+  set('highway_minor', 'line-color', '#ffffff');
+  set('highway_minor', 'line-opacity', 1);
+  set('highway_path', 'line-color', 'rgb(226,226,224)');
+  set('building', 'fill-color', 'rgb(232,232,228)');
+}
+
+function fallBack(reason) {
+  if (fellBack) return;
+  fellBack = true;
+  if (!styleOk) { map.setStyle(offlineStyle()); return; }
+  /* the style loaded but its vector source (the planet TileJSON) or its
+     tiles don't — keep the very same style, every basemap layer and every
+     overlay already added, and point only that source at the local tiles
+     (same OpenMapTiles schema). setStyle diffs: the source and the layers
+     that read it are swapped, nothing else is touched. */
+  try {
+    const s = map.getStyle();
+    if (s && s.sources && s.sources[OMT]) {
+      s.sources[OMT] = LOCAL_TILES();
+      map.setStyle(s);
+    }
+  } catch (e) { /* stay on what we have */ }
+  void reason;
+}
 
 function init() {
   map = new maplibregl.Map({
     container: 'map',
-    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    style: STYLE_URL,
     center: [A.DELHI.lon, A.DELHI.lat],
     zoom: 10.2,
     maxZoom: 17, minZoom: 8.4,
@@ -20,13 +113,39 @@ function init() {
     touchZoomRotate: true,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-  map.on('load', () => {
+  map.touchZoomRotate.disableRotation();
+  const guard = setTimeout(() => { if (!styleOk) fallBack('style timeout'); }, 9000);
+  map.on('style.load', () => {
+    if (!styleOk) { styleOk = true; clearTimeout(guard); }
+    tuneBasemap(map);
+    /* overlays + camera can start as soon as the style is in — 'load'
+       also waits for every first tile, and a stalled or failed basemap
+       source would otherwise hold the whole app's map hostage */
+    markReady();
+  });
+  /* one error listener = MapLibre stops console-logging every failed
+     tile; the basemap falls back, overlays (traffic) fail silently */
+  map.on('error', (e) => {
+    const sid = e && e.sourceId;
+    if (!styleOk && !sid) { fallBack('style error'); return; }
+    /* the source itself failing (its TileJSON — no tile on the event)
+       falls back at once; tile failures after a few in a row */
+    if (sid === OMT && !omtTileOk && (!e.tile || ++omtErrors >= 4)) { fallBack('tiles error'); return; }
+    /* a caller's bad layer/expression still surfaces (quietly) */
+    const msg = e && e.error && String(e.error.message || '');
+    if (!sid && msg && !/glyph|sprite|fetch|abort|network/i.test(msg)) console.warn('[map]', msg);
+  });
+  map.on('data', (e) => { if (!omtTileOk && e.sourceId === OMT && e.tile) omtTileOk = true; });
+  const markReady = () => {
+    if (ready) return;
     ready = true;
-    queue.forEach((cb) => cb(map)); queue = [];
+    queue.forEach((cb) => { try { cb(map); } catch (err) { /* one caller's bug never blocks the rest */ } });
+    queue = [];
     loadField(true);
     // live field — repaint every 5 min quietly
-    setInterval(() => loadField(false), 300000);
-  });
+    fieldTimer = setInterval(() => loadField(false), 300000);
+  };
+  map.on('load', markReady);
   map.on('click', (e) => {
     document.dispatchEvent(new CustomEvent('alive:maptap', { detail: { lat: e.lngLat.lat, lon: e.lngLat.lng, point: e.point } }));
   });
@@ -34,64 +153,337 @@ function init() {
 
 function onReady(cb) { ready ? cb(map) : queue.push(cb); }
 
-/* ── the field — /grid cells as a semi-transparent fill layer ────── */
-async function loadField(first) {
-  const j = await A.api.get('/grid?cells=40&param=pm2_5');
-  if (!j || !Array.isArray(j.features)) return;
-  fieldData = j;
-  const ce = j.properties && j.properties.cell_epoch;
-  fieldEpoch = Array.isArray(ce) ? ce[0] : (j.properties && j.properties.epoch) ?? null;
-  const feats = j.features
-    .filter(f => f && f.geometry && f.properties && f.properties.pm25 != null)
-    .map(f => ({
-      type: 'Feature',
-      properties: {
-        pm25: f.properties.pm25,
-        band: f.properties.band ?? A.fmt.bandIdx(f.properties.pm25),
-        conf: f.properties.conf ?? null,
-      },
-      geometry: f.geometry,
-    }));
-  if (!feats.length) return;
-  const fc = { type: 'FeatureCollection', features: feats };
-  if (map.getSource('alive-field')) {
-    fieldSrc.setData(fc);
-  } else {
-    map.addSource('alive-field', { type: 'geojson', data: fc });
-    fieldSrc = map.getSource('alive-field');
-    map.addLayer({
-      id: 'alive-field-fill', type: 'fill', source: 'alive-field',
-      paint: {
-        'fill-color': ['match', ['get', 'band'],
-          0, '#6E93AE', 1, '#C7A34F', 2, '#CF8A50',
-          3, '#C05F3A', 4, '#A83D30', 5, '#6E2D28', '#A6ACB8'],
-        'fill-opacity': 0.34,
-      },
-    }, firstWater());
+/* first road layer of the basemap — the tint sits under every street */
+function firstRoadLayer(m) {
+  for (const l of m.getStyle().layers) {
+    if (l['source-layer'] === 'transportation' || l['source-layer'] === 'building') return l.id;
   }
-  document.dispatchEvent(new CustomEvent('alive:field', { detail: { epoch: fieldEpoch, n: feats.length } }));
+  return firstSymbol(m);
 }
-
-/* put the field below road labels — find the first symbol/water layer */
-function firstWater() {
-  for (const l of map.getStyle().layers) {
-    if (l.type === 'line' && /water|boundary/.test(l.id)) return l.id;
-  }
-  for (const l of map.getStyle().layers) {
-    if (l.type === 'symbol') return l.id;
-  }
+function firstSymbol(m) {
+  for (const l of m.getStyle().layers) if (l.type === 'symbol') return l.id;
   return undefined;
 }
 
+/* ── the field: /grid cells → a regular lattice we can sample ──────
+   Two layers of the same live surface (/grid param=pm2_5 and pm10, one
+   lattice) → the CPCB national AQI per point: max of the PM2.5 and
+   PM10 sub-indices through CPCB's breakpoint tables — the same index,
+   tables and category words the home hero uses, so the colour on the
+   street and the number on home always agree. */
+const CPCB_PM25 = [[0, 30, 0, 50], [30, 60, 51, 100], [60, 90, 101, 200], [90, 120, 201, 300], [120, 250, 301, 400], [250, 500, 401, 500]];
+const CPCB_PM10 = [[0, 50, 0, 50], [50, 100, 51, 100], [100, 250, 101, 200], [250, 350, 201, 300], [350, 430, 301, 400], [430, 510, 401, 500]];
+function subIndex(c, table) {
+  if (c == null || !isFinite(c) || c < 0) return null;
+  for (const [lo, hi, ilo, ihi] of table) if (c <= hi) return ilo + ((ihi - ilo) / (hi - lo)) * (c - lo);
+  const [lo, hi, ilo, ihi] = table[table.length - 1];
+  return ilo + ((ihi - ilo) / (hi - lo)) * (c - lo);
+}
+function cpcbAqi(pm25, pm10) {
+  const x = subIndex(pm25, CPCB_PM25), y = subIndex(pm10, CPCB_PM10);
+  if (x == null && y == null) return null;
+  return Math.min(500, Math.round(Math.max(x == null ? -1 : x, y == null ? -1 : y)));
+}
+const aqiBandIdx = (aqi) => (aqi == null || !isFinite(aqi)) ? null
+  : aqi <= 50 ? 0 : aqi <= 100 ? 1 : aqi <= 200 ? 2 : aqi <= 300 ? 3 : aqi <= 400 ? 4 : 5;
+/* the same index with home's extras: over (the scale tops out at 500 →
+   "500+") and which pollutant set it — identical to home.js cpcbAqi */
+function cpcb(pm25, pm10) {
+  const x = subIndex(pm25, CPCB_PM25), y = subIndex(pm10, CPCB_PM10);
+  if (x == null && y == null) return null;
+  const v = Math.max(x == null ? -1 : x, y == null ? -1 : y);
+  const aqi = Math.min(500, Math.round(v));
+  return { aqi, over: v > 500.5, band: aqiBandIdx(aqi),
+    basis: y != null && (x == null || y > x) ? 'pm10' : 'pm25' };
+}
+
+function buildLattice(j, j10) {
+  const feats = (j.features || []).filter((f) => f && f.geometry && f.geometry.type === 'Polygon'
+    && f.properties && f.properties.pm25 != null && isFinite(f.properties.pm25));
+  if (!feats.length) return null;
+  const r0 = feats[0].geometry.coordinates[0];
+  const dx = Math.abs(r0[1][0] - r0[0][0]), dy = Math.abs(r0[2][1] - r0[1][1]);
+  if (!(dx > 0) || !(dy > 0)) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const f of feats) {
+    for (const [x, y] of f.geometry.coordinates[0]) {
+      if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+    }
+  }
+  const nx = Math.round((x1 - x0) / dx), ny = Math.round((y1 - y0) / dy);
+  const v25 = new Float32Array(nx * ny).fill(NaN), v10 = new Float32Array(nx * ny).fill(NaN);
+  const conf = new Array(nx * ny).fill(null);
+  const slot = (ring) => {
+    let mx = Infinity, my = Infinity;
+    for (const [x, y] of ring) { if (x < mx) mx = x; if (y < my) my = y; }
+    const ix = Math.round((mx - x0) / dx), iy = Math.round((my - y0) / dy);
+    return (ix < 0 || iy < 0 || ix >= nx || iy >= ny) ? -1 : iy * nx + ix;
+  };
+  for (const f of feats) {
+    const k = slot(f.geometry.coordinates[0]);
+    if (k < 0) continue;
+    v25[k] = f.properties.pm25;
+    conf[k] = f.properties.conf || 'med';
+  }
+  let n10 = 0;
+  for (const f of (j10 && j10.features) || []) {
+    const v = f && f.properties && f.properties.pm10;
+    if (!f.geometry || f.geometry.type !== 'Polygon' || v == null || !isFinite(v)) continue;
+    const k = slot(f.geometry.coordinates[0]);
+    if (k < 0) continue;
+    v10[k] = v; n10++;
+  }
+  return { x0, y0, x1, y1, dx, dy, nx, ny, v25, v10, conf, n: feats.length, n10 };
+}
+
+/* bilinear over the cell centres; missing corners drop out (weights
+   renormalised), past the outer cell centres the value holds but its
+   weight fades to zero by the field's edge — never extrapolated */
+function sampleLattice(L, lat, lon, weights) {
+  if (!L) return null;
+  const fx = (lon - L.x0) / L.dx - 0.5, fy = (lat - L.y0) / L.dy - 0.5;
+  if (fx < -0.5 || fy < -0.5 || fx > L.nx - 0.5 || fy > L.ny - 0.5) return null;
+  const i0 = Math.floor(fx), j0 = Math.floor(fy);
+  const tx = fx - i0, ty = fy - j0;
+  let s25 = 0, sw = 0, sc = 0, s10 = 0, sw10 = 0;
+  for (let dj = 0; dj <= 1; dj++) {
+    for (let di = 0; di <= 1; di++) {
+      const i = Math.min(L.nx - 1, Math.max(0, i0 + di)), jj = Math.min(L.ny - 1, Math.max(0, j0 + dj));
+      const k = jj * L.nx + i;
+      const w = (di ? tx : 1 - tx) * (dj ? ty : 1 - ty);
+      if (w <= 0) continue;
+      const v = L.v25[k];
+      if (isFinite(v)) { s25 += v * w; sw += w; sc += (weights[L.conf[k]] ?? 0.5) * w; }
+      const u = L.v10[k];
+      if (isFinite(u)) { s10 += u * w; sw10 += w; }
+    }
+  }
+  if (sw < 0.2) return null;                    // most corners empty — no honest read
+  // edge fade across the outermost half cell
+  const ex = Math.min(1, fx + 0.5, L.nx - 0.5 - fx) * 2;
+  const ey = Math.min(1, fy + 0.5, L.ny - 0.5 - fy) * 2;
+  const edge = Math.max(0, Math.min(1, ex, ey));
+  const pm25 = s25 / sw, pm10 = sw10 >= 0.2 ? s10 / sw10 : null;
+  const aqi = cpcbAqi(pm25, pm10);
+  return { aqi, pm25, pm10, band: aqiBandIdx(aqi), w: (sc / sw) * Math.min(1, sw / 0.6) * edge };
+}
+
+/* the tint raster — 8 px per cell, each pixel in its AQI band's colour */
+function paintTint(L) {
+  const S = 8, W = L.nx * S, H = L.ny * S;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  const rgb = BANDS.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
+  for (let py = 0; py < H; py++) {
+    const lat = L.y1 - ((py + 0.5) / H) * (L.y1 - L.y0);
+    for (let px = 0; px < W; px++) {
+      const lon = L.x0 + ((px + 0.5) / W) * (L.x1 - L.x0);
+      const s = sampleLattice(L, lat, lon, CONF_W);
+      if (!s || s.band == null || s.w <= 0.01) continue;
+      const o = (py * W + px) * 4, c = rgb[s.band];
+      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2];
+      img.data[o + 3] = Math.round(255 * s.w);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv.toDataURL('image/png');
+}
+
+async function loadField(first) {
+  const [j, j10] = await Promise.all([
+    A.api.get('/grid?cells=40&param=pm2_5', 20000),
+    A.api.get('/grid?cells=40&param=pm10', 20000),
+  ]);
+  if (!j || !Array.isArray(j.features)) return;
+  const ce = j.properties && j.properties.cell_epoch;
+  const ep = Array.isArray(ce) ? ce[0] : (j.properties && j.properties.epoch) ?? null;
+  if (!first && field && ep != null && ep === fieldEpoch && (field.n10 > 0 || !j10)) return;   // same epoch — nothing new
+  const L = buildLattice(j, j10);
+  if (!L) return;
+  fieldEpoch = ep; field = L;
+  const url = paintTint(L);
+  const coords = [[L.x0, L.y1], [L.x1, L.y1], [L.x1, L.y0], [L.x0, L.y0]];
+  onReady((m) => {
+    const src = m.getSource('alive-field');
+    if (src && typeof src.updateImage === 'function') src.updateImage({ url, coordinates: coords });
+    else {
+      if (m.getLayer('alive-field-fill')) m.removeLayer('alive-field-fill');
+      if (src) m.removeSource('alive-field');
+      m.addSource('alive-field', { type: 'image', url, coordinates: coords });
+      m.addLayer({
+        id: 'alive-field-fill', type: 'raster', source: 'alive-field',
+        layout: { visibility: fieldWanted ? 'visible' : 'none' },
+        paint: {
+          /* the tint carries the city view; at street zoom the coloured
+             roads carry it and the tint steps back */
+          'raster-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.46, 11.5, 0.34, 13.5, 0.14, 16, 0.1],
+          'raster-resampling': 'linear', 'raster-fade-duration': 0,
+        },
+      }, firstRoadLayer(m));
+    }
+    if (roads.on) roadsRefresh();
+  });
+  document.dispatchEvent(new CustomEvent('alive:field', { detail: { epoch: fieldEpoch, n: L.n } }));
+}
+
 function setFieldVisible(v) {
+  fieldWanted = !!v;
   onReady((m) => { if (m.getLayer('alive-field-fill')) m.setLayoutProperty('alive-field-fill', 'visibility', v ? 'visible' : 'none'); });
+}
+
+/* the field at a point, as painted — {aqi, pm25, pm10, band, w} or null
+   (band = CPCB AQI category; w = 0..1 confidence the paint used) */
+function sampleField(lat, lon) {
+  const s = sampleLattice(field, lat, lon, CONF_W);
+  return s && s.band != null ? s : null;
+}
+function fieldInfo() {
+  return field ? { epoch: fieldEpoch, cells: field.n, bbox: [field.x0, field.y0, field.x1, field.y1] } : null;
+}
+
+/* ── street level: the roads in view, coloured by the air at their spot */
+const roads = { on: false, t: null, bound: false };
+const ROAD_CLASSES = (z) => z >= 14 ? ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service']
+  : z >= 13 ? ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor']
+    : ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'];
+function roadsCompute(m) {
+  const z = m.getZoom();
+  if (!field || z < 11.5 || !m.getSource(OMT)) return { type: 'FeatureCollection', features: [] };
+  const classes = new Set(ROAD_CLASSES(z));
+  let feats = [];
+  try { feats = m.querySourceFeatures(OMT, { sourceLayer: 'transportation' }); } catch (e) { feats = []; }
+  const out = [];
+  const seen = new Set();
+  for (const f of feats) {
+    const p = f.properties || {};
+    if (!classes.has(p.class) || p.brunnel === 'tunnel') continue;
+    const g = f.geometry;
+    const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : null;
+    if (!lines) continue;
+    for (const line of lines) {
+      if (line.length < 2) continue;
+      const key = `${line[0][0].toFixed(5)},${line[0][1].toFixed(5)},${line[line.length - 1][0].toFixed(5)},${line.length}`;
+      if (seen.has(key)) continue;          // the same street from a neighbouring tile's buffer
+      seen.add(key);
+      let run = null, runB = null, runW = null;
+      const flush = () => { if (run && run.length > 1) out.push({ type: 'Feature', properties: { b: runB, w: runW, c: p.class }, geometry: { type: 'LineString', coordinates: run } }); };
+      for (let i = 1; i < line.length; i++) {
+        const a = line[i - 1], b = line[i];
+        const s = sampleLattice(field, (a[1] + b[1]) / 2, (a[0] + b[0]) / 2, ROAD_W);
+        const band = s && s.w > 0.05 ? s.band : null;
+        const w = band == null ? null : Math.round(s.w * 4) / 4;
+        if (band !== runB || w !== runW) { flush(); run = band == null ? null : [a]; runB = band; runW = w; }
+        if (run) run.push(b);
+      }
+      flush();
+      if (out.length > 24000) break;
+    }
+    if (out.length > 24000) break;
+  }
+  return { type: 'FeatureCollection', features: out };
+}
+function roadsRefresh() {
+  if (!roads.on || !map) return;
+  clearTimeout(roads.t);
+  roads.t = setTimeout(() => {
+    if (!roads.on) return;
+    const m = map;
+    const data = roadsCompute(m);
+    const src = m.getSource('alive-airroads');
+    if (src) src.setData(data);
+    else m.addSource('alive-airroads', { type: 'geojson', data, tolerance: 0.6, buffer: 32 });
+    if (m.getLayer('alive-airroads-line')) return;
+    /* zoom must lead the expression — class/confidence scale the stops */
+    const major = ['match', ['get', 'c'], ['motorway', 'trunk', 'primary'], 1, ['secondary', 'tertiary'], 0.72, 0.5];
+    const w = ['coalesce', ['get', 'w'], 0];
+    m.addLayer({
+      id: 'alive-airroads-line', type: 'line', source: 'alive-airroads',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['match', ['get', 'b'], 0, BANDS[0], 1, BANDS[1], 2, BANDS[2], 3, BANDS[3], 4, BANDS[4], 5, BANDS[5], '#A6ACB8'],
+        'line-width': ['interpolate', ['exponential', 1.5], ['zoom'],
+          11.5, ['*', major, 1.6], 14, ['*', major, 3.6], 16, ['*', major, 8], 17, ['*', major, 12]],
+        'line-opacity': ['interpolate', ['linear'], ['zoom'],
+          11.5, 0, 12.2, ['*', w, 0.74], 15, ['*', w, 0.84]],
+      },
+    }, firstSymbol(m));
+  }, 180);
+}
+function airRoads(on) {
+  roads.on = !!on;
+  onReady((m) => {
+    if (!roads.bound) {
+      roads.bound = true;
+      m.on('moveend', () => roadsRefresh());
+      m.on('sourcedata', (e) => { if (roads.on && e.sourceId === OMT && e.isSourceLoaded && e.tile) roadsRefresh(); });
+    }
+    if (roads.on) roadsRefresh();
+    else {
+      clearTimeout(roads.t);
+      if (m.getLayer('alive-airroads-line')) m.removeLayer('alive-airroads-line');
+      if (m.getSource('alive-airroads')) m.removeSource('alive-airroads');
+    }
+  });
+}
+
+/* ── live traffic (TomTom flow via /v2/p/flow_tile) — for any screen.
+   Probes one tile first; any failure = no layer, no noise, map intact. */
+let trafficOk = null, trafficProbe = null;
+function trafficTileXY(z) {
+  const n = 2 ** z, lat = A.DELHI.lat * Math.PI / 180;
+  return [Math.floor(((A.DELHI.lon + 180) / 360) * n),
+    Math.floor(((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) * n)];
+}
+function traffic(m, on) {
+  const mm = m || map;
+  if (!mm) return Promise.resolve(false);
+  const SRC = 'alive-traffic', LYR = 'alive-traffic-flow';
+  const off = () => {
+    try { if (mm.getLayer(LYR)) mm.removeLayer(LYR); if (mm.getSource(SRC)) mm.removeSource(SRC); } catch (e) { /* already gone */ }
+    return false;
+  };
+  if (!on) return Promise.resolve(off());
+  if (!trafficProbe || (trafficOk === false && Date.now() - trafficProbe.t > 300000)) {
+    const [x, y] = trafficTileXY(11);
+    const p = fetch(`${API_ORIGIN}/v2/p/flow_tile/11/${x}/${y}.png`, { cache: 'no-store' })
+      .then((r) => { trafficOk = !!(r.ok && /image/.test(r.headers.get('content-type') || '')); return trafficOk; })
+      .catch(() => { trafficOk = false; return false; });
+    trafficProbe = { t: Date.now(), p };
+  }
+  return trafficProbe.p.then((ok) => {
+    if (!ok) return off();
+    const add = () => {
+      if (!mm.getSource(SRC)) {
+        mm.addSource(SRC, {
+          type: 'raster', tileSize: 256, minzoom: 6, maxzoom: 18,
+          tiles: [`${API_ORIGIN}/v2/p/flow_tile/{z}/{x}/{y}.png`],
+          bounds: [75.8, 27.4, 78.9, 30.0],
+        });
+      }
+      if (!mm.getLayer(LYR)) {
+        mm.addLayer({ id: LYR, type: 'raster', source: SRC,
+          paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0 } }, firstSymbol(mm));
+      }
+      return true;
+    };
+    try { return add(); } catch (e) {
+      /* style still loading — try once more when the map settles */
+      return new Promise((res) => mm.once('idle', () => { try { res(add()); } catch (e2) { res(off()); } }));
+    }
+  });
 }
 
 /* ── route drawing: geojson line + per-segment band colors ───────── */
 function showRoute(id, geojson, segments) {
   onReady((m) => {
     const srcId = `route-${id}`;
-    if (m.getSource(srcId)) { m.getSource(srcId).setData(geojson); return; }
+    if (m.getSource(srcId)) {
+      m.getSource(srcId).setData(geojson);
+      if (segments && segments.length) paintSegments(srcId, geojson, segments);
+      return;
+    }
     m.addSource(srcId, { type: 'geojson', data: geojson });
     m.addLayer({
       id: `${srcId}-line`, type: 'line', source: srcId,
@@ -116,6 +508,23 @@ function showRoute(id, geojson, segments) {
 /* paint the same geometry but colored by its air strip — when the
    option carries per-segment pm25+band we split the line at segment
    boundaries and color each stretch by the band that stretch breathes */
+/* a segment's band → palette index. The server sends the CPCB category
+   word ('Satisfactory', 'Very Poor', 'No data'); older payloads sent the
+   index. Words match case-insensitively; 'No data' (or nothing) falls
+   back to the stretch's own pm25 through the same CPCB PM2.5 table, and
+   a stretch with neither stays the plain route colour — never guessed. */
+const BAND_WORDS = ['good', 'satisfactory', 'moderate', 'poor', 'very poor', 'severe'];
+function segBandIdx(s) {
+  const b = s && s.band;
+  if (typeof b === 'number' && isFinite(b)) return Math.max(0, Math.min(5, Math.round(b)));
+  if (typeof b === 'string') {
+    const k = BAND_WORDS.indexOf(b.trim().toLowerCase().replace(/[\s_-]+/g, ' '));
+    if (k >= 0) return k;
+    if (/^\d+$/.test(b.trim())) return Math.max(0, Math.min(5, Number(b.trim())));
+  }
+  const pm = s && s.pm25;
+  return pm == null || !isFinite(pm) ? null : aqiBandIdx(cpcbAqi(pm, null));
+}
 function paintSegments(srcId, geojson, segments) {
   onReady((m) => {
     const coords = geojson.coordinates || (geojson.geometry && geojson.geometry.coordinates) || [];
@@ -124,9 +533,10 @@ function paintSegments(srcId, geojson, segments) {
     const feats = segments.map((s) => {
       const a = Math.floor((s.start_frac ?? 0) * (n - 1));
       const b = Math.max(a + 1, Math.ceil((s.end_frac ?? 1) * (n - 1)));
+      const bi = segBandIdx(s);
       return {
         type: 'Feature',
-        properties: { band: s.band ?? A.fmt.bandIdx(s.pm25), pm25: s.pm25 },
+        properties: { band: bi == null ? -1 : bi, pm25: s.pm25 },
         geometry: { type: 'LineString', coordinates: coords.slice(a, b + 1) },
       };
     });
@@ -134,17 +544,23 @@ function paintSegments(srcId, geojson, segments) {
     const data = { type: 'FeatureCollection', features: feats };
     if (m.getSource(segSrc)) { m.getSource(segSrc).setData(data); return; }
     m.addSource(segSrc, { type: 'geojson', data });
+    /* the coloured stretches sit right ABOVE the plain route line (the
+       line would otherwise cover them in forest green); a stretch with
+       no read keeps the route's own colour */
+    const ls = m.getStyle().layers;
+    const k = ls.findIndex((l) => l.id === `${srcId}-line`);
+    const above = k >= 0 && k + 1 < ls.length ? ls[k + 1].id : undefined;
     m.addLayer({
       id: `${segSrc}-line`, type: 'line', source: segSrc,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.4, 14, 6.4],
         'line-color': ['match', ['get', 'band'],
-          0, '#6E93AE', 1, '#C7A34F', 2, '#CF8A50',
-          3, '#C05F3A', 4, '#A83D30', 5, '#6E2D28', '#2A4D3B'],
+          0, BANDS[0], 1, BANDS[1], 2, BANDS[2],
+          3, BANDS[3], 4, BANDS[4], 5, BANDS[5], '#2A4D3B'],
         'line-opacity': 0.9,
       },
-    }, `${srcId}-line`);
+    }, above);
   });
 }
 
@@ -209,8 +625,14 @@ function fit(geojsonOrCoords, pad = 90) {
 }
 function center() { return map && map.getCenter(); }
 
-A.map = { init, ready: onReady, loadField, setFieldVisible, fieldEpoch,
+A.map = { init, ready: onReady, loadField, setFieldVisible,
+  get fieldEpoch() { return fieldEpoch; },
   showRoute, hideRoute, hideAllRoutes, pin, unpin, clearPins,
-  puckMove, puckRemove, fly, fit, center, get map() { return map; } };
+  puckMove, puckRemove, fly, fit, center,
+  traffic, airRoads, sampleField, fieldInfo, BANDS, cpcbAqi, cpcb, aqiBand: aqiBandIdx,
+  segBand: segBandIdx,
+  get basemap() { return fellBack ? 'offline' : 'openfreemap'; },
+  get map() { return map; } };
 init();
+void fieldTimer;
 })();

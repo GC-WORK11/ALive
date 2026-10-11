@@ -16,11 +16,15 @@ before it touches the store and used only for the k>=3 distinct-device
 threshold on corridors.
 """
 import hashlib
+import json
 import math
 import re
+import threading
 import time
+import unicodedata
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from .store import LEDGER, TRIPS
 
@@ -365,3 +369,348 @@ async def post_trip(body: dict):
         },
         "ts": time.time(),
     }
+
+
+# --- POST /v2/tally — anonymous usage counters (oct11 admin) -----------------
+# What the operator console counts without anyone sharing a trip: app
+# opens, journeys started/ended, the mode + vehicle picked, and the
+# receipt's own dose numbers. The contract is a WHITELIST — an event is
+# one of three kinds, each with a closed set of props; everything else
+# (and above all any lat/lon/coords/address field) is dropped before the
+# store is touched, and the response says how many fields were dropped.
+#
+#   body: {"anon": "<16-64 [A-Za-z0-9_-]>",
+#          "events": [{"event": "app_open"|"journey_start"|"journey_end"
+#                               |"profile",
+#                      "ts": <ms epoch, optional>, "props": {...}}]}
+#   journey_start props: mode, vehicle
+#   journey_end   props: completed (bool), mode, vehicle, dose_ug,
+#                        dose_saved_ug, km, minutes — dose_ug counts only
+#                        when it is a measured (> 0) number, and
+#                        dose_saved_ug only beside it: a trip without a
+#                        GPS fix reports nothing rather than a fake 0
+#   profile       props: age_band (under13|13-17|18-29|30-44|45-59|60plus,
+#                        the app's labels "Under 13".."60+" normalised),
+#                        area (a short locality/district name the user
+#                        chose to give — house numbers, coordinates,
+#                        links and anything past 48 chars never survive)
+#
+# The anon id is a random per-install string minted by telemetry.js; it is
+# hashed (namespaced, so it can never collide with the trip-token hash)
+# before it reaches a store, and only ever lands in per-day distinct sets.
+
+USAGE_EVENTS = ("app_open", "journey_start", "journey_end", "profile")
+USAGE_MODES = ("health_max", "petrol_health", "time_health")
+AGE_BANDS = ("under13", "13-17", "18-29", "30-44", "45-59", "60plus")
+_AGE_ALIASES = {b: b for b in AGE_BANDS}
+_AGE_ALIASES["60+"] = "60plus"
+AREA_MAX = 48
+# a number survives in an area name only as the sector/phase/block number
+# right after one of these words ("Sector 62", "DLF Phase 3"); every other
+# digit-bearing token (C-543, 12/3, 110092, 28.68…) is a house number, a
+# PIN or a coordinate and is dropped
+_AREA_NUM_OK = frozenset((
+    "sector", "sec", "phase", "ph", "stage", "block", "pocket", "zone",
+    "part", "extension", "ext"))
+_AREA_HOUSE = frozenset(("h.no", "h.no.", "hno", "h/no", "house", "flat",
+                         "tower", "floor", "plot", "khasra", "no", "no.",
+                         "#"))
+_AREA_KEEP = frozenset(".-'&()")
+
+
+def norm_age_band(v):
+    """'Under 13' / '13–17' / '60+' / 'under13' … → the canonical band, or
+    None. Dashes of any kind and spaces fold; nothing else is guessed."""
+    if not isinstance(v, str):
+        return None
+    s = re.sub(r"[\u2010-\u2015\u2212]", "-", v.strip().lower())
+    return _AGE_ALIASES.get(re.sub(r"\s+", "", s))
+
+
+def norm_area(v):
+    """Free text → a short locality key (lowercase, single spaces), or None.
+
+    Strict: links/emails are refused outright; tokens carrying a digit go
+    unless they are a bare sector/phase number; characters outside letters
+    and a few joiners become spaces; ≥ 2 letters must remain. A coordinate
+    pair therefore normalises to nothing and is dropped."""
+    if not isinstance(v, str):
+        return None
+    s = unicodedata.normalize("NFKC", v[:200])
+    if re.search(r"@|https?:|www\.", s, re.I):
+        return None
+    s = _AREA_PREFIX_RE.sub(" ", s.lower())
+    kept = []
+    for t in re.split(r"[\s,;|/\\:]+", s):
+        t = t.strip()
+        if not t:
+            continue
+        if any(ch.isdigit() for ch in t):
+            if (t.isdigit() and len(t) <= 3 and kept
+                    and kept[-1] in _AREA_NUM_OK):
+                kept.append(t)
+            continue
+        if t in _AREA_HOUSE:
+            continue
+        t = "".join(ch if (_letter(ch) or ch in _AREA_KEEP) else " "
+                    for ch in t)
+        for w in t.split():
+            w = w.strip(".-'&()")
+            if w and w not in _AREA_HOUSE:
+                kept.append(w)
+    out = ""
+    for w in kept:
+        nxt = (out + " " + w).strip()
+        if len(nxt) > AREA_MAX:
+            break
+        out = nxt
+    if sum(1 for ch in out if ch.isalpha()) < 2:
+        return None
+    return out
+
+
+def _letter(ch: str) -> bool:
+    # letters AND combining marks — a Devanagari matra is category M, and
+    # dropping it would mangle a Hindi locality name
+    return unicodedata.category(ch)[0] in ("L", "M")
+
+
+# "H.No. 12", "h/no", "House No", "Flat no" … go before tokenising so the
+# prefix can't leave a stray letter behind
+_AREA_PREFIX_RE = re.compile(
+    r"\b(?:h\s*[./]?\s*no|house\s*no|flat\s*no|plot\s*no|khasra\s*no)\b\.?")
+
+
+_USAGE_VEH = {
+    "car": "car", "driving_car": "car", "driving_car_ac": "car",
+    "driving_car_open": "car", "ev": "car",
+    "cab": "cab", "taxi": "cab",
+    "erick": "erick", "e_rickshaw": "erick", "e-rickshaw": "erick",
+    "bike": "bike", "two_wheeler": "bike", "driving_two_wheeler": "bike",
+    "scooter": "bike", "motorbike": "bike",
+    "auto": "auto", "rickshaw": "auto", "auto_rickshaw": "auto",
+    "bus": "bus", "metro": "metro", "metro+walk": "metro",
+    "cycle": "cycle", "cycling": "cycle", "bicycle": "cycle",
+    "walk": "walk", "walking": "walk", "pedestrian": "walk", "foot": "walk",
+}
+_USAGE_BOUNDS = {
+    "dose_ug": (0.0, 50_000.0),          # same ceiling as /v2/trip
+    "dose_saved_ug": (-50_000.0, 50_000.0),   # a pick can be dirtier
+    "km": (0.0, 300.0),
+    "minutes": (0.0, 360.0),
+}
+_ANON_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+USAGE_MAX_BODY = 16 * 1024
+USAGE_MAX_EVENTS = 25          # per POST — the client batches ≤ 20
+USAGE_RATE_PER_HOUR = 120      # events per anon id per rolling hour
+_USAGE_RL: dict = {}           # anon_hash -> [window_start, count]
+_USAGE_OPENS: dict = {}        # anon_hash -> IST day of last counted open
+# anon_hash -> (IST day, age_band, area, {what the store counted}) — the
+# last profile this worker counted, so a same-day repeat is a no-op and a
+# same-day correction replaces instead of double-counting
+_USAGE_PROFILES: dict = {}
+_USAGE_LOCK = threading.Lock()
+_USAGE_RL_MAX = 50_000
+
+
+def _usage_store():
+    try:
+        import agg_ddb
+    except ImportError:  # package-mode import from the repo root
+        from server import agg_ddb  # type: ignore
+    return agg_ddb
+
+
+def usage_anon_hash(anon: str) -> str:
+    return hashlib.sha256(
+        ("alive-usage-v1:" + anon).encode()).hexdigest()[:16]
+
+
+def _clean_usage_props(kind: str, props) -> tuple:
+    """(clean props, n dropped fields). Whitelist only — a location key
+    is not special-cased because nothing outside the list survives."""
+    props = props if isinstance(props, dict) else {}
+    out, dropped = {}, 0
+    allowed = {"journey_start": ("mode", "vehicle"),
+               "journey_end": ("completed", "mode", "vehicle", "dose_ug",
+                               "dose_saved_ug", "km", "minutes"),
+               "profile": ("age_band", "area"),
+               }.get(kind, ())
+    for k, v in props.items():
+        if k not in allowed:
+            dropped += 1
+            continue
+        if v is None:
+            continue            # not provided — never a stored 0
+        if k == "age_band":
+            b = norm_age_band(v)
+            if b:
+                out["age_band"] = b
+            else:
+                dropped += 1
+        elif k == "area":
+            a = norm_area(v)
+            if a:
+                out["area"] = a
+            else:
+                dropped += 1
+        elif k == "mode":
+            m = str(v or "").strip().lower()
+            if m in USAGE_MODES:
+                out["mode"] = m
+            else:
+                dropped += 1
+        elif k == "vehicle":
+            veh = str(v or "").strip().lower()[:32]
+            if veh:
+                out["vehicle"] = _USAGE_VEH.get(veh, "other")
+        elif k == "completed":
+            out["completed"] = v is True
+        else:
+            f = _num(v)
+            lo, hi = _USAGE_BOUNDS[k]
+            if f is not None and lo <= f <= hi:
+                out[k] = round(f, 2)
+            else:
+                dropped += 1
+    if kind == "journey_end":
+        # null-safe intake: a journey with no GPS fix measured nothing, and
+        # its 0 dose (or a "saving" against that 0) must not drag the
+        # console's averages — a dose counts only when it is a measured,
+        # positive number, a saving only beside such a dose
+        if not (out.get("dose_ug") or 0) > 0:
+            out.pop("dose_ug", None)
+            out.pop("dose_saved_ug", None)
+    return out, dropped
+
+
+def _profile_prev(anon_hash: str, day: str, props: dict):
+    """None → this exact profile was already counted for this device
+    today (a repeat). Otherwise the dict of what it replaces on the same
+    IST day ({} when nothing) — the store moves the device out of those
+    sets, so a corrected answer counts once, not twice."""
+    key = (props.get("age_band"), props.get("area"))
+    with _USAGE_LOCK:
+        last = _USAGE_PROFILES.get(anon_hash)
+        if last and last[0] == day and (last[1], last[2]) == key:
+            return None
+        if last and last[0] == day:
+            return dict(last[3])
+        return {}
+
+
+def _profile_seen(anon_hash: str, day: str, props: dict, counted: dict):
+    with _USAGE_LOCK:
+        if len(_USAGE_PROFILES) > _USAGE_RL_MAX:
+            _USAGE_PROFILES.clear()   # bounded memory beats perfect dedupe
+        _USAGE_PROFILES[anon_hash] = (day, props.get("age_band"),
+                                      props.get("area"), dict(counted or {}))
+
+
+def _usage_rate_ok(anon_hash: str, n: int, now: float) -> int:
+    """How many of n events this anon id may still log this hour."""
+    with _USAGE_LOCK:
+        if len(_USAGE_RL) > _USAGE_RL_MAX:
+            for k, (t0, _c) in list(_USAGE_RL.items()):
+                if now - t0 > 3600:
+                    _USAGE_RL.pop(k, None)
+            if len(_USAGE_RL) > _USAGE_RL_MAX:
+                _USAGE_RL.clear()   # bounded memory beats a perfect limit
+        w = _USAGE_RL.get(anon_hash)
+        if w is None or now - w[0] > 3600:
+            w = [now, 0]
+            _USAGE_RL[anon_hash] = w
+        room = max(0, USAGE_RATE_PER_HOUR - w[1])
+        take = min(room, n)
+        w[1] += take
+        return take
+
+
+def _first_open_today(anon_hash: str, day: str) -> bool:
+    with _USAGE_LOCK:
+        if _USAGE_OPENS.get(anon_hash) == day:
+            return False
+        if len(_USAGE_OPENS) > _USAGE_RL_MAX:
+            _USAGE_OPENS.clear()
+        _USAGE_OPENS[anon_hash] = day
+        return True
+
+
+@router.post("/tally")
+async def post_tally(request: Request):
+    raw = await request.body()
+    if len(raw) > USAGE_MAX_BODY:
+        raise HTTPException(413, "usage batch too large")
+    try:
+        body = json.loads(raw.decode("utf-8") or "null")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(422, "body must be JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(422, "body must be a JSON object")
+    anon = body.get("anon")
+    if not isinstance(anon, str) or not _ANON_RE.match(anon):
+        raise HTTPException(422, "anon must be 16-64 chars of [A-Za-z0-9_-]")
+    events = body.get("events")
+    if not isinstance(events, list) or not events:
+        raise HTTPException(422, "events must be a non-empty list")
+    if len(events) > USAGE_MAX_EVENTS:
+        raise HTTPException(422, f"at most {USAGE_MAX_EVENTS} events per batch")
+    dropped_fields = sum(1 for k in body if k not in ("anon", "events"))
+    anon_hash = usage_anon_hash(anon)
+    now = time.time()
+    agg = _usage_store()
+    store = agg.usage_store()
+    clean = []
+    rejected = 0
+    for ev in events:
+        if not isinstance(ev, dict) or ev.get("event") not in USAGE_EVENTS:
+            rejected += 1
+            continue
+        kind = ev["event"]
+        dropped_fields += sum(1 for k in ev
+                              if k not in ("event", "ts", "props"))
+        props, d = _clean_usage_props(kind, ev.get("props"))
+        dropped_fields += d
+        # client clock only within a sane window — an offline queue may
+        # flush late, a wrong clock must not land in a future/ancient day
+        ts = now
+        t = _num(ev.get("ts"))
+        if t is not None:
+            t = t / 1000.0 if t > 1e11 else t
+            if now - 3 * 86400 <= t <= now + 300:
+                ts = t
+        clean.append((kind, props, ts))
+    allowed = _usage_rate_ok(anon_hash, len(clean), now)
+    limited = len(clean) - allowed
+    accepted = duplicates = 0
+    try:
+        for kind, props, ts in clean[:allowed]:
+            if kind == "app_open" and not _first_open_today(
+                    anon_hash, agg.ist_day(ts)):
+                duplicates += 1     # ≤ 1 open per device per IST day
+                continue
+            if kind == "profile":
+                if not props:       # nothing valid survived — not counted
+                    rejected += 1
+                    continue
+                day = agg.ist_day(ts)
+                prev = _profile_prev(anon_hash, day, props)
+                if prev is None:
+                    duplicates += 1     # ≤ 1 profile per device per day
+                    continue
+                counted = store.record(kind, props, anon_hash, ts,
+                                       prev=prev)
+                _profile_seen(anon_hash, day, props, counted)
+                accepted += 1
+                continue
+            store.record(kind, props, anon_hash, ts)
+            accepted += 1
+    except Exception:  # noqa: BLE001 - store down: tell the client to keep it
+        return JSONResponse(status_code=503, content={
+            "stored": False, "accepted": accepted,
+            "error": "usage store unavailable — keep the batch"})
+    return {"stored": True, "accepted": accepted, "rejected": rejected,
+            "duplicates": duplicates, "rate_limited": limited,
+            "dropped_fields": dropped_fields,
+            "privacy": "counts only — no location field is ever stored",
+            "ts": now}

@@ -108,10 +108,18 @@ const S = {
   receipt_estShort: 'about', departNow: 'now',
   cityGoOut: 'planning to go out',
   a11yClear: 'clear', a11yBack: 'back',
-  tapAqiA11y: 'air at {place}: {n} µg/m³ — {band}',
+  tapAqiA11y: 'air at {place}: AQI {n} — {band}',
   bandScaleA11y: 'air quality today: {b} — position {n} of 6 on the good to severe scale',
   tripsDoseBand: 'about {lo}–{hi} µg',
   daypart_am: 'am', daypart_pm: 'pm',
+  thinRead: 'thin read',
+  spotLead: 'the air where you are', spotLeadAt: 'the air at {place}',
+  spotNone: 'tap the map to read the air there',
+  spotReading: 'reading the air here…', spotOffline: 'can\'t read the air here right now',
+  spotOutside: 'outside the area we can read',
+  spotNearest: 'nearest monitor ~{n} km', spotNearestEst: 'an estimate — nearest monitor ~{n} km',
+  spotAqi: 'AQI',
+  citySpeciesCity: 'other things in delhi\'s air',
 };
 const t = (k, vars) => { let s = S[k] ?? k; if (vars) for (const [a, v] of Object.entries(vars)) s = s.replaceAll(`{${a}}`, String(v)); return s; };
 
@@ -221,122 +229,46 @@ const whyLine = (why, wind) => {
 };
 const noteLine = (why) => why.cause_note ?? '';
 
-/* ── field + readout plumbing (kept from the pre-twin screen) ─────── */
-const FIELD_SRC = 'am-field';
-const FIELD_LAYER = 'am-field-fill';
-const GRID_URL = '/grid?cells=40&param=pm2_5';
+/* ── field + readout plumbing — the shared map paints the field (a
+   smooth band tint + every road in view coloured by the air at its
+   spot); this screen only switches it on and reads it back ────────── */
 const PICK_KEY = 'airmap.place';
 const HIST_KEY = 'journey.history';
 let st = null;               // screen state
 let tapMarker = null;
 
-function firstLabelLayer(m) {
-  for (const l of m.getStyle().layers) {
-    if (l.type === 'line' && /water|boundary/.test(l.id)) return l.id;
-  }
-  for (const l of m.getStyle().layers) if (l.type === 'symbol') return l.id;
-  return undefined;
-}
-
-async function mountField() {
-  const j = await A.api.get(GRID_URL, 20000);
-  if (!j || !Array.isArray(j.features) || !j.features.length) return null;
-  const feats = j.features.filter((f) =>
-    f && f.geometry && f.properties && f.properties.pm25 != null);
-  if (!feats.length) return null;
-  const ep = j.properties && Array.isArray(j.properties.cell_epoch)
-    ? j.properties.cell_epoch[0] : (j.properties && j.properties.epoch) ?? null;
-  st.fieldFeats = feats;
-  const fc = {
-    type: 'FeatureCollection',
-    features: feats.map((f) => ({
-      type: 'Feature',
-      properties: {
-        pm25: f.properties.pm25,
-        band: f.properties.band ?? A.fmt.bandIdx(f.properties.pm25),
-        conf: f.properties.conf || null,
-      },
-      geometry: f.geometry,
-    })),
-  };
-  A.map.ready((m) => {
-    const before = firstLabelLayer(m);
-    if (m.getSource(FIELD_SRC)) m.getSource(FIELD_SRC).setData(fc);
-    else {
-      m.addSource(FIELD_SRC, { type: 'geojson', data: fc });
-      m.addLayer({
-        id: FIELD_LAYER, type: 'fill', source: FIELD_SRC,
-        paint: {
-          'fill-color': ['match', ['get', 'band'],
-            0, BANDS[0], 1, BANDS[1], 2, BANDS[2],
-            3, BANDS[3], 4, BANDS[4], 5, BANDS[5], '#A6ACB8'],
-          /* the app's painted alphas — hi .32, med .26, lo .16 approx
-             over basemap; keep the field honest about confidence */
-          'fill-opacity': ['match', ['get', 'conf'],
-            'hi', 0.38, 'med', 0.32, 'lo', 0.2, 0.32],
-        },
-      }, before);
-    }
-    if (m.getLayer(FIELD_LAYER)) m.setLayoutProperty(FIELD_LAYER, 'visibility', 'visible');
-  });
-  return { epoch: ep, cells: feats.length };
-}
 function setFieldVisible(v) {
-  A.map.ready((m) => {
-    if (m.getLayer(FIELD_LAYER)) m.setLayoutProperty(FIELD_LAYER, 'visibility', v ? 'visible' : 'none');
-  });
-  A.map.setFieldVisible(false);   // keep the shared layer off — this screen paints its own
+  A.map.setFieldVisible(!!v);
+  if (A.map.airRoads) A.map.airRoads(!!v);
 }
 
-/* point-in-ring sample of the painted cells (TapReadout's field-first
-   contract: the colour you tapped is the number you get) */
-function sampleFieldAt(lat, lon) {
-  const feats = st.fieldFeats;
-  if (!feats) return null;
-  const inRing = (ring) => {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const [xi, yi] = ring[i], [xj, yj] = ring[j];
-      if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
-  };
-  for (const f of feats) {
-    const g = f.geometry;
-    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : null;
-    if (!polys) continue;
-    for (const poly of polys) {
-      if (poly.length && inRing(poly[0])) {
-        return { pm25: f.properties.pm25, band: bandIdx(f.properties.pm25), conf: f.properties.conf || null };
-      }
-    }
-  }
+/* ONE scale everywhere: the CPCB national AQI from PM2.5 + PM10 — the
+   same function, tables and category the home hero and the map paint
+   use (map.js cpcb). {aqi, over, band} or null. */
+function aqiOf(pm25, pm10) {
+  const n = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  if (A.map && typeof A.map.cpcb === 'function') return A.map.cpcb(n(pm25), n(pm10));
   return null;
 }
 
-/* ── AirMapCard — the floating legend (verbatim strings + geometry) ── */
-function legendCard(data) {
+/* the painted field at a point (TapReadout's field-first contract: the
+   colour you tapped is the number you get) */
+function sampleFieldAt(lat, lon) {
+  const s = A.map.sampleField ? A.map.sampleField(lat, lon) : null;
+  if (!s || s.band == null || s.aqi == null) return null;
+  return { aqi: s.aqi, pm25: s.pm25, pm10: s.pm10, band: s.band,
+    conf: s.w < 0.45 ? 'lo' : s.w < 0.8 ? 'med' : 'hi' };
+}
+
+/* ── the band scale chip — colours + "good → severe", nothing else ── */
+function scaleChip() {
   const el = document.createElement('div');
-  el.className = 'am-card';
-  const stations = data && data.provenance && data.provenance.stations;
-  const n = stations && stations.count != null ? stations.count : null;
-  const ageMin = st.fieldAgeS != null ? Math.max(0, Math.floor(st.fieldAgeS / 60)) : null;
-  const ageLine = !st.hasField ? t('cityNoField')
-    : (st.fieldStale || (ageMin != null && ageMin >= 30))
-      ? `${t('cityStale')}${ageMin != null ? ` · ${ageMin} ${t('minUnit')}` : ''}`
-      : ageMin != null ? t('howWe_fieldAge', { n: ageMin }) : null;
-  el.innerHTML = `
-    <div class="amc-head">
-      <span class="amc-title">${esc(t('airmapTitle'))}</span>
-      ${n != null && n > 0 ? `<span class="amc-stations num">${n} ${esc(t('srcStations'))}</span>` : ''}
-    </div>
-    <div class="amc-line">${esc(t('airmapLine'))}</div>
-    <div class="amc-foot">
-      <span class="amc-dots">${[0, 1, 2, 3, 4, 5].map((i) =>
-        `<i style="background:${bandFieldIdx(i)}"></i>`).join('')}</span>
-      <span class="amc-scale">${esc(t('band_good'))} → ${esc(t('band_severe'))}</span>
-      ${ageLine ? `<span class="amc-age num"> · ${esc(ageLine)}</span>` : ''}
-    </div>`;
+  el.className = 'am-chip';
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', `${t('band_good')} to ${t('band_severe')}`);
+  el.innerHTML = `<span class="amc-dots">${[0, 1, 2, 3, 4, 5].map((i) =>
+    `<i style="background:${bandColorIdx(i)}"></i>`).join('')}</span>
+    <span class="amc-scale">${esc(t('band_good'))} → ${esc(t('band_severe'))}</span>`;
   return el;
 }
 
@@ -353,14 +285,18 @@ function paintRead(read, place) {
   const el = readCard();
   el.hidden = false;
   const resolved = read && typeof read === 'object';
-  const qualifier = resolved && (read.conf === 'lo' || read.conf === 'model') ? t('srcModel') : null;
+  const qualifier = resolved && (read.conf === 'lo' || read.conf === 'model') ? t('thinRead') : null;
   const caption = [place || (resolved ? t('tapHere') : null), qualifier].filter(Boolean).join(' · ');
   if (resolved) {
+    /* AQI + its band word up front (one scale), PM2.5 as the quiet
+       second figure — never a µg number next to an AQI word */
+    const ink = bandInkIdx(read.band);
     el.innerHTML = `
       <div class="amr-row">
-        <div class="amr-read">
+        <div class="amr-read" role="img" aria-label="${esc(t('tapAqiA11y', { place: place || t('tapHere'), n: read.aqi, band: t(BAND_KEYS[read.band]) }))}">
           <span class="amr-dot" style="background:${bandColorIdx(read.band) ?? '#6E7278'}"></span>
-          <span class="amr-num num" style="color:${bandInkIdx(read.band)}">${Math.round(read.pm25)}<span class="amr-unit"> µg/m³</span><span class="amr-band" style="color:${bandInkIdx(read.band)}"> — ${esc(t(BAND_KEYS[read.band]))}</span></span>
+          <span class="amr-num num" style="color:${ink}">${read.aqi}${read.over ? '+' : ''}<span class="amr-unit"> ${esc(t('spotAqi'))}</span><span class="amr-band" style="color:${ink}"> — ${esc(t(BAND_KEYS[read.band]))}</span></span>
+          ${read.pm25 != null ? `<span class="amr-pm num"><b>PM2.5</b> ${Math.round(read.pm25)}</span>` : ''}
         </div>
         <button class="amr-x" type="button" aria-label="${esc(t('a11yClear'))}">${icon('close', '#6E7278', 12)}</button>
       </div>
@@ -399,21 +335,23 @@ async function tapRead(lat, lon) {
   const cell = sampleFieldAt(lat, lon);
   if (cell) {
     paintRead(cell, st.tapPlace);
-    tapPin(`${Math.round(cell.pm25)}`, cell.band, lon, lat);
+    tapPin(`${cell.aqi}`, cell.band, lon, lat);
     return;
   }
   paintRead('pending', st.tapPlace);
   tapPin('…', null, lon, lat);
   const j = await A.api.get(`/aqi?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`, 9000);
   if (!st || st.readEl.hidden) return;
-  if (!j || j.pm25 == null) {
+  const v = j ? aqiOf(j.pm25, j.pm10) : null;
+  if (!v) {
     paintRead('outside', st.tapPlace);
     if (tapMarker) { tapMarker.remove(); tapMarker = null; }
     return;
   }
-  const read = { pm25: j.pm25, band: bandIdx(j.pm25), conf: j.beyond_field_edge ? 'model' : 'model' };
+  const read = { aqi: v.aqi, over: v.over, pm25: j.pm25, pm10: j.pm10, band: v.band,
+    conf: j.beyond_field_edge ? 'lo' : 'med' };
   paintRead(read, st.tapPlace);
-  tapPin(`${Math.round(j.pm25)}`, read.band, lon, lat);
+  tapPin(`${v.aqi}${v.over ? '+' : ''}`, read.band, lon, lat);
 }
 
 /* ── BandScale — the good→severe anchor ───────────────────────────── */
@@ -515,7 +453,7 @@ function bindDepartGraph(zone) {
 /* ── planning to go out — /v2/playtime at the picked place ────────── */
 function placeLabel() {
   const p = st.place;
-  return (p && p.label) || 'central delhi';
+  return (p && p.label) || 'where you are';
 }
 async function planCard() {
   const body = st.body;
@@ -536,9 +474,14 @@ async function planCard() {
   }));
   const bestHour = best && best.start_h != null ? best.start_h : null;
   const inWin = (h, w) => w && w.start_h != null && h >= w.start_h && h <= (w.end_h ?? d.hours[d.hours.length - 1].h);
+  /* the server's own go-out lines (/v2/playtime decisions, verbatim) —
+     they already name the cleanest and the heaviest window, so the
+     client's lightest/heaviest rows only show when the server sent none */
+  const decs = (Array.isArray(d.decisions) ? d.decisions : [])
+    .filter((x) => x && typeof x.line === 'string' && x.line.trim());
   const meta = [];
-  if (d.nearest_station_km != null) meta.push(`station ${A.fmt.km(d.nearest_station_km)}`);
-  if (d.field_age_s != null) meta.push(`field ${A.fmt.ago(Date.now() / 1000 - d.field_age_s)}`);
+  if (d.nearest_station_km != null) meta.push(`nearest monitor ${A.fmt.km(d.nearest_station_km)}`);
+  if (d.field_age_s != null) meta.push(`air read ${A.fmt.ago(Date.now() / 1000 - d.field_age_s)}`);
   zone.innerHTML = `
     ${d.sparse ? `<div class="dt-chip">${d.nearest_station_km != null
       ? esc(t('exploreThinRead', { n: Math.round(d.nearest_station_km) }))
@@ -546,10 +489,11 @@ async function planCard() {
     ${d.verdict ? `<div class="am-verdict">${esc(d.verdict)}</div>` : ''}
     ${departGraph(rows, { bestHour })}
     <div class="am-bestworst">
-      ${best ? `<div class="am-bw"><span class="bw-l">${esc(t('playBestLine', { w: winWords(best), n: Math.round(best.pm25_mid ?? 0) }).split(' — ')[0])}</span> — ${esc(winWords(best))} · ~${Math.round(best.pm25_mid ?? 0)} µg</div>` : ''}
-      ${d.worst_window ? `<div class="am-bw"><span class="bw-l">heaviest</span> — ${esc(winWords(d.worst_window))} · ~${Math.round(d.worst_window.pm25_mid ?? 0)} µg</div>` : ''}
+      ${decs.length ? '' : `
+      ${best ? `<div class="am-bw"><span class="bw-l">lightest</span> ${esc(winWords(best))} · ~${Math.round(best.pm25_mid ?? 0)} µg/m³</div>` : ''}
+      ${d.worst_window ? `<div class="am-bw"><span class="bw-l">heaviest</span> ${esc(winWords(d.worst_window))} · ~${Math.round(d.worst_window.pm25_mid ?? 0)} µg/m³</div>` : ''}`}
+      ${decs.map((x) => `<div class="am-bw"><span class="bw-l">${esc(x.label)}</span> ${esc(x.line)}</div>`).join('')}
       ${d.mean_pm25 != null ? `<div class="am-bw muted">${esc(t('exploreAvgLine', { n: Math.round(d.mean_pm25) }))}</div>` : ''}
-      ${(d.decisions || []).map((x) => `<div class="am-bw"><span class="bw-l">${esc(x.label)}</span> ${esc(x.line)}</div>`).join('')}
       ${meta.length ? `<div class="am-meta">${esc(meta.join(' · '))}</div>` : ''}
     </div>`;
   bindDepartGraph(zone);
@@ -619,17 +563,51 @@ function openPicker() {
     recents.length ? '' : 'recent places will live here');
   showRecents();
   let deb = null, seq = 0;
+  const NONE = 'nothing found — try a landmark, a block, a sector';
+  const rawTag = (x) => /^[a-z_]+:[a-z_ ]+$/i.test(x || '');   // 'amenity:place of worship' never shows
+  const norm = (list) => (Array.isArray(list) ? list : []).filter((r) => r && isFinite(r.lat) && isFinite(r.lon))
+    .map((r) => {
+      const sub = r.sub || r.subtitle || '';
+      return { ...r, name: r.name || r.label || 'a place', sub: rawTag(sub) ? '' : sub,
+        dist: r.dist ?? r.distance_m ?? null, source: '' };
+    });
   input.addEventListener('input', () => {
     clearTimeout(deb);
     const q = input.value;
+    const my = ++seq;
     if (q.trim().length < 2) { showRecents(); return; }
     rows.innerHTML = `<div class="muted" style="padding:10px 6px">searching…</div>`;
+    const bias = A.geo.pos || A.DELHI;
     deb = setTimeout(async () => {
-      const my = ++seq;
-      const res = await A.search.search(q, A.geo.pos || A.DELHI);
+      /* the engine's own index answers in well under a second — paint it
+         first; the full cascade below replaces it when it lands */
+      let shown = false;
+      A.api.get(`/v2/search?q=${encodeURIComponent(q.trim())}&lat=${bias.lat.toFixed(4)}&lon=${bias.lon.toFixed(4)}`, 6000)
+        .then((j) => {
+          const r = norm(j && j.results).slice(0, 8);
+          if (my === seq && r.length && !shown) draw(r, '');
+        });
+      if (typeof A.search.live === 'function') {
+        /* lane S's type-ahead: rows stream in tier by tier — the newest
+           keystroke owns the list, a late tier never repaints an old one */
+        let got = false;
+        const onRows = (list) => {
+          if (my !== seq) return;
+          const r = norm(list);
+          if (r.length) { got = true; shown = true; draw(r, ''); }
+        };
+        try {
+          const fin = await A.search.live(q, bias, onRows);
+          if (my !== seq) return;
+          if (Array.isArray(fin) && fin.length) onRows(fin);
+        } catch (e) { /* fall through to the plain search below */ }
+        if (my !== seq || got) return;
+      }
+      const res = norm(await A.search.search(q, bias));
       if (my !== seq) return;
-      draw(res, res.length ? '' : 'nothing found — try a landmark, a block, a sector');
-    }, 260);
+      if (res.length) { shown = true; draw(res, ''); }
+      else if (!rows.querySelector('.srow')) draw([], NONE);
+    }, 220);
   });
   requestAnimationFrame(() => input.focus());
 }
@@ -657,18 +635,17 @@ function citySection(data, moves, own) {
     };
     push('pm10', 'PM10', 45); push('nitrogen_dioxide', 'NO₂', 25); push('ozone', 'O₃', 100);
     push('carbon_monoxide', 'CO', 4000); push('sulphur_dioxide', 'SO₂', 40); push('ammonia', 'NH₃', null);
-    const aqi = sp.us_aqi;
-    if (aqi) tiles.push({ label: 'US AQI', val: `${Math.round(aqi.mean)}`, who: null, over: false, whoTxt: t('aqiScale') });
+    /* no US AQI tile: this app quotes ONE index (CPCB, the hero's) */
     if (!tiles.length) return '';
     return `
-      <div class="dt-sec">${esc(t('citySpeciesTitle'))}</div>
+      <div class="dt-sec">${esc(t('citySpeciesCity'))}</div>
       <div class="dt-grid">${tiles.map((tile, i) => `
         <div class="dt-species${i > 0 ? ' sep' : ''}">
           <span class="dt-slab">${esc(tile.label)}</span>
           <span class="dt-sval num" style="color:${tile.over ? '#C05F3A' : '#16181D'}">${esc(tile.val)}</span>
           <span class="dt-swho num">${esc(tile.whoTxt ?? (tile.who != null ? t('whoRef', { n: tile.who }) : ''))}</span>
         </div>`).join('')}</div>
-      <div class="dt-note">${esc(t('citySpeciesNote'))}</div>`;
+`;
   })();
 
   const typical = data.typical && data.typical.vs_now_pct != null ? `
@@ -687,7 +664,7 @@ function citySection(data, moves, own) {
           <i class="dt-fcbar" style="height:${4 + Math.round(28 * x.pm25 / max)}px;background:${bandColor(x.pm25) ?? '#6E7278'}"></i>
           <span class="dt-fchr num">${x.h === 0 ? t('cityForecastNow') : x.h % 3 === 0 ? t('hourTick', { n: x.h }) : ''}</span>
         </div>`).join('')}</div>
-      <div class="dt-note">${esc(t('cityForecastNote'))}</div>`;
+`;
   })();
 
   const agg = own === null ? '' : own === 0 ? `
@@ -719,22 +696,8 @@ function citySection(data, moves, own) {
       ${cityMovesCard(moves)}`;
 
   return `
-    ${breathD && pm && inhaled ? `
-      <div class="dt-hero" style="background:linear-gradient(${bandWashDeepIdx(bandI)}, #FAFAF7)">
-        <div class="dt-herolead">${esc(t('cityHeroLead', { w: t(feltKeyForBand(bandIdx(pm.mid))) }))}</div>
-        <div class="dt-herorow">
-          <span class="dt-heronum num" style="color:${bandInkIdx(bandI) ?? doseColor(pm.mid)}">${doseUgRound(inhaled.mid)}</span>
-          <span class="dt-herounit">${esc(t('unitUg').split(' ')[0])}</span>
-        </div>
-        <div class="dt-herofelt" style="color:${bandInkIdx(bandI) ?? '#16181D'}">${esc(t('cityHeroAirFelt', { w: t(feltKeyForBand(bandIdx(pm.mid))) }))}</div>
-        <div class="dt-heroref num">${esc(t('cityHeroUnitUg'))}\n${inhaled.mid / WHO_DAILY_UG > 1.05
-          ? esc(t('refWhoOver', { x: inhaled.mid / WHO_DAILY_UG >= 10 ? Math.round(inhaled.mid / WHO_DAILY_UG) : (inhaled.mid / WHO_DAILY_UG).toFixed(1) }))
-          : esc(t('refWhoUnder'))} · ${esc(t('cityHeroAirNow', { n: Math.round(pm.mid) }))}</div>
-        ${bandScale(bandI)}
-        ${Math.round(inhaled.lo) > 0 ? `<div class="dt-herorange num">${esc(t('cityHeroRange', { lo: Math.round(inhaled.lo), hi: Math.round(inhaled.hi) }))}</div>` : ''}
-        ${data.why && data.why.line ? `<div class="dt-whyhero">${esc(whyLine(data.why, data.wind))}</div>` : ''}
-        ${data.why && noteLine(data.why) ? `<div class="dt-whynote">${esc(noteLine(data.why))}<span class="dt-whynotetag"> · ${esc(t('noteMeasured'))}</span></div>` : ''}
-      </div>` : `<div class="dt-herolead" style="margin:16px 18px 0">${esc(t('cityNoField'))}</div>`}
+    <div class="am-spot"></div>
+    ${data.why && data.why.line ? `<div class="dt-whyhero am-why">${esc(whyLine(data.why, data.wind))}</div>` : ''}
 
     <div class="dt-chips">
       ${ageMin != null && !stale ? `<span class="dt-chip">${icon('clock', '#6E7278', 14)}<span>${esc(t('updatedMinAgo', { n: Math.max(1, Math.round(ageMin)) }))}</span></span>` : ''}
@@ -745,7 +708,7 @@ function citySection(data, moves, own) {
     <div class="dt-sec">${esc(t('cityGoOut'))}</div>
     <button class="searchbar am-place" type="button">
       <span class="sdot a"></span>
-      <span class="am-place-label">planning to go out · ${esc(placeLabel())}</span>
+      <span class="am-place-label">${esc(placeLabel())}</span>
       <span class="am-place-edit">change</span>
     </button>
     <div class="am-plan"></div>
@@ -839,12 +802,83 @@ function cityMovesCard(data) {
   </div>`;
 }
 
+/* ── the hero — the air at your live spot: /aqi there, band colour ─── */
+const distM = (a, b) => {
+  const kx = 111320 * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180);
+  return Math.hypot((a.lat - b.lat) * 110574, (a.lon - b.lon) * kx);
+};
+function spotPos() {
+  const p = A.geo.pos;
+  return p && isFinite(p.lat) && isFinite(p.lon) ? p : null;
+}
+function spotHtml(j, pos) {
+  if (!pos) return `<div class="am-hero"><div class="am-hlead">${esc(t('spotNone'))}</div></div>`;
+  const lead = pos.label ? t('spotLeadAt', { place: pos.label }) : t('spotLead');
+  if (j === 'pending') {
+    return `<div class="am-hero"><div class="am-hlead">${esc(lead)}</div>
+      <div class="am-hwait">${esc(t('spotReading'))}</div></div>`;
+  }
+  /* the CPCB AQI from this spot's PM2.5 + PM10 — the home hero's own
+     index, so the two screens never quote different numbers */
+  const v = j ? aqiOf(j.pm25, j.pm10) : null;
+  if (!v) {
+    const outside = j && typeof j.error === 'string' && /outside/.test(j.error);
+    return `<div class="am-hero"><div class="am-hlead">${esc(lead)}</div>
+      <div class="am-hwait">${esc(outside ? t('spotOutside') : t('spotOffline'))}</div></div>`;
+  }
+  const i = v.band ?? 0;
+  const ink = bandInkIdx(i);
+  const isN = (x) => typeof x === 'number' && isFinite(x);
+  const thin = !!j.beyond_field_edge || (j.nearest_station_km != null && j.nearest_station_km > 10);
+  const big = `<span class="am-hnum num" style="color:${ink}">${v.aqi}${v.over ? '+' : ''}</span><span class="am-hunit">${esc(t('spotAqi'))}</span>`;
+  return `<div class="am-hero" style="background:linear-gradient(${bandWashDeepIdx(i)}, #FAFAF7)">
+    <div class="am-hlead">${esc(lead)}</div>
+    <div class="am-hrow">${big}</div>
+    <div class="am-hband" style="color:${ink}">${esc(t(BAND_KEYS[i]))}</div>
+    <div class="am-hspecies num">
+      ${isN(j.pm25) ? `<span><b>PM2.5</b> ${Math.round(j.pm25)} µg/m³</span>` : ''}
+      ${isN(j.pm10) ? `<span><b>PM10</b> ${Math.round(j.pm10)} µg/m³</span>` : ''}
+    </div>
+    ${bandScale(i)}
+    ${thin && j.nearest_station_km != null ? `<div class="am-hthin">${esc(t(j.beyond_field_edge ? 'spotNearestEst' : 'spotNearest', { n: Math.round(j.nearest_station_km) }))}</div>` : ''}
+  </div>`;
+}
+function paintSpot() {
+  if (!st) return;
+  const z = st.body.querySelector('.am-spot');
+  if (!z) return;
+  const pos = spotPos();
+  if (!pos) { z.innerHTML = spotHtml(null, null); return; }
+  if (st.spot && distM(st.spot.pos, pos) < 60) z.innerHTML = spotHtml(st.spot.j, st.spot.pos);
+  else { z.innerHTML = spotHtml('pending', pos); pullSpot(); }
+}
+async function pullSpot() {
+  if (!st) return;
+  const pos = spotPos();
+  if (!pos) { paintSpot(); return; }
+  const key = `${pos.lat.toFixed(4)},${pos.lon.toFixed(4)}`;
+  if (st.spotKey === key) return;            // that read is already on its way
+  st.spotKey = key;
+  const j = await A.api.get(`/aqi?lat=${pos.lat.toFixed(5)}&lon=${pos.lon.toFixed(5)}`, 9000);
+  if (!st || st.spotKey !== key) return;
+  st.spotKey = null;
+  st.spot = { pos: { lat: pos.lat, lon: pos.lon, label: pos.label || null }, j, t: Date.now() };
+  const z = st.body.querySelector('.am-spot');
+  if (z) z.innerHTML = spotHtml(j, st.spot.pos);
+}
+/* centre the spot in the map strip the sheet leaves open */
+function flyToSpot(pos, zoom) {
+  const wide = window.matchMedia && window.matchMedia('(min-width: 720px)').matches;
+  A.map.fly(pos.lat, pos.lon, zoom, wide ? {} : { offset: [0, -Math.round(window.innerHeight * 0.29)] });
+}
+
 /* ── the sheet render ─────────────────────────────────────────────── */
 function renderMain() {
   const body = st.body;
   st.pickOpen = false;
   st.dgSel = null;
-  body.innerHTML = `<div class="dt-wait">${esc(t('cityLoading'))}</div>`;
+  body.innerHTML = `<div class="am-spot"></div><div class="dt-wait">${esc(t('cityLoading'))}</div>`;
+  paintSpot();
   pull();
 }
 async function pull() {
@@ -857,6 +891,7 @@ async function pull() {
   st.cityData = data;
   if (!data) {
     st.body.innerHTML = `
+      <div class="am-spot"></div>
       <div class="dt-center">
         <div class="dt-wait">${esc(t('offline'))}</div>
         <button class="dt-retry" type="button">${esc(t('cityRetry'))}</button>
@@ -864,17 +899,18 @@ async function pull() {
       <div class="dt-sec">${esc(t('cityGoOut'))}</div>
       <button class="searchbar am-place" type="button">
         <span class="sdot a"></span>
-        <span class="am-place-label">planning to go out · ${esc(placeLabel())}</span>
+        <span class="am-place-label">${esc(placeLabel())}</span>
         <span class="am-place-edit">change</span>
       </button>
       <div class="am-plan"></div>`;
     st.body.querySelector('.dt-retry').addEventListener('click', pull);
     st.body.querySelector('.am-place').addEventListener('click', openPicker);
+    paintSpot();
     planCard();
     return;
   }
-  if (st.legendEl) { st.legendEl.remove(); st.legendEl = null; }
   st.body.innerHTML = citySection(data, moves || null, own);
+  paintSpot();
   st.body.querySelector('.am-place').addEventListener('click', openPicker);
   const whyBtn = st.body.querySelector('.dt-whybtn');
   const whyBody = st.body.querySelector('.dt-whybody');
@@ -884,12 +920,6 @@ async function pull() {
     whyBtn.querySelector('.dt-whychev').style.transform = open ? 'rotate(90deg)' : '';
   });
   planCard();
-  /* the floating legend card lands once the city payload answers —
-     AirMapCard's stations + age come from its provenance */
-  if (!st.legendEl) {
-    st.legendEl = legendCard(data);
-    st.el.appendChild(st.legendEl);
-  }
 }
 
 /* ── the screen ──────────────────────────────────────────────────── */
@@ -899,25 +929,38 @@ A.screen('airmap', {
     el.classList.add('am-host');
     st = {
       el, body: chrome.body,
-      place: A.store.get(PICK_KEY, null) || A.geo.pos || { ...A.DELHI, label: 'central delhi' },
+      place: A.store.get(PICK_KEY, null)
+        || (A.geo.pos ? { lat: A.geo.pos.lat, lon: A.geo.pos.lon, label: 'where you are' } : { ...A.DELHI, label: 'central delhi' }),
       armed: false, pickOpen: false,
-      fieldFeats: null, fieldAgeS: null, fieldStale: false, hasField: false,
-      readEl: null, legendEl: null, cityData: null,
+      readEl: null, chipEl: null, cityData: null,
+      spot: null, spotKey: null,
       dgRows: null, dgBest: null, dgSel: null, dgMax: 1, axisW: 0,
     };
     renderMain();
 
-    mountField().then((meta) => {
-      if (!st) { setFieldVisible(false); return; }
-      st.hasField = !!meta;
-      if (meta) st.fieldAgeS = Math.max(0, Date.now() / 1000 - (meta.epoch || Date.now() / 1000));
-      if (!meta) A.toast('the live field didn’t load — tap reads still work');
-      else if (st.legendEl) { /* refresh age once the field epoch lands */
-        const fresh = legendCard(st.cityData);
-        st.legendEl.replaceWith(fresh); st.legendEl = fresh;
-      }
-    });
-    A.map.fly(A.DELHI.lat, A.DELHI.lon, 10.4);
+    /* the field + street colours come from the shared map */
+    setFieldVisible(true);
+    st.chipEl = scaleChip();
+    el.appendChild(st.chipEl);
+
+    /* the live dot — and the map opens on it, at street level */
+    const pos0 = spotPos();
+    if (pos0) {
+      A.map.puckMove(pos0.lat, pos0.lon, pos0.acc || null);
+      flyToSpot(pos0, 14.2);
+    } else A.map.fly(A.DELHI.lat, A.DELHI.lon, 10.4);
+    const follow = (p) => {
+      if (!st || !p) return;
+      A.map.puckMove(p.lat, p.lon, p.acc || null);
+      A.map.ready((m) => {
+        const b = m.getBounds();
+        if (!b.contains([p.lon, p.lat])) flyToSpot(p, Math.max(13, m.getZoom()));
+      });
+      if (!st.spot || distM(st.spot.pos, p) > 120) pullSpot();
+    };
+    const watchId = A.geo.granted() ? A.geo.watch(follow) : null;
+    const onLoc = (e) => follow(e.detail);
+    document.addEventListener('alive:location', onLoc);
 
     const onTap = (e) => {
       if (A.current() !== 'airmap' || !st) return;
@@ -936,10 +979,11 @@ A.screen('airmap', {
         A.search.reverse(p.lat, p.lon).then((n) => {
           if (n && st && st.place && st.place.label === 'dropped pin') {
             st.place.label = n;
+            A.store.set(PICK_KEY, st.place);
             const lbl = st.body.querySelector('.am-place-label');
-            if (lbl) lbl.textContent = `planning to go out · ${n}`;
+            if (lbl) lbl.textContent = n;
           }
-        });
+        }).catch(() => {});
         A.store.set(PICK_KEY, st.place);
         renderMain();
         return;
@@ -958,11 +1002,13 @@ A.screen('airmap', {
       if (torn) return;
       torn = true;
       document.removeEventListener('alive:maptap', onTap);
+      document.removeEventListener('alive:location', onLoc);
       document.removeEventListener('keydown', onKey);
+      A.geo.clearWatch(watchId);
       mo.disconnect();
       setFieldVisible(false);
       if (st.readEl) st.readEl.hidden = true;
-      if (st.legendEl) { st.legendEl.remove(); }
+      if (st.chipEl) st.chipEl.remove();
       if (tapMarker) { tapMarker.remove(); tapMarker = null; }
       st = null;
     };

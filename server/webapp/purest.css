@@ -1,58 +1,114 @@
-/* Alive webapp — purest places. Same language as airmap: the map is
-   the hero, the ranked list lives on a bottom-detent sheet. */
+/* Alive webapp — purest places + hotels. The map is the hero; the
+   ranked lists live on a bottom-detent sheet. Band colours only ever
+   mean air: the CPCB AQI band (A.map.cpcbAqi/aqiBand/BANDS, as home). */
 
 .pm-host .sheet { top: auto; max-height: 62%; }
+/* sheet chrome back ‹ / close ✕: 40 px tap targets on this screen */
+.pm-host .sheet-title .back-btn, .pm-host .sheet-title .x-btn {
+  width: 40px; height: 40px; min-width: 40px; min-height: 40px }
 
-/* ranked area rows */
-.pm-row { position: relative }
-.pm-rank { font-family: var(--mono); font-size: 12px; color: var(--ink3);
-  width: 20px; flex: none; text-align: center }
-.pm-row-main { flex: 1; min-width: 0 }
-.pm-row-main .n { font-weight: 500; font-size: 14px; display: block;
+/* section head: label + scope toggle */
+.pm-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; min-width: 0 }
+.pm-head .sec-label { margin: 0; flex: 1; min-width: 0 }
+.pm-seg { display: flex; flex: none; background: var(--surface2, rgba(0,0,0,.05));
+  border-radius: 999px; padding: 2px }
+.pm-seg button { min-height: 40px; padding: 0 12px; border-radius: 999px;
+  font-size: 12.5px; color: var(--ink3); white-space: nowrap }
+.pm-seg button.on { background: var(--surface); color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08); font-weight: 500 }
+.pm-sec2 { margin-top: 14px }
+
+/* rows */
+.pm-row { position: relative; min-height: 52px; width: 100%; text-align: left }
+.pm-rank { font-size: 12px; color: var(--ink3); width: 18px; flex: none;
+  text-align: center; font-variant-numeric: tabular-nums }
+.pm-row-main { flex: 1; min-width: 0; display: block }
+.pm-row-main .n { font-weight: 500; font-size: 14.5px; display: block;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.pm-row-main .s { font-size: 11.5px; color: var(--ink3); display: block;
+.pm-row-main .s { font-size: 12px; color: var(--ink3); display: block;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px }
-.pm-v { margin-left: auto; flex: none; text-align: right; padding-left: 8px }
-.pm-v b { font-size: 17px; font-weight: 500; letter-spacing: -.02em }
-.pm-v i { display: block; font-size: 9.5px; color: var(--ink4); font-style: normal;
-  font-family: var(--mono) }
+.pm-v { margin-left: auto; flex: none; text-align: right; padding-left: 8px;
+  font-variant-numeric: tabular-nums }
+.pm-v b { font-size: 18px; font-weight: 500; letter-spacing: -.02em; display: block }
+.pm-v i { display: block; font-size: 10.5px; color: var(--ink4); font-style: normal;
+  white-space: nowrap }
+.pm-go { font-size: 18px; color: var(--ink4) }
+.pm-stay-ic { width: 18px; flex: none; display: flex; justify-content: center }
+.pm-stay-ic::before { content: ''; width: 9px; height: 9px; border-radius: 50%;
+  border: 2px solid var(--accent) }
 
-/* the one suggestion — a quiet forest accent, never a rainbow */
+/* the one suggestion — a quiet accent, never a rainbow */
 .pm-pick { font-style: normal; font-size: 10.5px; color: var(--accent-ink);
-  background: var(--accent-wash); border-radius: 999px; padding: 2px 8px;
-  margin-left: 6px; font-weight: 500; vertical-align: 1px }
+  background: var(--accent-wash); border-radius: 999px; padding: 2px 7px;
+  margin-left: 4px; font-weight: 500; vertical-align: 1px; white-space: nowrap }
+
+.pm-sk { height: 50px; border-radius: 12px; margin-top: 6px }
+.pm-plain { font-size: 13px; color: var(--ink3); padding: 10px 4px }
+.pm-meta { font-size: 11px; color: var(--ink4); margin-top: 8px }
+
+/* hotel search + anchor */
+.pm-search { width: 100%; margin: 6px 0 4px }
+.pm-search input { font-size: 16px; min-height: 40px; flex: 1; min-width: 0;
+  background: transparent; border: 0; outline: 0; color: var(--ink) }
+.pm-search input::-webkit-search-cancel-button { display: none }
+.pm-results:empty { display: none }
+.pm-anchor { display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 0 4px; text-align: left }
+.pm-anchor-label { flex: 1; font-size: 13px; color: var(--ink2); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+.pm-anchor-edit { font-size: 12.5px; color: var(--accent-ink); flex: none; font-weight: 500 }
+.pm-quick { display: flex; flex-direction: column; margin-bottom: 4px }
 
 /* map pins */
-.pm-chip b { color: var(--accent-ink); margin-right: 2px }
+.pm-chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap }
+.pm-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block }
 .pm-stay-dot { width: 11px; height: 11px; background: var(--surface) !important;
   border: 2.5px solid var(--accent) !important }
-
-/* anchor row for stays */
-.pm-anchor { width: 100%; text-align: left; margin-bottom: 8px }
-.pm-anchor-label { flex: 1; font-size: 14px; font-weight: 500; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
-.pm-anchor-edit { font-size: 11.5px; color: var(--ink3); flex: none }
-.pm-quick { display: flex; flex-direction: column; margin-bottom: 4px }
-.pm-plain { font-size: 12.5px; color: var(--ink3); padding: 4px 2px }
-.pm-note { font-size: 11.5px; color: var(--ink2); margin-top: 7px; line-height: 1.35 }
-.pm-meta { font-size: 10.5px; color: var(--ink4); margin-top: 4px; font-family: var(--mono) }
+.pm-stay-dot.pm-sel { width: 15px; height: 15px; background: var(--accent) !important }
 
 /* the env card — floats under the chrome over the map */
-.pm-env { position: fixed; top: calc(64px + var(--sat)); left: 50%;
-  transform: translateX(-50%); width: min(340px, calc(100vw - 28px));
+.pm-env { position: fixed; top: calc(64px + var(--sat, 0px)); left: 50%;
+  transform: translateX(-50%); width: min(350px, calc(100vw - 24px));
   background: var(--surface); border-radius: 16px; box-shadow: var(--sh-float);
-  padding: 13px 14px 12px; z-index: 40; }
-.pm-env-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px }
-.pm-env-name { font-size: 14.5px; font-weight: 500; line-height: 1.25; flex: 1 }
-.pm-env .pm-x { font-size: 11px; color: var(--ink3); padding: 2px 6px; flex: none }
-.pm-env-num { display: flex; align-items: baseline; gap: 7px }
-.pm-env-num .v { font-size: 34px; font-weight: 300; letter-spacing: -.03em }
-.pm-env-num .u { font-size: 11.5px; color: var(--ink3) }
-.pm-env-line { font-size: 12px; color: var(--ink2); margin-top: 7px; line-height: 1.4 }
-.pm-strip { display: flex; align-items: flex-end; gap: 2px; height: 34px; margin-top: 10px }
-.pm-strip i { flex: 1; border-radius: 2px 2px 1px 1px; min-height: 2px }
+  padding: 10px 12px 12px 14px; z-index: 40; box-sizing: border-box }
+.pm-env[hidden] { display: none }
+.pm-env-top { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 2px }
+.pm-env-head { flex: 1; min-width: 0; padding-top: 4px }
+.pm-env-name { font-size: 15px; font-weight: 500; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pm-env-sub { font-size: 12px; color: var(--ink3); margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pm-env .pm-x { width: 40px; height: 40px; flex: none; font-size: 13px;
+  color: var(--ink3); border-radius: 50%; margin: -4px -6px 0 0 }
+.pm-env-num { display: flex; align-items: center; gap: 10px; margin-top: 2px }
+.pm-env-num .v { font-size: 40px; font-weight: 300; letter-spacing: -.03em;
+  line-height: 1; font-variant-numeric: tabular-nums }
+.pm-env-num .u { font-size: 12px; color: var(--ink3); line-height: 1.35 }
+.pm-env-num .u b { color: var(--ink2); font-weight: 500 }
+.pm-env-sec { font-size: 11px; color: var(--ink4); margin-top: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pm-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  margin-top: 4px }
+.pm-stats > div { background: var(--surface2, rgba(0,0,0,.04)); border-radius: 10px;
+  padding: 6px 8px; min-width: 0 }
+.pm-stats span { display: block; font-size: 11px; color: var(--ink3); white-space: nowrap }
+.pm-stats b { font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums }
+.pm-stats em { font-style: normal; font-size: 11px; color: var(--ink3); margin-left: 4px }
+.pm-strip { display: flex; align-items: flex-end; gap: 2px; height: 30px; margin-top: 10px }
+.pm-strip i { flex: 1; height: 100%; border-radius: 2px 2px 1px 1px;
+  transform-origin: bottom; display: block }
+.pm-strip-ax { display: flex; justify-content: space-between; font-size: 10.5px;
+  color: var(--ink4); margin-top: 3px }
+.pm-cmp { margin-top: 10px; font-size: 12.5px }
+.pm-cmp > div { display: grid; grid-template-columns: minmax(0, 1fr) 56px 92px; align-items: baseline;
+  padding: 2px 0 }
+.pm-cmp > div > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pm-cmp > div > span:first-child { color: var(--ink3) }
+.pm-cmp b { font-weight: 500; font-variant-numeric: tabular-nums; text-align: right }
+.pm-cmp-h span { font-size: 11px; color: var(--ink4); text-align: right }
 
 @media (min-width: 720px) {
   .pm-host .sheet { max-height: none; top: 0; }
-  .pm-env { left: 24px; transform: none; width: 330px }
+  .pm-env { left: 24px; transform: none; width: 340px }
 }

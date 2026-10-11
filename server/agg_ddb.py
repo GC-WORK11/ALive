@@ -795,6 +795,437 @@ class DDBDeviceLedger:
                     Key={"pk": it["pk"], "sk": it["sk"]})
 
 
+# ------------------------------------------------- anonymous usage counters
+# The admin's people/journeys/modes/intake panels (oct11). Fed ONLY by
+# POST /v2/tally (v2/trip.py), which has already whitelisted every field:
+# an event kind, a mode from a closed set, a vehicle from a closed set, and
+# bounded numbers. No coordinate can reach these classes — there is no
+# parameter for one. The device id arrives already hashed (namespaced
+# sha256, so it can never be joined to the trip-donation token hash).
+#
+# Item layout (same alive108-agg table, pk prefix 'usage#', no TTL — day
+# counters are lifetime totals like the trip day counters):
+#
+#   pk                  sk             attributes
+#   usage#d#YYYY-MM-DD  sum            opens, started, ended, completed,
+#                                      dose_ug, dose_n, saved_ug, saved_n,
+#                                      km, minutes (ADD) · last_ts (SET)
+#   usage#d#YYYY-MM-DD  dev            devices (SS of hashed anon ids)
+#   usage#d#YYYY-MM-DD  mode#<mode>    started, completed (ADD)
+#   usage#d#YYYY-MM-DD  veh#<vehicle>  started, completed (ADD)
+#   usage#d#YYYY-MM-DD  age#<band>     devices (SS of hashed anon ids)
+#   usage#d#YYYY-MM-DD  area#<area>    devices (SS of hashed anon ids)
+#   usage#d#YYYY-MM-DD  areas          names (SS — the day's distinct areas,
+#                                      capped at AREA_CAP; past it → other)
+#
+# The age/area sets are the 'profile' event — an age group and a locality
+# name the user CHOSE to give (no name, no coordinate). Bands and areas
+# are separate sets, never crossed, so no row pairs an age with a place.
+#
+# Days are IST calendar days — "today" on a Delhi operator's console.
+
+USAGE_PK = "usage#d#"
+IST_OFFSET_S = 19800                  # +05:30, no DST
+USAGE_MODES = ("health_max", "petrol_health", "time_health")
+USAGE_VEHICLES = ("car", "cab", "bike", "auto", "erick", "bus", "metro",
+                  "cycle", "walk", "other")
+AGE_BANDS = ("under13", "13-17", "18-29", "30-44", "45-59", "60plus")
+AREA_CAP = 500                        # distinct areas per IST day
+AREA_OTHER = "other"
+_USAGE_NUM = ("opens", "started", "ended", "completed", "dose_ug", "dose_n",
+              "saved_ug", "saved_n", "km", "minutes")
+
+
+def _area_key(area) -> str:
+    # '#' is the sort-key separator; the endpoint never lets one through,
+    # this only keeps a direct caller honest
+    return str(area or "").replace("#", " ").strip()[:48]
+
+
+def _audience_rollup(prof: dict, now: float) -> dict:
+    """{day: {"age": {band: set}, "area": {area: set}}} → each device
+    counted ONCE, by its latest answer (days walked oldest → newest, so a
+    later day's answer wins). Bands and areas are tallied independently —
+    never crossed. Pure, shared by both backends."""
+    today = ist_day(now)
+    age_of, area_of, today_dev = {}, {}, set()
+    for day in sorted(prof):
+        p = prof[day]
+        for band in sorted(p.get("age") or {}):
+            for h in p["age"][band]:
+                age_of[h] = band
+                if day == today:
+                    today_dev.add(h)
+        for area in sorted(p.get("area") or {}):
+            for h in p["area"][area]:
+                area_of[h] = area
+                if day == today:
+                    today_dev.add(h)
+    bands = {b: 0 for b in AGE_BANDS}
+    for b in age_of.values():
+        if b in bands:
+            bands[b] += 1
+    areas = {}
+    for a in area_of.values():
+        areas[a] = areas.get(a, 0) + 1
+    days = [d for d in sorted(prof)
+            if any(prof[d].get("age", {}).values())
+            or any(prof[d].get("area", {}).values())]
+    return {
+        "age_bands": bands,
+        "areas": dict(sorted(areas.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "profiles_total": len(set(age_of) | set(area_of)),
+        "with_age": len(age_of),
+        "with_area": len(area_of),
+        "today": len(today_dev),
+        "first_day": days[0] if days else None,
+    }
+
+
+def ist_day(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(ts + IST_OFFSET_S))
+
+
+def _usage_deltas(kind: str, props: dict) -> tuple:
+    """(sum-row deltas, mode, vehicle, per-dimension deltas) for one
+    already-validated event. Pure — both backends share it, so they can
+    never disagree on what an event means."""
+    s = {}
+    dim = {}
+    mode = props.get("mode") or "none"       # no mode picked (old flow)
+    veh = props.get("vehicle") or "none"     # no vehicle sent
+    if kind == "app_open":
+        s["opens"] = 1
+    elif kind == "journey_start":
+        s["started"] = 1
+        dim["started"] = 1
+    elif kind == "journey_end":
+        s["ended"] = 1
+        if props.get("completed"):
+            s["completed"] = 1
+            dim["completed"] = 1
+        if props.get("dose_ug") is not None:
+            s["dose_ug"] = float(props["dose_ug"])
+            s["dose_n"] = 1
+        if props.get("dose_saved_ug") is not None:
+            s["saved_ug"] = float(props["dose_saved_ug"])
+            s["saved_n"] = 1
+        if props.get("km") is not None:
+            s["km"] = float(props["km"])
+        if props.get("minutes") is not None:
+            s["minutes"] = float(props["minutes"])
+    return s, mode, veh, dim
+
+
+def _empty_day() -> dict:
+    d = {k: 0 for k in _USAGE_NUM}
+    d.update({"devices": 0, "modes": {}, "vehicles": {}, "last_ts": 0.0})
+    return d
+
+
+def _usage_rollup(days: dict, dev_sets: dict, now: float) -> dict:
+    """Shared read shape: per-day rows + exact distinct-device windows
+    (set unions, never sums of daily counts)."""
+    today = ist_day(now)
+    last7 = {ist_day(now - i * 86400) for i in range(7)}
+    u_today, u_7, u_all = set(), set(), set()
+    for day, ss in dev_sets.items():
+        u_all |= ss
+        if day in last7:
+            u_7 |= ss
+        if day == today:
+            u_today |= ss
+    for day, ss in dev_sets.items():
+        days.setdefault(day, _empty_day())["devices"] = len(ss)
+    last_ts = max((float(d.get("last_ts") or 0.0) for d in days.values()),
+                  default=0.0)
+    return {
+        "days": days,
+        "devices": {"today": len(u_today), "d7": len(u_7),
+                    "total": len(u_all)},
+        "today": today,
+        "first_day": min(days) if days else None,
+        "last_ts": last_ts or None,
+    }
+
+
+class MemoryUsageAggregates:
+    """In-process twin of DDBUsageAggregates — dev/CI and the no-AWS
+    fallback. Counters reset on restart; `backend` says so."""
+
+    backend = "memory"
+
+    def __init__(self):
+        import threading
+        self._lock = threading.Lock()
+        self._days = {}
+        self._dev = {}
+        self._prof = {}     # day -> {"age": {band: set}, "area": {a: set},
+        #                            "areas": set of the day's real areas}
+        self.last_error = None
+
+    def record(self, kind: str, props: dict, anon_hash: str,
+               ts: float = None, prev: dict = None):
+        ts = ts or time.time()
+        day = ist_day(ts)
+        props = props or {}
+        s, mode, veh, dim = _usage_deltas(kind, props)
+        counted = None
+        with self._lock:
+            d = self._days.setdefault(day, _empty_day())
+            for k, v in s.items():
+                d[k] = d[k] + v
+            if s:
+                d["last_ts"] = max(float(d["last_ts"] or 0.0), round(ts, 3))
+            if dim:
+                for bucket, key in (("modes", mode), ("vehicles", veh)):
+                    row = d[bucket].setdefault(key, {"started": 0,
+                                                     "completed": 0})
+                    for k, v in dim.items():
+                        row[k] += v
+            if anon_hash:
+                self._dev.setdefault(day, set()).add(anon_hash)
+            if kind == "profile" and anon_hash:
+                p = self._prof.setdefault(day, {"age": {}, "area": {},
+                                                "areas": set()})
+                counted = {}
+                for dim_k, key in (("age", (prev or {}).get("age_band")),
+                                   ("area", (prev or {}).get("area"))):
+                    if key and key in p[dim_k]:
+                        p[dim_k][key].discard(anon_hash)
+                band = props.get("age_band")
+                if band in AGE_BANDS:
+                    p["age"].setdefault(band, set()).add(anon_hash)
+                    counted["age_band"] = band
+                area = _area_key(props.get("area"))
+                if area:
+                    if (area != AREA_OTHER and area not in p["areas"]
+                            and len(p["areas"]) >= AREA_CAP):
+                        area = AREA_OTHER
+                    if area != AREA_OTHER:
+                        p["areas"].add(area)
+                    p["area"].setdefault(area, set()).add(anon_hash)
+                    counted["area"] = area
+        return counted
+
+    def summary(self, now: float = None) -> dict:
+        now = now or time.time()
+        with self._lock:
+            days = {k: {**v, "modes": {m: dict(r) for m, r in
+                                       v["modes"].items()},
+                        "vehicles": {m: dict(r) for m, r in
+                                     v["vehicles"].items()}}
+                    for k, v in self._days.items()}
+            dev = {k: set(v) for k, v in self._dev.items()}
+            prof = {k: {"age": {b: set(x) for b, x in v["age"].items()},
+                        "area": {a: set(x) for a, x in v["area"].items()}}
+                    for k, v in self._prof.items()}
+        out = _usage_rollup(days, dev, now)
+        out["audience"] = _audience_rollup(prof, now)
+        out["backend"] = self.backend
+        return out
+
+    def reset(self) -> None:
+        with self._lock:
+            self._days.clear()
+            self._dev.clear()
+            self._prof.clear()
+
+
+class DDBUsageAggregates:
+    """Usage counters on the shared aggregate table. Writes surface their
+    error (the endpoint answers 503 and the client keeps its batch);
+    reads degrade to None + last_error — a partial scan shown as a total
+    would be a lie."""
+
+    backend = "dynamodb"
+
+    def __init__(self, client=None, table_name: str = None):
+        self.table_name = (table_name
+                           or os.environ.get("AGG_TABLE")
+                           or os.environ.get("ALIVE_DDB_TABLE")
+                           or DEFAULT_TABLE)
+        self._client = client
+        self.last_error = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            import boto3
+            self._client = boto3.client("dynamodb", region_name=_region())
+        return self._client
+
+    def _add(self, pk: str, sk: str, deltas: dict, ts: float = None):
+        names, vals, parts = {}, {}, []
+        for i, (k, v) in enumerate(deltas.items()):
+            names[f"#a{i}"] = k
+            vals[f":v{i}"] = _n(v)
+            parts.append(f"#a{i} :v{i}")
+        expr = "ADD " + ", ".join(parts)
+        if ts is not None:
+            names["#lt"] = "last_ts"
+            vals[":ts"] = _n(round(ts, 3))
+            expr = "SET #lt = :ts " + expr
+        self.client.update_item(
+            TableName=self.table_name,
+            Key={"pk": {"S": pk}, "sk": {"S": sk}},
+            UpdateExpression=expr,
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=vals)
+
+    def _set_op(self, pk: str, sk: str, op: str, anon_hash: str) -> None:
+        self.client.update_item(
+            TableName=self.table_name,
+            Key={"pk": {"S": pk}, "sk": {"S": sk}},
+            UpdateExpression=f"{op} devices :d",
+            ExpressionAttributeValues={":d": {"SS": [str(anon_hash)]}})
+
+    def _area_slot(self, pk: str, area: str) -> str:
+        """Claim `area` in the day's distinct-area index atomically — the
+        condition admits a known area or a new one while the index holds
+        fewer than AREA_CAP names; past the cap the device counts under
+        'other'. One conditional write, no read-then-write race."""
+        if area == AREA_OTHER:
+            return area
+        try:
+            self.client.update_item(
+                TableName=self.table_name,
+                Key={"pk": {"S": pk}, "sk": {"S": "areas"}},
+                UpdateExpression="ADD #n :a",
+                ConditionExpression=("attribute_not_exists(#n) OR "
+                                     "contains(#n, :s) OR size(#n) < :cap"),
+                ExpressionAttributeNames={"#n": "names"},
+                ExpressionAttributeValues={":a": {"SS": [area]},
+                                           ":s": {"S": area},
+                                           ":cap": _n(AREA_CAP)})
+            return area
+        except Exception as e:  # noqa: BLE001
+            code = ((getattr(e, "response", None) or {}).get("Error")
+                    or {}).get("Code") or type(e).__name__
+            if code == "ConditionalCheckFailedException":
+                return AREA_OTHER
+            raise
+
+    def record(self, kind: str, props: dict, anon_hash: str,
+               ts: float = None, prev: dict = None):
+        ts = ts or time.time()
+        pk = USAGE_PK + ist_day(ts)
+        props = props or {}
+        s, mode, veh, dim = _usage_deltas(kind, props)
+        counted = None
+        try:
+            if s:
+                self._add(pk, "sum", s, ts)
+            if dim:
+                self._add(pk, f"mode#{mode}", dim)
+                self._add(pk, f"veh#{veh}", dim)
+            if anon_hash:
+                self._set_op(pk, "dev", "ADD", anon_hash)
+            if kind == "profile" and anon_hash:
+                counted = {}
+                # a same-day correction: move the device out of what it
+                # said before (the endpoint knows; DELETE on an SS is
+                # idempotent), so it counts once, by its latest answer
+                pa = (prev or {}).get("age_band")
+                if pa in AGE_BANDS and pa != props.get("age_band"):
+                    self._set_op(pk, f"age#{pa}", "DELETE", anon_hash)
+                band = props.get("age_band")
+                if band in AGE_BANDS:
+                    self._set_op(pk, f"age#{band}", "ADD", anon_hash)
+                    counted["age_band"] = band
+                area = _area_key(props.get("area"))
+                if area:
+                    area = self._area_slot(pk, area)
+                pr = _area_key((prev or {}).get("area"))
+                if pr and pr != area:
+                    self._set_op(pk, f"area#{pr}", "DELETE", anon_hash)
+                if area:
+                    self._set_op(pk, f"area#{area}", "ADD", anon_hash)
+                    counted["area"] = area
+            self.last_error = None
+        except Exception as e:  # noqa: BLE001 - surface, never silent-loss
+            self.last_error = f"{type(e).__name__}: {e}"
+            raise
+        return counted
+
+    def summary(self, now: float = None):
+        now = now or time.time()
+        days, dev, prof = {}, {}, {}
+        try:
+            for it in DDBTripAggregates._scan(self, USAGE_PK):
+                day = it["pk"]["S"][len(USAGE_PK):]
+                sk = (it.get("sk") or {}).get("S", "")
+                d = days.setdefault(day, _empty_day())
+                if sk == "sum":
+                    for k in _USAGE_NUM:
+                        d[k] = _num(it.get(k))
+                    d["last_ts"] = _num(it.get("last_ts"))
+                elif sk == "dev":
+                    dev[day] = set((it.get("devices") or {}).get("SS") or [])
+                elif sk.startswith("mode#") or sk.startswith("veh#"):
+                    bucket = "modes" if sk.startswith("mode#") else "vehicles"
+                    key = sk.split("#", 1)[1]
+                    d[bucket][key] = {
+                        "started": int(_num(it.get("started")) or 0),
+                        "completed": int(_num(it.get("completed")) or 0)}
+                elif sk.startswith("age#") or sk.startswith("area#"):
+                    dim, key = sk.split("#", 1)
+                    prof.setdefault(day, {"age": {}, "area": {}})[dim][key] = \
+                        set((it.get("devices") or {}).get("SS") or [])
+            self.last_error = None
+        except Exception as e:  # noqa: BLE001 - degrade, dashboard must live
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+        out = _usage_rollup(days, dev, now)
+        out["audience"] = _audience_rollup(prof, now)
+        out["backend"] = self.backend
+        return out
+
+    def reset(self) -> None:
+        for it in DDBTripAggregates._scan(self, USAGE_PK):
+            self.client.delete_item(TableName=self.table_name,
+                                    Key={"pk": it["pk"], "sk": it["sk"]})
+
+
+_USAGE = None
+
+
+def get_usage_store(client=None, table_name: str = None):
+    """Same backend rule as v2.store._select_trips: AGG_TABLE (or
+    ALIVE_DDB_TABLE) + boto3 + resolvable credentials → DynamoDB; else
+    the in-memory twin. Never a construction-time crash."""
+    if client is not None:
+        return DDBUsageAggregates(client=client, table_name=table_name)
+    table = (os.environ.get("AGG_TABLE")
+             or os.environ.get("ALIVE_DDB_TABLE") or "").strip()
+    if not table:
+        return MemoryUsageAggregates()
+    try:
+        b3, why = _aws_ready()
+        if b3 is None:
+            return MemoryUsageAggregates()
+        return DDBUsageAggregates(
+            client=b3.client("dynamodb", region_name=_region()),
+            table_name=table)
+    except Exception:  # noqa: BLE001
+        return MemoryUsageAggregates()
+
+
+def usage_store():
+    """The process-wide usage store — one instance shared by the writer
+    (v2/trip.py POST /v2/tally) and the reader (admin_agg /api/app)."""
+    global _USAGE
+    if _USAGE is None:
+        _USAGE = get_usage_store()
+    return _USAGE
+
+
+def set_usage_store(store) -> None:
+    """Tests / dev harness: swap the process-wide store."""
+    global _USAGE
+    _USAGE = store
+
+
 # ------------------------------------------------------------- factory
 
 def get_trip_store(client=None, table_name: str = None):

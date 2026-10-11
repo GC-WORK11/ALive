@@ -1,0 +1,121 @@
+/* sidebar.css — the left drawer (sidebar.js). Uber-light: warm paper,
+   ink, one forest accent. Motion: transform + opacity only. */
+.sb { position: fixed; inset: 0; z-index: 50; }
+.sb-scrim {
+  position: absolute; inset: 0; background: rgba(22,24,29,.38);
+  opacity: 0; transition: opacity .32s var(--ease);
+}
+.sb.on .sb-scrim { opacity: var(--sb-scrim, 1); }
+.sb-panel {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  width: min(86vw, 340px);
+  background: var(--paper); box-shadow: 8px 0 30px rgba(59,52,35,.16);
+  border-radius: 0 24px 24px 0;
+  overflow: hidden; outline: none; touch-action: pan-y;
+  transform: translate3d(-104%,0,0); transition: transform .38s var(--ease);
+  will-change: transform;
+}
+.sb.on .sb-panel { transform: none; }
+.sb.drag .sb-panel, .sb.drag .sb-scrim { transition: none; }
+
+/* two pages: the menu, and Privacy sliding over it */
+.sb-page {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  transition: transform .34s var(--ease), opacity .34s var(--ease);
+}
+/* the off-stage page is also invisible: out of the tab order and the
+   accessibility tree, never "overflowing" the viewport */
+.sb-sub { transform: translate3d(100%,0,0); background: var(--paper);
+  visibility: hidden; transition: transform .34s var(--ease), opacity .34s var(--ease), visibility 0s linear .34s; }
+.sb.sub-on .sb-sub { transform: none; visibility: visible; transition-delay: 0s; }
+.sb.sub-on .sb-main { transform: translate3d(-24%,0,0); opacity: 0; visibility: hidden;
+  transition: transform .34s var(--ease), opacity .34s var(--ease), visibility 0s linear .34s; }
+
+.sb-top {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: calc(var(--sat, 0px) + 14px) 12px 10px 12px;
+}
+.sb-me {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
+  min-height: 64px; padding: 8px 6px 8px 8px; border-radius: 18px; text-align: left;
+  font-family: var(--font);
+  transition: background-color .2s;
+}
+.sb-me:active { background: var(--surface2); }
+.sb-av {
+  width: 48px; height: 48px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-wash); color: var(--accent-ink);
+}
+.sb-avtxt { font-size: 21px; font-weight: 500; letter-spacing: -.02em; }
+.sb-memid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sb-mename {
+  color: var(--ink); font-size: 19px; font-weight: 500; letter-spacing: -.2px; line-height: 24px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sb-make { color: var(--accent-ink); }
+.sb-mesub {
+  color: var(--ink3); font-size: 13px; line-height: 17px;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.sb-chev { color: var(--ink4); flex: 0 0 auto; }
+.sb-x {
+  width: 44px; height: 44px; border-radius: 22px; flex: 0 0 auto; align-self: flex-start;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(22,24,29,.05); color: var(--ink2);
+  transition: transform .2s var(--ease);
+}
+.sb-x:active { transform: scale(.94); }
+.sb-backb { align-self: center; }
+.sb-backic { transform: scaleX(-1); }
+
+.sb-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding: 2px 10px calc(var(--sab, 0px) + 18px);
+}
+.sb-group { display: flex; flex-direction: column; }
+.sb-row {
+  display: flex; align-items: center; gap: 14px; width: 100%; min-width: 0;
+  min-height: 52px; padding: 6px 12px; border-radius: 14px; text-align: left;
+  font-family: var(--font); color: var(--ink);
+  transition: background-color .2s;
+}
+.sb-row:active { background: var(--surface2); }
+.sb-rowic { color: var(--ink2); flex: 0 0 auto; }
+.sb-rowmid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sb-rowl { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-rows { font-size: 13px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* band hues mean air only — the destructive row stays ink (as Settings) */
+.sb-danger, .sb-danger .sb-rowic { color: var(--ink); }
+.sb-label {
+  margin: 16px 12px 4px; color: var(--ink4);
+  font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+}
+.sb-empty { padding: 8px 12px 6px; color: var(--ink3); font-size: 14px; line-height: 20px; }
+.sb-sep { height: .5px; background: var(--ink15); margin: 14px 12px 8px; }
+
+/* privacy page */
+.sb-subtop { padding-left: 8px; }
+.sb-subh {
+  flex: 1; min-width: 0; margin: 0; outline: none;
+  color: var(--ink); font-size: 19px; font-weight: 500; letter-spacing: -.2px; line-height: 24px;
+}
+.sb-pvlist { list-style: none; margin: 4px 0 0; padding: 0 2px; display: flex; flex-direction: column; }
+.sb-pv { display: flex; flex-direction: column; gap: 3px; padding: 12px 10px; }
+.sb-pv + .sb-pv { box-shadow: 0 -.5px 0 var(--ink10); }
+.sb-pvk { display: flex; align-items: baseline; gap: 8px; color: var(--ink); font-size: 15px; font-weight: 500; }
+.sb-pvn { margin-left: auto; color: var(--ink3); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sb-pvt { color: var(--ink2); font-size: 14px; line-height: 20px; }
+.sb-pvno { margin: 8px 12px 10px; color: var(--ink3); font-size: 13px; line-height: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-panel, .sb-scrim, .sb-page { transition-duration: .01ms !important; }
+}
+
+/* programmatic focus targets (panel fallback, privacy heading) — no ring;
+   rows keep motion.css's keyboard ring */
+.sb-panel:focus-visible, .sb-subh:focus-visible { outline: none; }
+
+/* narrowest phones: the name gets the chevron's room */
+@media (max-width: 359px) { .sb-chev { display: none; } }

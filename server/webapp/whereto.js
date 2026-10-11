@@ -1,9 +1,13 @@
-/* Alive webapp — where to. PIXEL TWIN of the Android app's
-   Mobile/src/screens/SearchScreen.tsx + components/shell/CompareSheet.tsx
-   option cards + screens/VehicleSheet.tsx.
-   Same screens, same card order, same strings, same shapes, same type,
-   same spacing. The web runtime stays: A.search cascade + mrank honoring,
-   A.api /v2/plan, A.map paint, A.show('journey', {option, from, to}). */
+/* Alive webapp — where to. ONE Google-Maps-like surface:
+     search  — From + To rows (they ARE the inputs) over one results list
+               (A.search.live progressive rows when present, else the
+               A.search.search cascade). No air / stay / play rows here.
+     modes   — Health Maxer · Petrol + Health · Time + Health, chosen
+               BEFORE routing (remembered in whereto.mode)
+     vehicle — the VehicleSheet wizard (trip ctx: one tap on a saved ride)
+     routes  — POST /v2/plan {mode}; simple cards (time, air, traffic,
+               petrol, one short why), route lines + live jams on the map,
+               Start → A.show('journey', {option, from, to, mode, vehicle}). */
 (() => {
 'use strict';
 
@@ -24,66 +28,37 @@ const doseColor = (pm) => bandIdx(pm) <= 1 ? INK3 : BAND_HEX[bandIdx(pm)];
 
 /* ── strings — en table verbatim from Mobile/src/i18n/strings.ts ──── */
 const T = {
-  fromLabel: 'from', fieldTo: 'To', yourSpot: 'your spot…',
+  fromLabel: 'From', fieldTo: 'To', yourSpot: 'your spot…',
   searchPlaceholder: 'Where to?', searchFromPlaceholder: 'Where from?',
   yourLocation: 'Your location', chooseOnMap: 'Choose on map',
   mapPickHint: 'tap the map to drop a pin there',
   sidebarSavedPlaces: 'Saved places', recents: 'Recent',
-  exploreHeader: 'air answers', resultsHeader: 'Results',
-  searching: 'Searching…', noPlaceFound: 'no place found — try a landmark',
+  searching: 'Searching…', noPlaceFound: 'no place found — try a landmark, or choose on the map',
+  noExact: 'No exact match — closest places',
+  slowSearch: 'this is taking long — try a shorter name, or choose on the map',
+  keepTyping: 'keep typing — a place, a landmark or an address',
   emptySearchHint: 'type a place or landmark — or choose on the map',
-  outsideDelhi: 'outside Delhi — no smoke estimate here',
   home: 'Home', work: 'Work',
   saveAsHome: 'Save as Home', saveAsWork: 'Save as Work',
   savedHome: 'Home saved', savedWork: 'Work saved',
   removeHome: 'Remove Home', removeWork: 'Remove Work',
-  staysTitle: 'where to stay', doorStaysSub: 'stays, lightest air first · near you',
-  explorePlayTitle: 'when to go out', doorPlaySub: 'the next 24 h · near you',
-  airIntentTitle: 'the air map',
-  exploreStaysTitle: 'stays — lightest air first',
-  explorePlayRowTitle: "when's the air lightest to play",
-  exploreNearYou: 'near you', exploreNearPlace: 'near {place}',
-  mode_leastSmoke: ' · least smoky way',
-  mode_leastSmokeAlt: ' · least smoky option {n}',
-  mode_altN: ' · alt {n}',
-  checkingRoutes: 'finding the purest route for you…',
+  modesQ: 'How do you want to go?',
+  checkingRoutes: 'finding the cleanest ways there…',
   noRoutes: 'no route found between those two places',
   plan_failed: "couldn't load the ways there — check the connection",
-  plan_failed_server: "the server couldn't route this trip",
   plan_retry: 'try again',
   plan_outside_title: 'this trip sits outside Delhi NCR',
-  plan_outside_body: 'Alive only measures the air inside Delhi NCR — this trip leaves the air map, so its smoke can’t be counted honestly.',
+  plan_outside_body: 'Alive only measures the air inside Delhi NCR, so this trip can’t be counted honestly.',
   plan_outside_cta: 'change the trip',
-  plan_coverage_note: 'smoke counted only for the Delhi NCR part',
-  compare_smokeIn: 'smoke you breathe', compare_pick: 'our pick',
-  compare_safest: 'least smoky', compare_yours: 'your usual',
-  compare_feltMore: '~{x}× more inhaled than {m}',
-  compare_moreVs: '+{n} µg more than {m}', compare_doseNA: 'no estimate',
-  delta_airPct: '{p}% air', delta_sameAir: 'same air',
-  delta_minQuicker: '{m} min quicker', delta_sameTime: 'same time',
-  delta_worth: 'worth it for {who}', delta_takeFast: 'take the fast one',
-  delta_defaultBoth: 'the default — fastest AND the lighter air today',
-  delta_defaultCleanSlow: 'the default · the lighter air, {m} min slower',
-  delta_defaultSaves: 'the default · {p} air vs the purest — saves {m} min',
-  delta_defaultSlower: 'the default · {p} air vs the purest — {m} min slower',
-  delta_selfLightest: 'the default — fastest, and the lightest air today',
-  who_schoolRun: 'the school run', who_rider: 'a delivery rider',
-  who_commute: 'the commute', who_rideIn: 'the ride in',
-  who_walkThere: 'the walk there', who_visitor: 'a visitor',
-  startJourney: 'start journey', arriveAt: 'arrive {t}',
-  unitsKm: 'km', minUnit: 'min', bandUpTo: 'up to {n}',
-  lightestOnBoth: 'lightest on both', lightestForYou: 'lightest for you',
-  lightestForDelhi: 'lightest for Delhi',
+  compare_doseNA: 'no air estimate',
+  breathed: 'breathed', traffic: 'traffic', otherWays: 'other ways to go',
+  startJourney: 'Start', arriveAt: 'arrive {t}',
+  unitsKm: 'km', minUnit: 'min',
   viaStreets: 'via {streets}',
-  veh_introTitle: 'before you pick',
-  veh_introBody: 'the smoke estimate fits what you actually take — a metro cabin, a bike, a car on Ring Road breathe different air on the same trip.',
-  veh_introHonest: 'no sign-in, nothing leaves this phone. you can skip it — the Delhi fleet average is a decent guess.',
-  veh_start: "tell us what you're taking", veh_why: 'your pick sharpens the “your ride puts out” numbers — saved on this phone only',
   vehicleQ1: 'What are you taking?', vehicleQ2: 'Fuel?',
   vehicleQ3: 'Roughly when was it bought?',
-  vehicleQ_back: 'back', vehicleQ_skip: 'skip — a typical Delhi ride works',
-  vehicleDone: 'got it — estimates now use your ride.',
-  vehicle_likeYours: 'a typical Delhi ride', veh_now: 'right now: {v}',
+  vehicleQ_back: 'back', vehicleQ_skip: 'skip — a typical Delhi ride', puc_skip: 'skip',
+  vehicle_likeYours: 'a typical Delhi ride',
   veh_grp_own: 'your own', veh_grp_shared: 'shared', veh_grp_noengine: 'no engine',
   vehicle_car: 'car', vehicle_auto: 'auto', vehicle_bike: 'bike / scooter',
   vehicle_bus: 'bus', vehicle_metro: 'metro', vehicle_cycle: 'cycle', vehicle_walk: 'on foot',
@@ -145,7 +120,7 @@ const D = {
   airport: 'M480-120 377-91q-14 4-25.5-4.5T340-118q0-12 3-19.5t8-11.5l69-51v-220l-291 86q-19 5-34-6t-15-31q0-15 5-25t14-15l321-189v-220q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v220l321 189q9 5 14 15t5 25q0 20-15 31t-34 6l-291-86v220l69 51q5 4 8 11.5t3 19.5q0 14-11.5 22.5T583-91l-103-29Z',
   temple: 'M80-160v-320q0-17 11.5-28.5T120-520q17 0 28.5 11.5T160-480v40h80l119-395v-45q0-17 11.5-28.5T399-920q17 0 28.5 11.5T439-880v40h81v-40q0-17 11.5-28.5T560-920q17 0 28.5 11.5T600-880v40l120 400h80v-40q0-17 11.5-28.5T840-520q17 0 28.5 11.5T880-480v320q0 33-23.5 56.5T800-80H560q-17 0-28.5-11.5T520-120v-160h-80v160q0 17-11.5 28.5T400-80H160q-33 0-56.5-23.5T80-160Zm268-360h264l-24-80H372l-24 80Zm48-160h168l-24-80H420l-24 80ZM160-160h200v-120q0-33 23.5-56.5T440-360h80q33 0 56.5 23.5T600-280v120h200v-200h-80q-26 0-47.5-15.5T643-417l-7-23H324l-7 23q-8 26-29.5 41.5T240-360h-80v200Zm320-280Z',
   mosque: 'M40-200v-411q-18-11-29-28.5T0-680q0-23 24-56t56-64q32 31 56 64t24 56q0 23-11 40.5T120-611v171h80v-80q0-25 16-48t46-30q-11-17-16.5-37t-5.5-41q0-40 19-74t51-56l125-84q20-14 45-14t45 14l125 84q32 22 51 56t19 74q0 21-5.5 41T698-598q30 7 46 30t16 48v80h80v-171q-18-11-29-28.5T800-680q0-23 24-56t56-64q32 31 56 64t24 56q0 23-11 40.5T920-611v411q0 33-23.5 56.5T840-120H560q-17 0-28.5-11.5T520-160v-120q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280v120q0 17-11.5 28.5T400-120H120q-33 0-56.5-23.5T40-200Zm356-400h168q32 0 54-22t22-54q0-20-9-36.5T606-740l-126-84-126 84q-16 11-25 27.5t-9 36.5q0 32 22 54t54 22ZM120-200h240v-80q0-50 35-85t85-35q50 0 85 35t35 85v80h240v-160h-80q-33 0-56.5-23.5T680-440v-80H280v80q0 33-23.5 56.5T200-360h-80v160Zm360-320Zm0-80Zm0 2Z',
-  church: 'M80-160v-188q0-24 13-43.5t35-29.5l112-50v-80q0-23 12-41.5t32-29.5l156-78v-60h-40q-17 0-28.5-11.5T360-800q0-17 11.5-28.5T400-840h40v-40q0-17 11.5-28.5T480-920q17 0 28.5 11.5T520-880v40h40q17 0 28.5 11.5T600-800q0 17-11.5 28.5T560-760h-40v60l156 78q20 11 32 29.5t12 41.5v80l112 50q22 10 35 29.5t13 43.5v188q0 33-23.5 56.5T800-80H560q-17 0-28.5-11.5T520-120v-120q0-17-11.5-28.5T480-280q-17 0-28.5 11.5T440-240v120q0 17-11.5 28.5T400-120H160q-33 0-56.5-23.5T80-160Zm80 0h200v-82q0-51 35-86.5t85-35.5q50 0 85 35.5t35 86.5v82h200v-192l-160-72v-134l-160-82-160 82v134l-160 72v192Zm320-260q25 0 42.5-17.5T540-480q0-25-17.5-42.5T480-540q-25 0-42.5 17.5T420-480q0 25 17.5 42.5T480-420q0 20Z',
+  church: 'M80-160v-188q0-24 13-43.5t35-29.5l112-50v-80q0-23 12-41.5t32-29.5l156-78v-60h-40q-17 0-28.5-11.5T360-800q0-17 11.5-28.5T400-840h40v-40q0-17 11.5-28.5T480-920q17 0 28.5 11.5T520-880v40h40q17 0 28.5 11.5T600-800q0 17-11.5 28.5T560-760h-40v60l156 78q20 11 32 29.5t12 41.5v80l112 50q22 10 35 29.5t13 43.5v188q0 33-23.5 56.5T800-80H560q-17 0-28.5-11.5T520-120v-120q0-17-11.5-28.5T480-280q-17 0-28.5 11.5T440-240v120q0 17-11.5 28.5T400-120H160q-33 0-56.5-23.5T80-160Zm80 0h200v-82q0-51 35-86.5t85-35.5q50 0 85 35.5t35 86.5v82h200v-192l-160-72v-134l-160-82-160 82v134l-160 72v192Zm320-260q25 0 42.5-17.5T540-480q0-25-17.5-42.5T480-540q-25 0-42.5 17.5T420-480q0 25 17.5 42.5T480-420Z',
   bank: 'M200-320v-200q0-17 11.5-28.5T240-560q17 0 28.5 11.5T280-520v200q0 17-11.5 28.5T240-280q-17 0-28.5-11.5T200-320Zm240 0v-200q0-17-11.5-28.5T480-560q17 0 28.5 11.5T520-520v200q0 17-11.5 28.5T480-280q-17 0-28.5-11.5T440-320ZM120-120q-17 0-28.5-11.5T80-160q0-17 11.5-28.5T120-200h720q17 0 28.5 11.5T880-160q0 17-11.5 28.5T840-120H120Zm560-200v-200q0-17-11.5-28.5T720-560q17 0 28.5 11.5T760-520v200q0 17-11.5 28.5T720-280q-17 0-28.5-11.5T680-320Zm160-320H116q-15 0-25.5-10.5T80-676v-22q0-11 5.5-19t14.5-13l344-172q17-8 36-8t36 8l342 171q11 5 16.5 15t5.5 21v15q0 17-11.5 28.5T840-640Zm-582-80h444-444Zm0 0h444L480-830 258-720Z',
   atm: 'M520-400H400q-17 0-28.5 11.5T360-360q0 17-11.5 28.5T400-320h40q0 17 11.5 28.5T480-280q17 0 28.5 11.5T520-320h40q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520H440v-40h120q17 0 28.5 11.5T600-600q0-17-11.5-28.5T560-640h-40q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640h-40q-17 0-28.5 11.5T360-600v120q0 17-11.5 28.5T400-440h120v40ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Z',
   fuel: 'M160-160v-600q0-33 23.5-56.5T240-840h240q33 0 56.5 23.5T560-760v280h40q33 0 56.5 23.5T680-400v180q0 17 11.5 28.5T720-180q17 0 28.5-11.5T760-220v-288q-9 5-19 6.5t-21 1.5q-42 0-71-29t-29-71q0-32 17.5-57.5T684-694l-63-63q-9-9-9-21t9-21q8-8 20.5-8.5T663-800l127 124q15 15 22.5 35t7.5 41v380q0 42-29 71t-71 29q-42 0-71-29t-29-71v-200h-60v260q0 17-11.5 28.5T520-120H200q-17 0-28.5-11.5T160-160Zm80-400h240v-200H240v200Zm480 0q17 0 28.5-11.5T760-600q0-17-11.5-28.5T720-640q-17 0-28.5 11.5T680-600q0 17 11.5 28.5T720-560ZM240-200h240v-280H240v280Zm240 0H240h240Z',
@@ -258,76 +233,32 @@ const clockLabel = (ts) => {
   return `${h}:${String(d.getUTCMinutes()).padStart(2, '0')} ${ap}`;
 };
 
-/* ── option-card text — verbatim ports from CompareSheet ──────────── */
-const TAG_KEY = {
-  'lightest on both': 'lightestOnBoth',
-  'lightest for you': 'lightestForYou',
-  'lightest for delhi': 'lightestForDelhi',
-};
-const DELTA_WHO = {
-  car: 'who_schoolRun', car_open: 'who_schoolRun', bike: 'who_rider',
-  auto: 'who_commute', cycle: 'who_rideIn', walk: 'who_walkThere',
-  bus: 'who_visitor', 'metro+walk': 'who_visitor',
-};
-function deltaLine(o, minDose) {
-  const dv = o.delta;
-  if (!dv) return null;
-  const pct = dv.air_pct, ug = dv.air_ug, min = dv.min_added;
-  const airPart = pct != null
-    ? (Math.abs(pct) <= 5 ? t('delta_sameAir')
-      : t('delta_airPct', { p: `${pct > 0 ? '+' : '−'}${Math.abs(Math.round(pct))}` }))
-    : ug != null && Math.abs(ug) >= 0.5
-      ? `${ug > 0 ? '+' : '−'}${Math.abs(ug).toFixed(1)} µg`
-      : null;
-  const timePart = min != null
-    ? (min > 0.5 ? `+${Math.round(min)} ${t('minUnit')}`
-      : min < -0.5 ? t('delta_minQuicker', { m: Math.round(-min) })
-      : t('delta_sameTime'))
-    : null;
-  const parts = [airPart, timePart].filter(Boolean).join(' · ');
-  if (dv.basis === 'route') {
-    if (!parts) return null;
-    const bandClear = (dv.band_drop ?? 0) >= 1;
-    const worth = (bandClear && (ug == null || ug <= 0.5)) || (pct != null && pct <= -25);
-    if (worth) return { text: `${parts} — ${t('delta_worth', { who: t(DELTA_WHO[o.mode] || 'who_commute') })}`, tone: 'good' };
-    if (pct != null && pct > 5 && (min == null || min > -0.5)) return { text: `${parts} — ${t('delta_takeFast')}`, tone: 'warn' };
-    if (pct != null && Math.abs(pct) <= 5 && (min == null || min > 0.5)) return { text: `${parts} — ${t('delta_takeFast')}`, tone: 'flat' };
-    return { text: parts, tone: pct != null && pct < -5 ? 'good' : 'flat' };
-  }
-  if (dv.basis === 'default') {
-    if (ug == null) return null;
-    if (ug <= 0) {
-      if (min != null && min > 0.5) return { text: t('delta_defaultCleanSlow', { m: Math.round(min) }), tone: 'good' };
-      return { text: t('delta_defaultBoth'), tone: 'good' };
-    }
-    if (pct == null) return null;
-    const p = `${Math.round(pct)}%`;
-    if (min != null && min < -0.5) return { text: t('delta_defaultSaves', { p: `+${p}`, m: Math.round(-min) }), tone: 'flat' };
-    return { text: t('delta_defaultSlower', { p: `+${p}`, m: Math.max(0, Math.round(min ?? 0)) }), tone: 'flat' };
-  }
-  if (dv.basis === 'self') {
-    return o.dose?.mid != null && minDose < Infinity && o.dose.mid === minDose
-      ? { text: t('delta_selfLightest'), tone: 'good' } : null;
-  }
-  return parts ? { text: parts, tone: 'flat' } : null;
-}
-/* RN modeLabel: server label + wire suffix — the wire qualifiers
-   ("· least-smoke rd/alt N", "· alt N") always translate to the voice's
-   own wording, never leak raw wire English into a visible row */
-const modeLabel = (o) => {
-  const lbl = String(o.label || '').trim() || 'way there';
-  const alt = lbl.match(/^(.*?) · least-smoke alt (\d+)$/);
-  if (alt) return alt[1] + t('mode_leastSmokeAlt', { n: alt[2] });
-  if (/ · least-smoke rd$/.test(lbl))
-    return lbl.replace(/ · least-smoke rd$/, t('mode_leastSmoke'));
-  const a = lbl.match(/^(.*?) · alt (\d+)$/);
-  if (a) return a[1] + t('mode_altN', { n: a[2] });
-  return lbl;
-};
-const isTransit = (o) => /metro|bus/.test(o.mode || '') || !!o.stations;
+/* ── route-card words + numbers — plain, short, from live fields only ── */
+const BAND_WORD = ['good', 'satisfactory', 'moderate', 'poor', 'very poor', 'severe'];
+const fmtMins = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
+const doseTxt = (x) => `${x < 1 ? x.toFixed(1) : Math.round(x)} µg`;
+const etaOf = (o) => (o && typeof o.live_eta_s === 'number' ? o.live_eta_s
+  : o && typeof o.eta_s === 'number' ? o.eta_s
+  : o && typeof o.duration_min === 'number' ? o.duration_min * 60 : Infinity);
+const doseOf = (o) => (o && o.dose && typeof o.dose.mid === 'number' ? o.dose.mid : Infinity);
+/* lane E: fuel_l (petrol/diesel litres; 0 = no engine / electric),
+   CNG rows carry fuel_l=null + fuel_kg — compared as amounts, shown in
+   their own unit, never as money */
+const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+const fuelOf = (o) => (o ? (num(o.fuel_l) != null ? num(o.fuel_l) : num(o.fuel_kg)) : null);
 
-/* ── vehicle profile — store/vehicle.ts ports ─────────��─��─────────── */
-const SERVER_CLASS = { car: 'car', bike: 'bike', auto: 'rickshaw', bus: 'bus', metro: 'metro', cycle: 'cycle', walk: 'pedestrian' };
+/* ── modes — chosen BEFORE routing (Modes contract, lane E) ───────── */
+const MODES = [
+  { id: 'health_max', glyph: 'leaf', title: 'Health Maxer', sub: 'cleanest air, no compromise', badge: 'cleanest' },
+  { id: 'petrol_health', glyph: 'fuel', title: 'Petrol + Health', sub: 'least petrol, clean air', badge: 'least petrol' },
+  { id: 'time_health', glyph: 'clock', title: 'Time + Health', sub: 'fastest with live traffic, still clean', badge: 'fastest' },
+];
+const modeDef = (id) => MODES.find((m) => m.id === id) || MODES[0];
+
+/* ── vehicle profile — store/vehicle.ts ports ─────────────────────── */
+/* plan._VEHICLE_ALIASES wants a STRING ('bike'); an object here made the
+   server fall back to 'car' whatever the rider picked */
+const SERVER_CLASS = { car: 'car', bike: 'bike', auto: 'auto', bus: 'bus', metro: 'metro', cycle: 'cycle', walk: 'walk' };
 const SERVER_YEAR = { pre_2010: 'before_2010', y2010_2016: '2010_2016', y2017_2020: '2017_2019', y2021_plus: '2020_plus' };
 const YEAR_KEY = { pre_2010: 'yearBefore2010', y2010_2016: 'year2010to2016', y2017_2020: 'vehicle_year2017to2020', y2021_plus: 'vehicle_year2021plus', not_sure: 'yearNotSure' };
 const FUEL_KEY = { petrol: 'fuelPetrol', diesel: 'fuelDiesel', cng: 'fuelCNG', ev: 'fuelElectric' };
@@ -343,7 +274,7 @@ const CLS_CAP = { car: 'veh_cap_car', auto: 'veh_cap_auto', bike: 'veh_cap_bike'
 const FUEL_CAP = { petrol: 'veh_cap_petrol', diesel: 'veh_cap_diesel', cng: 'veh_cap_cng', ev: 'veh_cap_ev' };
 const YEAR_ORDER = ['pre_2010', 'y2010_2016', 'y2017_2020', 'y2021_plus', 'not_sure'];
 const BS_STAGES = [['bs3', 'puc_bs3'], ['bs4', 'puc_bs4'], ['bs6', 'puc_bs6']];
-function planVehicle(p) { return p && p.cls ? { cls: SERVER_CLASS[p.cls] } : null; }
+function planVehicle(p) { return p && p.cls ? SERVER_CLASS[p.cls] || null : null; }
 function planVehicleProfile(p) {
   if (!p || !p.cls) return null;
   const out = { class: SERVER_CLASS[p.cls] };
@@ -360,19 +291,24 @@ function vehicleLabel(p) {
     t('vehicle_' + (p.cls === 'walk' ? 'walk' : p.cls)),
   ].filter(Boolean).join(' ');
 }
+/* option.mode → the declared vehicle it represents (plan._FAMILY) */
+const FAMILY = { car: 'car', car_open: 'car', cab: 'car', auto: 'auto', e_rickshaw: 'auto', bike: 'bike', scooter: 'bike', bus: 'bus', metro: 'metro', 'metro+walk': 'metro', walk: 'walk', cycle: 'cycle' };
+const famOf = (o) => FAMILY[o.mode] || (/metro/.test(o.mode || '') ? 'metro' : /bus/.test(o.mode || '') ? 'bus' : 'car');
 
 /* ── store keys ───────────────────────────────────────────────────── */
 const K_RECENT = 'whereto.recents', K_SAVED = 'whereto.saved',
-  K_VEH = 'whereto.vehicle', K_LAST = 'whereto.last';
+  K_VEH = 'whereto.vehicle', K_LAST = 'whereto.last', K_MODE = 'whereto.mode';
 const loadJ = (k, fb) => { try { return A.store.get(k, fb); } catch (e) { return fb; } };
 
 /* ── per-mount state ──────────────────────────────────────────────── */
 let S = null;
 
-/* ═══════════════ SEARCH SURFACE — SearchScreen.tsx twin ════════════ */
+/* ═══════════════ SEARCH SURFACE — one Google-Maps surface ══════════
+   From + To rows (they ARE the inputs) over one results list. Nothing
+   else lives here: no air rows, no stay/play doors, no intent rows. */
 function placeRow(o) {
-  /* o: {glyph, gcolor, title, sub, dist, armed, dim, data} → PlaceRow */
-  return `<button class="wt-row${o.armed ? ' armed' : ''}${o.dim ? ' dim' : ''}" type="button" data-k="${o.key || ''}">
+  /* o: {glyph, gcolor, title, sub, dist, armed, data} → PlaceRow */
+  return `<button class="wt-row${o.armed ? ' armed' : ''}" type="button" data-k="${esc(o.key || '')}">
     <span class="wt-gb">${icon(o.glyph || 'pin', 20, o.gcolor || INK2)}</span>
     <span class="wt-rt">
       <span class="wt-rt-t">${o.titleHtml || esc(o.title)}</span>
@@ -404,14 +340,10 @@ function saveStrip() {
     </button></div>`;
 }
 const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 0.001 && Math.abs(a.lon - b.lon) < 0.001;
-const rowKey = (p) => `${p.name || p.label}|${(p.lat || 0).toFixed(4)}|${(p.lon || 0).toFixed(4)}`;
+const rowKey = (p) => `${p.name || p.label}|${(+p.lat || 0).toFixed(4)}|${(+p.lon || 0).toFixed(4)}`;
 
-/* local instant rows — the "t0" paint: saved + recents matching query.
-   word-substring test runs on name + sub so a kind word ('bakery') also
-   surfaces a recent whose subtitle carries it; dist is the same bias the
-   server tier uses, so the merge can order honestly. */
 const havM = (a, b) => {
-  if (!a || !b || b.lat == null) return null;
+  if (!a || !b || b.lat == null || a.lat == null) return null;
   const R = 6371000, rad = Math.PI / 180;
   const s = Math.sin((b.lat - a.lat) * rad / 2) ** 2 +
     Math.cos(a.lat * rad) * Math.cos(b.lat * rad) *
@@ -419,6 +351,7 @@ const havM = (a, b) => {
   return 2 * R * Math.asin(Math.sqrt(s));
 };
 const searchBias = () => S.from || (A.geo && A.geo.pos) || A.DELHI;
+/* local instant rows — saved + recents matching every typed word */
 function instantRows() {
   const q = NORM(S.q).trim();
   const out = [];
@@ -429,73 +362,64 @@ function instantRows() {
     if (p && test(`${slot} ${p.name} ${p.sub || ''}`)) out.push({ ...p, _slot: slot });
   }
   for (const r of S.recents) if (test(`${r.name} ${r.sub || ''}`)) out.push({ ...r, _recent: true });
-  return out.slice(0, 4).map((p) => {
+  return out.slice(0, 3).map((p) => {
     const d = havM(bias, p);
     return d == null ? p : { ...p, dist: d / 1000 };
   });
 }
-const doorRows = () => `
-  <div class="wt-sec">${t('exploreHeader')}</div>
-  ${placeRow({ key: 'door:stay', glyph: 'hotel', gcolor: ACCENT, title: t('staysTitle'), sub: t('doorStaysSub') })}
-  ${placeRow({ key: 'door:play', glyph: 'explore', gcolor: ACCENT, title: t('explorePlayTitle'), sub: t('doorPlaySub') })}`;
-const AIR_RE = /\b(air|aqi|pollution|smoke|smog|pm ?2\.?5)\b/i;
-const STAY_RE = /\b(stay|stays|hotel|hotels|sleep|lodge|lodge)\b/i;
 
-/* kind-intent — 'bakery' alone is a kind search, not a name: the union
-   of CAT_MAP's existing kind vocabulary decides, so no new word list is
-   invented. the row is an accelerator — tapping it fires the same engine
-   query now, and the engine's own kind path returns many near matches. */
-const KIND_RE = new RegExp(`\\b(${CAT_MAP.map(([re]) => re.source).join('|')})\\b`, 'i');
-
-/* explore.ts ports — airIntent + exploreIntent run on the raw query
-   here (the web surface has no parser): token sets + near-anchor
-   extraction straight from Mobile/src/search/explore.ts */
-const I_STOP = new Set(['the','a','an','for','with','of','to','in','near','around','my','me','best','good','place','places','spot','spots','somewhere','somewere','where','there','here','out','at','and','is','it','what','whats','how','today','now','tonight','tomorrow','any','some']);
-const STAY_TOKS = new Set(['hotel','hotels','stay','stays','hostel','hostels','resort','resorts','lodge','lodges','room','rooms','guesthouse','guesthouses','bnb','airbnb','cottage','villa','villas','rental','rentals','accomodation','accommodation','pg','sleep']);
-const PLAY_TOKS = new Set(['play','playing','basketball','football','soccer','badminton','tennis','cricket','volleyball','pickleball','run','running','jog','jogging','walk','walking','hike','hiking','swim','swimming','cycle','cycling','workout','gym','exercise','park','parks','outdoors','picnic','sports','yoga','kite','kites']);
-const PLAY_PHRASE = /\bplay\b/i;
-const AIR_TOKS = new Set(['air','aqi','pollution','polluted','smoke','smog','smoggy','pm','pm2','pm25','breathe','breathing','breathed','airmap','quality','level','levels','concentration','spread','trend','trends','clean','cleanest','dirtiest','dust','dusty']);
-const AIR_WORD = /\b(air|aqi|pollution|polluted|smoke|smog|smoggy|pm2?\.?5|breathe|breathing|breathed|airmap|quality|concentration|cleanest|dirtiest|dust|dusty)\b/i;
-/* blockers — the query wants a place/thing/route, not the air map */
-const AIR_BLOCK = new Set(['route','routes','way','plan','trip','drive','compare','vs','which','shop','shops','shopping','restaurant','restaurants','eat','eats','food','hotel','hotels','stay','play','movie','office','school','college','metro','station','mall','market','doctor','hospital','chemist','pharmacy','gym','petrol','atm','bank','temple','temples']);
-const iToks = (q) => String(q || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-const hasToDest = (toks) => { const i = toks.indexOf('to'); return i > 0 && toks.slice(i + 1).some((x) => !I_STOP.has(x)); };
-function airIntentWeb(q) {
-  const toks = iToks(q);
-  if (!toks.length || toks.some((x) => AIR_BLOCK.has(x))) return null;
-  const ni = toks.indexOf('near');
-  const stem = ni >= 0 ? toks.slice(0, ni) : toks;
-  if (!stem.some((x) => AIR_TOKS.has(x) || AIR_WORD.test(x))) return null;
-  const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
-  return { nearQuery: near || null };
+/* ONE plain subtitle — never a raw tag ("amenity:place_of_worship"),
+   never the name echoed back, never "Delhi, Delhi" twice */
+const TAG_PREFIX = /\b(amenity|shop|tourism|leisure|building|highway|place|office|landuse|railway|public_transport|historic|man_made|natural|craft|healthcare|club|sport|emergency|aeroway|waterway|boundary|religion|cuisine|denomination)\s*[:=]\s*/gi;
+function plainSub(sub, name) {
+  let s = String(sub == null ? '' : sub).replace(TAG_PREFIX, '').replace(/_/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  const nm = NORM(name).trim();
+  const seen = new Set([nm]);
+  const segs = [];
+  for (const seg of s.split(/\s+·\s+|\s*\|\s*/)) {
+    const parts = [];
+    for (const p of seg.split(/\s*,\s*/)) {
+      const k = NORM(p).trim();
+      if (!k || seen.has(k)) continue;
+      seen.add(k); parts.push(p.trim());
+    }
+    if (parts.length) segs.push(parts.slice(0, 3).join(', '));
+  }
+  return segs.slice(0, 2).join(' · ');
 }
-function exploreIntentWeb(q) {
-  const toks = iToks(q);
-  if (!toks.length || hasToDest(toks)) return null;
-  const ni = toks.indexOf('near');
-  const stem = (ni >= 0 ? toks.slice(0, ni) : toks).filter((x) => !I_STOP.has(x));
-  let mode = null;
-  if (stem.some((x) => STAY_TOKS.has(x))) mode = 'stays';
-  else if (stem.some((x) => PLAY_TOKS.has(x)) || PLAY_PHRASE.test(q)) mode = 'playtime';
-  if (!mode) return null;
-  const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
-  const anchor = stem.filter((x) => !STAY_TOKS.has(x) && !PLAY_TOKS.has(x)).join(' ');
-  return { mode, nearQuery: near || anchor || null };
+function cleanRows(rows) {
+  const out = [], seen = new Set();
+  const bias = searchBias();
+  for (const r of rows || []) {
+    if (!r || r.lat == null || r.lon == null || !isFinite(+r.lat) || !isFinite(+r.lon)) continue;
+    const name = String(r.name || r.label || '').trim();
+    if (!name) continue;
+    const dm = r.dist != null ? r.dist : r.distance_m != null ? r.distance_m : havM(bias, { lat: +r.lat, lon: +r.lon });
+    const row = { ...r, name, lat: +r.lat, lon: +r.lon,
+      sub: plainSub(r.sub != null ? r.sub : r.subtitle, name), dist: dm };
+    const k = rowKey(row);
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(row);
+  }
+  return out;
 }
-function kindIntent(q) {
-  const toks = iToks(q);
-  if (!toks.length || hasToDest(toks)) return null;
-  const ni = toks.indexOf('near');
-  const stem = (ni >= 0 ? toks.slice(0, ni) : toks).filter((x) => !I_STOP.has(x));
-  if (!stem.length || !stem.every((x) => KIND_RE.test(x))) return null;
-  const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
-  return { stem: stem.join(' '), nearQuery: near || null };
+/* does a row answer the typed words? every word prefixes a word of its
+   name or subtitle — lets the last answer narrow while the next one is
+   on its way (never a stale row for a new query), and decides "exact" */
+const Q_STOP = new Set(['the', 'of', 'to', 'in', 'at', 'near', 'and', 'a', 'an', 'on', 'opp', 'opposite', 'behind', 'by']);
+const qToks = (q) => (NORM(q).match(WORD) || []).filter((w) => !Q_STOP.has(w));
+function rowMatches(r, toks) {
+  if (!toks.length) return true;
+  const words = NORM(`${r.name} ${r.sub || ''}`).match(WORD) || [];
+  return toks.every((tk) => words.some((w) => w.startsWith(tk)));
 }
 
 function searchListHTML() {
   let h = '';
-  const typing = S.q.trim().length > 0;
-  if (!typing) {
+  const qt = S.q.trim();
+  if (!qt) {
     const saved = ['home', 'work'].filter((s) => S.saved[s]);
     if (saved.length) {
       h += `<div class="wt-sec">${t('sidebarSavedPlaces')}</div>`;
@@ -513,66 +437,45 @@ function searchListHTML() {
         if (S.saveFor && S.saveFor.key === `recent:${k}`) h += saveStrip();
       }
     }
-    /* RN order: saved → recents → Quiet → 'air answers' door rows */
     if (!S.recents.length && !saved.length) {
       h += `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('emptySearchHint')}</span></div>`;
     }
-    h += doorRows();
     return h;
   }
-  /* typing — a typed air/stay/play-intent query earns ONE explore row
-     under 'air answers' (SearchScreen's airI/intent split), never the
-     static door pair; real results sit under 'Results' below */
-  const airI = airIntentWeb(S.q);
-  const intent = airI ? null : exploreIntentWeb(S.q);
-  if (airI || intent) {
-    h += `<div class="wt-sec">${t('exploreHeader')}</div>`;
-    if (airI) h += placeRow({ key: 'door:airmap', glyph: 'leaf', gcolor: ACCENT,
-      title: t('airIntentTitle'),
-      sub: airI.nearQuery ? t('exploreNearPlace', { place: airI.nearQuery }) : t('exploreNearYou') });
-    if (intent) h += placeRow({ key: intent.mode === 'stays' ? 'door:stay' : 'door:play',
-      glyph: intent.mode === 'stays' ? 'hotel' : 'explore', gcolor: ACCENT,
-      title: intent.mode === 'stays' ? t('exploreStaysTitle') : t('explorePlayRowTitle'),
-      sub: intent.nearQuery ? t('exploreNearPlace', { place: intent.nearQuery }) : t('exploreNearYou') });
-  }
   const inst = instantRows();
-  const kindI = (!airI && !intent) ? kindIntent(S.q) : null;
-  const results = S.results || [];
-  const asked = S.results != null;
-  /* local tier paints first, synchronously — the server merge lands under
-     the same 'Results' header when it answers, so nothing blocks and the
-     list never flashes empty-then-filled */
-  if (airI || intent || inst.length || kindI || S.pending || asked)
-    h += `<div class="wt-sec">${t('resultsHeader')}</div>`;
-  const instKeys = new Set();
+  const toks = qToks(S.q);
+  const searching = qt.length >= 2 && !S.final;
+  /* slim progress hint — rows already shown stay; deeper ones land below */
+  if (searching) h += `<div class="wt-prog" role="progressbar" aria-label="${t('searching')}"><i></i></div>`;
   for (const p of inst) {
     const k = p._slot ? `saved:${p._slot}` : `recent:${rowKey(p)}`;
-    instKeys.add(k);
     h += placeRow({ key: k, glyph: p._slot || 'clock', titleHtml: matchSpans(p._slot ? t(p._slot) : p.name, S.q), sub: p._slot ? p.name : p.sub, dist: p.dist, armed: S.saveFor && S.saveFor.key === k });
     if (S.saveFor && S.saveFor.key === k) h += saveStrip();
   }
-  if (kindI) h += placeRow({ key: `kind:${kindI.stem}`, glyph: catGlyph(kindI.stem), gcolor: ACCENT,
-    title: kindI.stem,
-    sub: kindI.nearQuery ? t('exploreNearPlace', { place: kindI.nearQuery }) : t('exploreNearYou') });
-  if ((inst.length || kindI) && (S.pending || asked)) h += `<i class="wt-hl"></i>`;
-  if (S.pending && !results.length) h += `<div class="wt-status">${t('searching')}</div>`;
-  else if (results.length) {
-    const dup = new Set(inst.map((p) => rowKey(p)));
-    for (const r of results) {
-      const k = rowKey(r);
-      if (dup.has(k)) continue;      /* already shown in the local tier */
-      h += placeRow({ key: `res:${k}`, glyph: catGlyph(r.kind), titleHtml: matchSpans(r.name, S.q), sub: r.sub, dist: r.dist != null ? r.dist / 1000 : null, armed: S.saveFor && S.saveFor.key === `res:${k}` });
-      if (S.saveFor && S.saveFor.key === `res:${k}`) h += saveStrip();
-    }
-  } else if (asked && !S.pending) {
-    h += `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('noPlaceFound')}</span></div>`;
+  const dup = new Set(inst.map((p) => rowKey(p)));
+  const rest = (S.results || []).filter((r) => !dup.has(rowKey(r)));
+  /* honest closeness: when the finished answer holds nothing that
+     carries every typed word, say so above the nearest guesses */
+  if (S.final && rest.length && !inst.length && !rest.some((r) => rowMatches(r, toks))) {
+    h += `<div class="wt-sec wt-near">${t('noExact')}</div>`;
   }
-  if (!h) h = `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('emptySearchHint')}</span></div>`;
+  for (const r of rest) {
+    const k = `res:${rowKey(r)}`;
+    h += placeRow({ key: k, glyph: catGlyph(r.kind || r.sub), titleHtml: matchSpans(r.name, S.q), sub: r.sub, dist: r.dist != null ? r.dist / 1000 : null, armed: S.saveFor && S.saveFor.key === k });
+    if (S.saveFor && S.saveFor.key === k) h += saveStrip();
+  }
+  if (!inst.length && !rest.length) {
+    if (searching) {
+      h += '<div class="wt-skel" aria-hidden="true"><i></i><i></i><i></i></div>';
+    } else if (qt.length >= 2) {
+      h += `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t(S.slow ? 'slowSearch' : 'noPlaceFound')}</span></div>`;
+    } else {
+      h += `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('keepTyping')}</span></div>`;
+    }
+  }
   return h;
 }
-/* a from/to row — the armed row IS the input (Uber pattern): the value
-   label becomes a real text field with the caret in place, the current
-   value degrades to the ghost placeholder while you type over it */
+/* a from/to row — the armed row IS the input (Uber pattern) */
 function rrowHtml(which) {
   const key = which === 'from' ? t('fromLabel') : t('fieldTo');
   const dot = which === 'to' ? ' to' : '';
@@ -587,7 +490,7 @@ function rrowHtml(which) {
   return `<div class="wt-rrow on edit" data-arm="${which}">
     <i class="wt-rdot${dot}"></i><span class="wt-rkey">${key}</span>
     <input class="wt-rin" type="text" autocapitalize="off" autocomplete="off" spellcheck="false"
-      enterkeyhint="search" placeholder="${esc(ph)}" value="${esc(S.q)}">
+      enterkeyhint="search" aria-label="${which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder')}" placeholder="${esc(ph)}" value="${esc(S.q)}">
     <button class="wt-bbtn wt-rx" type="button" data-act="clear" aria-label="clear" ${S.q ? '' : 'hidden'}>${icon('close', 15, INK3)}</button>
   </div>`;
 }
@@ -599,6 +502,8 @@ function focusArmed() {
   inp.setSelectionRange(n, n);
 }
 function renderSearch(focus) {
+  S.phase = 'search';
+  setHalf(false);
   const inCls = S._anim !== 'search' ? ' wt-in' : ''; S._anim = 'search';
   S.body.innerHTML = `<div class="wt${inCls}">
     <div class="wt-rc">
@@ -625,7 +530,8 @@ function bindSearch() {
   /* unarmed row: tap arms it — the input moves into that row */
   root.querySelectorAll('button.wt-rrow').forEach((b) => b.addEventListener('click', () => {
     if (S.armed === b.dataset.arm) return;
-    S.armed = b.dataset.arm;
+    cancelLive();
+    S.armed = b.dataset.arm; S.q = ''; S.results = null; S.final = true; S.saveFor = null;
     renderSearch(true);
   }));
   const armedRow = root.querySelector('.wt-rrow.edit');
@@ -644,9 +550,13 @@ function bindSearch() {
     });
     input.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      /* Go = take the top place row — never a door/intent row */
-      const first = root.querySelector('.wt-list .wt-row[data-k^="res:"], .wt-list .wt-row[data-k^="recent:"], .wt-list .wt-row[data-k^="saved:"]');
-      if (first) pickRow(first.dataset.k);
+      /* Go = take the top place row; nothing listed yet → look deeper now */
+      const first = root.querySelector('.wt-list .wt-row[data-k]');
+      if (first) { pickRow(first.dataset.k); return; }
+      if (S.q.trim().length >= 2) {
+        cancelLive(); S.final = false; paintList();
+        runSearch(S.q, { enter: true });
+      }
     });
   }
   root.querySelector('[data-act="close"]').addEventListener('click', () => S.chrome.close());
@@ -657,26 +567,31 @@ function bindSearch() {
   });
   root.querySelector('[data-act="locate"]').addEventListener('click', locateFill);
   root.querySelector('[data-act="map"]').addEventListener('click', armPinDrop);
-  /* rows — click fills the armed slot; press-and-hold opens SaveStrip */
-  root.querySelectorAll('.wt-row').forEach((b) => {
+  bindRows(root);
+}
+/* rows — click fills the armed slot; press-and-hold opens SaveStrip */
+function bindRows(root) {
+  root.querySelectorAll('.wt-list .wt-row').forEach((b) => {
     let lp = null, moved = false;
-    b.addEventListener('pointerdown', () => {
-      moved = false;
-      lp = setTimeout(() => { openSave(b.dataset.k); lp = null; }, 360);
-    });
+    b.addEventListener('pointerdown', () => { moved = false; lp = setTimeout(() => { openSave(b.dataset.k); lp = null; }, 420); });
     b.addEventListener('pointermove', (e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 8) { moved = true; clearTimeout(lp); lp = null; } });
     const cancel = () => { clearTimeout(lp); lp = null; };
-    b.addEventListener('pointerup', cancel);
-    b.addEventListener('pointercancel', cancel);
+    b.addEventListener('pointerup', cancel); b.addEventListener('pointercancel', cancel);
     b.addEventListener('click', () => { if (!moved) pickRow(b.dataset.k); moved = false; });
   });
-  root.querySelectorAll('.wt-sbtn').forEach((b) => b.addEventListener('click', (e) => {
+  root.querySelectorAll('.wt-list .wt-sbtn').forEach((b) => b.addEventListener('click', (e) => {
     e.stopPropagation(); saveSlot(b.dataset.slot);
   }));
 }
-/* near-first combining: same-name rows keep their engine tier position
-   and sort nearest-first inside it — 'bakery' surfaces many bakeries,
-   the closest of each name leading */
+function paintList() {
+  if (!S || S.phase !== 'search') return;
+  const l = S.body.querySelector('.wt-list');
+  if (!l) return;
+  l.innerHTML = searchListHTML();
+  bindRows(S.body.querySelector('.wt'));
+}
+/* near-first combining: same-name rows keep their tier position and sort
+   nearest-first inside it */
 function nearFirst(rows) {
   const groups = new Map(), order = [];
   for (const r of rows) {
@@ -691,46 +606,104 @@ function nearFirst(rows) {
   return out;
 }
 let qTimer = 0;
-function onQ(v) {
-  S.q = v;
+/* the answer in flight: {c: cancel, seq, v}. Typing forward RETIRES it
+   instead of killing it — its next network tier may still hold rows that
+   carry every word typed since (they narrow in, never as stale rows),
+   then it is cancelled. Editing backwards / clearing kills everything. */
+function killRec(r) {
+  if (!r) return;
+  clearTimeout(r.t);
+  if (typeof r.c === 'function') { try { r.c(); } catch (e) { /* already done */ } }
+  r.c = null;
+  if (S && S.retired) S.retired = S.retired.filter((x) => x !== r);
+}
+function cancelLive() {
   clearTimeout(qTimer);
+  if (!S) return;
+  if (S.guard) { clearTimeout(S.guard); S.guard = 0; }
+  killRec(S.cur); S.cur = null;
+  (S.retired || []).slice().forEach(killRec);
+  S.retired = [];
+}
+function retireLive() {
+  clearTimeout(qTimer);
+  if (!S) return;
+  if (S.guard) { clearTimeout(S.guard); S.guard = 0; }
+  const r = S.cur; S.cur = null;
+  if (!r || typeof r.c !== 'function') return;
+  r.t = setTimeout(() => killRec(r), 2500);
+  S.retired = [...(S.retired || []), r];
+  while (S.retired.length > 2) killRec(S.retired[0]);
+}
+function onQ(v) {
+  const prev = S.q;
+  S.q = v;
+  const forward = NORM(v).trim().startsWith(NORM(prev).trim()) && NORM(prev).trim().length >= 2;
+  if (forward) retireLive(); else cancelLive();
+  S.seq++;                       /* any answer still in flight is now stale */
+  S.saveFor = null; S.slow = false;
   const len = v.trim().length;
-  /* first letter paints the local tier synchronously; the engine tier is
-     only worth firing at 2+ chars (the cascade returns early below that) */
-  if (len < 2) S.results = null;
-  S.pending = len >= 2;
-  const list = S.body.querySelector('.wt-list');
-  if (list) { list.innerHTML = searchListHTML(); rebindList(); }
-  if (len < 2) return;
-  qTimer = setTimeout(() => runSearch(v), 190);
+  if (len < 2) { S.results = null; S.final = true; paintList(); return; }
+  /* the previous answer narrows in place — only rows that still carry
+     every typed word survive, so nothing on screen belongs to an old
+     query and the list never blanks while the next answer is coming */
+  if (S.results) S.results = S.results.filter((r) => rowMatches(r, qToks(v)));
+  S.final = false;
+  paintList();
+  qTimer = setTimeout(() => runSearch(v), typeof A.search.live === 'function' ? 90 : 170);
 }
-async function runSearch(v) {
+const NET_STAGE = (st) => st !== 'carry' && st !== 'cache';
+function runSearch(v, opts) {
+  if (!S) return;
   const seq = ++S.seq;
-  const rows = await A.search.search(v, searchBias());
-  if (!S || seq !== S.seq || v !== S.q || A.current() !== 'whereto') return;
-  S.results = nearFirst(rows || []);
-  S.pending = false;
-  const l = S.body.querySelector('.wt-list');
-  if (l) { l.innerHTML = searchListHTML(); rebindList(); }
-}
-function rebindList() {
-  const root = S.body.querySelector('.wt');
-  root.querySelectorAll('.wt-row').forEach((b) => {
-    let lp = null, moved = false;
-    b.addEventListener('pointerdown', () => { moved = false; lp = setTimeout(() => { openSave(b.dataset.k); lp = null; }, 360); });
-    b.addEventListener('pointermove', (e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 8) { moved = true; clearTimeout(lp); lp = null; } });
-    const cancel = () => { clearTimeout(lp); lp = null; };
-    b.addEventListener('pointerup', cancel); b.addEventListener('pointercancel', cancel);
-    b.addEventListener('click', () => { if (!moved) pickRow(b.dataset.k); moved = false; });
-  });
-  root.querySelectorAll('.wt-sbtn').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation(); saveSlot(b.dataset.slot);
-  }));
+  const bias = searchBias();
+  S.slow = false;
+  const rec = { c: null, seq, v, t: 0 };
+  const live = () => S && seq === S.seq && v === S.q && S.phase === 'search' && A.current() === 'whereto';
+  const apply = (rows, meta) => {
+    if (!S || S.phase !== 'search' || A.current() !== 'whereto') return;
+    const fin = !meta || meta.final !== false;
+    if (!live()) {
+      /* a retired answer: it may only ADD rows that carry every word
+         typed now, and only until the current answer has its final word */
+      const cur = S.q;
+      if (!S.final && cur.trim().length >= 2 && NORM(cur).trim().startsWith(NORM(v).trim())) {
+        const toks = qToks(cur);
+        const add = nearFirst(cleanRows(rows)).filter((r) => rowMatches(r, toks));
+        const have = new Set((S.results || []).map(rowKey));
+        const fresh = add.filter((r) => !have.has(rowKey(r)));
+        if (fresh.length) { S.results = [...(S.results || []), ...fresh].slice(0, 10); paintList(); }
+      }
+      if (fin || NET_STAGE(meta && meta.stage)) killRec(rec);
+      return;
+    }
+    let clean = nearFirst(cleanRows(rows));
+    /* while deeper tiers are still coming, only rows that carry every
+       typed word show — a re-ranked list from the last query never
+       passes for this one; the final word may add the closest guesses */
+    if (!fin) clean = clean.filter((r) => rowMatches(r, qToks(v)));
+    if (clean.length || fin) S.results = clean;
+    if (fin) { S.final = true; S.slow = false; }
+    if (fin && S.guard) { clearTimeout(S.guard); S.guard = 0; }
+    paintList();
+  };
+  /* never a spinner that never ends: if no final word lands, the hint
+     stops and an honest "taking long" line shows (late rows still land) */
+  S.guard = setTimeout(() => { if (live() && !S.final) { S.final = true; S.slow = true; S.guard = 0; paintList(); } }, 15000);
+  if (typeof A.search.live === 'function') {
+    try {
+      S.cur = rec;
+      const c = A.search.live(v, bias, (rows, meta) => apply(rows, meta || { final: false }), opts || {});
+      rec.c = typeof c === 'function' ? c : (c && typeof c.cancel === 'function' ? () => c.cancel() : null);
+      if (!rec.c) S.cur = S.cur === rec ? null : S.cur;
+      return;
+    } catch (e) { if (S && S.cur === rec) S.cur = null; /* fall through to the one-shot cascade */ }
+  }
+  Promise.resolve(A.search.search(v, bias, opts || {}))
+    .then((rows) => apply(rows, { final: true }))
+    .catch(() => apply([], { final: true }));
 }
 function placeByKey(k) {
-  if (k === 'door:stay') return { door: 'purest' };
-  if (k === 'door:play') return { door: 'airmap' };
-  if (k === 'door:airmap') return { door: 'airmap' };
   if (k && k.startsWith('saved:')) return { saved: k.slice(6) };
   if (k && k.startsWith('recent:')) {
     const kk = k.slice(7);
@@ -740,7 +713,6 @@ function placeByKey(k) {
     const kk = k.slice(4);
     return (S.results || []).find((r) => rowKey(r) === kk) || null;
   }
-  if (k && k.startsWith('kind:')) return { kindRow: true };
   return null;
 }
 function openSave(k) {
@@ -748,11 +720,10 @@ function openSave(k) {
   if (k.startsWith('saved:')) S.saveFor = { key: k, slot: k.slice(6) };
   else {
     const p = placeByKey(k);
-    if (!p || p.door || p.saved || p.kindRow) return;
+    if (!p || p.saved) return;
     S.saveFor = { key: k, place: p };
   }
-  const l = S.body.querySelector('.wt-list');
-  if (l) l.innerHTML = searchListHTML(), rebindList();
+  paintList();
 }
 function saveSlot(slot) {
   const sf = S.saveFor;
@@ -766,36 +737,35 @@ function saveSlot(slot) {
     A.store.set(K_SAVED, S.saved);
     S.saveFor = null;
   }
-  const l = S.body.querySelector('.wt-list');
-  if (l) l.innerHTML = searchListHTML(), rebindList();
+  paintList();
 }
 function pickRow(k) {
   const p = placeByKey(k);
   if (!p) return;
-  /* the kind-intent row is an accelerator, not a place — tapping it fires
-     the same engine query immediately instead of waiting on the debounce.
-     (server rows carry their own `kind` field — never key off that) */
-  if (p.kindRow) {
-    clearTimeout(qTimer);
-    if (S.q.trim().length >= 2) runSearch(S.q);
-    return;
-  }
-  if (p.door) { A.show(p.door); return; }
   if (p.saved != null) {
     const s = S.saved[p.saved];
-    if (s) finish({ name: t(p.saved), label: `${t(p.saved)} — ${s.name}`, lat: s.lat, lon: s.lon });
+    if (s) finish({ name: t(p.saved), label: `${t(p.saved)} — ${s.name}`, lat: s.lat, lon: s.lon, noRecent: true });
     return;
   }
   finish({ name: p.name, label: p.name, sub: p.sub, lat: p.lat, lon: p.lon });
 }
 function finish(place) {
-  S[S.armed] = { label: place.label || place.name, lat: place.lat, lon: place.lon };
-  pushRecent({ name: place.name, sub: place.sub, lat: place.lat, lon: place.lon });
+  const which = S.armed;
+  S[which] = { label: place.label || place.name, lat: place.lat, lon: place.lon };
+  if (!place.noRecent) pushRecent({ name: place.name, sub: place.sub, lat: place.lat, lon: place.lon });
   A.store.set(K_LAST, { from: S.from, to: S.to });
-  S.q = ''; S.results = null; S.pending = false; S.saveFor = null; S.notice = null;
-  /* RN: picking fills the field; if both set → the plan runs */
-  if (S.from && S.to) { S.phase = 'plan'; plan(); }
-  else { S.armed = S.armed === 'to' ? 'from' : 'to'; renderSearch(true); }
+  cancelLive();
+  S.q = ''; S.results = null; S.final = true; S.saveFor = null; S.notice = null;
+  if (S.from && S.to) afterBoth();
+  else { S.armed = which === 'to' ? 'from' : 'to'; renderSearch(true); }
+}
+/* both ends set → modes → vehicle → routes. Once both were chosen on this
+   visit, editing an end re-routes straight away with the same choices */
+function afterBoth() {
+  const ae = document.activeElement;
+  if (ae && ae.blur) ae.blur();
+  if (S.modeChosen && S.vehChosen) plan();
+  else showModes();
 }
 function pushRecent(p) {
   if (!p || p.name == null || p.lat == null) return;
@@ -807,13 +777,15 @@ async function locateFill() {
   if (!pos) {
     try { pos = await A.geo.locate(); } catch (e) { pos = null; }
   }
+  if (!S || S.phase !== 'search') return;
   if (!pos) { S.notice = 'couldn’t get your location — choose on the map instead'; renderSearch(true); return; }
-  finish({ name: t('yourLocation'), lat: pos.lat, lon: pos.lon });
+  finish({ name: t('yourLocation'), lat: pos.lat, lon: pos.lon, noRecent: true });
 }
 /* armed pin-drop — fold the sheet into a hint strip; one map tap fills it */
 function armPinDrop() {
   const ae = document.activeElement;
-  if (ae && ae.blur) ae.blur();          /* park the field's caret while folded */
+  if (ae && ae.blur) ae.blur();
+  cancelLive();
   S.armedPin = S.armed;
   S.el.classList.add('wt-armed');
   const strip = el(`<div class="wt-pinbar">
@@ -824,15 +796,16 @@ function armPinDrop() {
   strip.querySelector('.wt-pinx').addEventListener('click', disarmPin);
   S.el.querySelector('.sheet').appendChild(strip);
   const onTap = (e) => {
-    if (A.current() !== 'whereto') return;
+    if (A.current() !== 'whereto' || !S) return;
     const { lat, lon } = e.detail;
     const which = S.armedPin;
     disarmPin();
-    finish({ name: 'dropped pin', lat, lon });
+    finish({ name: 'dropped pin', lat, lon, noRecent: true });
     A.search.reverse(lat, lon).then((nm) => {
       if (nm && S && S[which] && S[which].lat === lat) {
         S[which].label = nm;
         if (S.phase === 'search') renderSearch(true);
+        else if (S.phase === 'modes') renderModes();
         else if (S.phase === 'plan') renderPlan();
       }
     }).catch(() => {});
@@ -841,209 +814,327 @@ function armPinDrop() {
   document.addEventListener('alive:maptap', onTap, { once: true });
 }
 function disarmPin() {
+  if (!S) return;
   S.armedPin = null;
   S.el.classList.remove('wt-armed');
   const s = S.el.querySelector('.wt-pinbar');
   if (s) s.remove();
   if (S._tapOff) { S._tapOff(); S._tapOff = null; }
-  /* sheet unfolds back to the same inline field — hand the caret back */
   if (S.phase === 'search' && A.current() === 'whereto') focusArmed();
 }
 
-/* ═══════════════ OPTIONS SURFACE — CompareSheet twin ═══════════════ */
+/* ═══════════════ trip row — shared by modes / vehicle / routes ═════ */
+function tripRow() {
+  return `<div class="wt-trip">
+    <button class="wt-th" type="button" data-arm="from"><i class="wt-tdot"></i><span class="wt-tt">${esc(S.from ? S.from.label : t('searchFromPlaceholder'))}</span></button>
+    <span class="wt-tarr" aria-hidden="true">→</span>
+    <button class="wt-th" type="button" data-arm="to"><i class="wt-tdot to"></i><span class="wt-tt">${esc(S.to ? S.to.label : t('searchPlaceholder'))}</span></button>
+  </div>`;
+}
+function bindTrip(root) {
+  root.querySelectorAll('.wt-th').forEach((b) => b.addEventListener('click', () => {
+    S.pseq++;                    /* a plan still in flight is now stale */
+    clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
+    S.armed = b.dataset.arm; S.q = ''; S.results = null; S.final = true;
+    renderSearch(true);
+  }));
+}
+function setHalf(on) { if (S && S.el) S.el.classList.toggle('wt-half', !!on); }
+
+/* ═══════════════ MODES — before routing ════════════════════════════ */
+function showModes() {
+  S.phase = 'modes';
+  S.pseq++;
+  clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
+  renderModes();
+}
+function renderModes() {
+  setHalf(false);
+  const cur = S.mode;
+  const inCls = S._anim !== 'modes' ? ' wt-in' : ''; S._anim = 'modes';
+  S.body.innerHTML = `<div class="wt${inCls}">
+    ${tripRow()}
+    <div class="wt-vhead"><span class="wt-vq">${t('modesQ')}</span></div>
+    <div class="wt-list wt-mlist">
+      ${MODES.map((m) => `<button class="wt-mode${m.id === cur ? ' on' : ''}" type="button" data-mode="${m.id}" aria-pressed="${m.id === cur}">
+        <span class="wt-mg">${icon(m.glyph, 26, m.id === cur ? ACCENT : INK2)}</span>
+        <span class="wt-mt"><b>${esc(m.title)}</b><span>${esc(m.sub)}</span></span>
+        ${CHEV_SVG(m.id === cur ? ACCENT : INK3, 20)}
+      </button>`).join('')}
+    </div>
+    <div class="wt-vfoot"><button class="wt-vfb" type="button" data-act="back">${t('vehicleQ_back')}</button><span></span></div>
+  </div>`;
+  const root = S.body.querySelector('.wt');
+  bindTrip(root);
+  root.querySelectorAll('.wt-mode').forEach((b) => b.addEventListener('click', () => {
+    S.mode = b.dataset.mode;
+    A.store.set(K_MODE, S.mode);
+    S.modeChosen = true;
+    if (S.vehChosen) plan();
+    else openVehicle('trip');
+  }));
+  root.querySelector('[data-act="back"]').addEventListener('click', () => {
+    if (S.plan && S.vehChosen) { S.phase = 'plan'; renderPlan(); paintRoutes(); return; }
+    S.armed = 'to'; S.q = ''; S.results = null; S.final = true;
+    renderSearch(true);
+  });
+}
+
+/* ═══════════════ ROUTES — after mode + vehicle ═════════════════════ */
 async function plan() {
-  S.planning = true; S.planErr = null; S.plan = null; S.sel = 0; S.detOpen = -1;
+  S.phase = 'plan';
+  S.planning = true; S.planErr = null; S.plan = null; S.view = null; S.sel = 0; S.showOther = false;
+  const seq = ++S.pseq;
+  clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
   renderPlan();
+  pinEnds();
   const body = {
     from: { lat: S.from.lat, lon: S.from.lon },
     to: { lat: S.to.lat, lon: S.to.lon },
+    mode: S.mode,
   };
-  const veh = planVehicle(S.veh), prof = planVehicleProfile(S.veh);
+  const veh = planVehicle(S.tripVeh), prof = planVehicleProfile(S.tripVeh);
   if (veh) body.vehicle = veh;
   if (prof) body.vehicle_profile = prof;
   const j = await A.api.post('/v2/plan', body, 45000);
-  if (A.current() !== 'whereto' || S.phase !== 'plan') return;
+  if (!S || seq !== S.pseq || A.current() !== 'whereto' || S.phase !== 'plan') return;
   S.planning = false;
   if (!j) { S.planErr = 'failed'; renderPlan(); return; }
   if (j.error === 'outside') { S.planErr = 'outside'; renderPlan(); return; }
   if (!Array.isArray(j.options) || !j.options.length) { S.planErr = j.error === 'failed' ? 'failed' : 'noroutes'; renderPlan(); return; }
   S.plan = j;
-  const ri = j.options.findIndex((o) => o.recommended);
-  S.sel = ri >= 0 ? ri : 0;
+  S.view = buildView(j.options);
+  S.sel = S.view.pickI >= 0 ? S.view.pickI : (S.view.prim[0] ? S.view.prim[0].i : 0);
+  if (S.view.otherPickI >= 0) S.showOther = true;   /* the server's pick is another ride — show it */
   S.partial = Array.isArray(j.degraded) && j.degraded.length ? j.degraded : null;
   renderPlan();
   paintRoutes();
 }
-function minDoseOf(opts) {
-  return opts.reduce((m, o) => o.dose && o.dose.mid != null ? Math.min(m, o.dose.mid) : m, Infinity);
+/* the mode's rule (Modes contract) applied to live fields only. The
+   server's own mode_pick always wins; petrol never claims a pick
+   without litres on the wire. */
+function rulePick(group, mode) {
+  const wd = group.filter((x) => isFinite(doseOf(x.o)));
+  if (!wd.length) return -1;
+  const minD = Math.min(...wd.map((x) => doseOf(x.o)));
+  const ok = wd.filter((x) => doseOf(x.o) <= minD * 1.15 + 1e-9);
+  if (mode === 'time_health') return ok.reduce((b, x) => (etaOf(x.o) < etaOf(b.o) ? x : b)).i;
+  if (mode === 'petrol_health') {
+    const f = ok.filter((x) => fuelOf(x.o) != null);
+    return f.length ? f.reduce((b, x) => (fuelOf(x.o) < fuelOf(b.o) ? x : b)).i : -1;
+  }
+  return wd.reduce((b, x) => (doseOf(x.o) < doseOf(b.o) ? x : b)).i;
 }
-function lightestOf(opts) {
-  let best = null;
-  for (const o of opts) if (o.dose && o.dose.mid != null && (!best || o.dose.mid < best.dose.mid)) best = o;
-  return best;
+const keyFor = (mode) => mode === 'time_health' ? etaOf
+  : mode === 'petrol_health' ? (o) => (fuelOf(o) != null ? fuelOf(o) : doseOf(o)) : doseOf;
+/* b is no better than a on time, air and petrol, and worse on one */
+function dominates(a, b) {
+  const ta = etaOf(a), tb = etaOf(b), da = doseOf(a), db = doseOf(b);
+  if (!isFinite(da) || !isFinite(db) || !isFinite(ta) || !isFinite(tb)) return false;
+  const fa = fuelOf(a), fb = fuelOf(b);
+  const fOk = fa == null || fb == null || fa <= fb + 0.005;
+  const better = ta < tb - 30 || da < db - 0.05 || (fa != null && fb != null && fa < fb - 0.01);
+  return ta <= tb + 30 && da <= db + 0.05 && fOk && better;
 }
-function optionCard(o, i, minDose, lightest) {
-  const d = o.dose;
+function nearSame(a, b) {
+  const da = doseOf(a), db = doseOf(b);
+  const fa = fuelOf(a), fb = fuelOf(b);
+  return Math.abs(etaOf(a) - etaOf(b)) < 60 &&
+    isFinite(da) && isFinite(db) && Math.abs(da - db) <= Math.max(0.3, 0.03 * Math.min(da, db)) &&
+    (fa == null || fb == null || Math.abs(fa - fb) < 0.05);
+}
+/* four near-identical cards of one vehicle collapse to the distinct ones:
+   drop routes another route beats on time AND air (AND petrol when the
+   server sends litres), then near-duplicates; the mode's pick stays */
+function collapse(group, pickI, mode) {
+  const key = keyFor(mode);
+  const sorted = [...group].sort((a, b) => (a.i === pickI ? -1 : b.i === pickI ? 1 : key(a.o) - key(b.o)));
+  const nd = sorted.filter((x) => x.i === pickI || !sorted.some((y) => y !== x && dominates(y.o, x.o)));
+  const out = [];
+  for (const x of nd) {
+    if (out.some((y) => nearSame(x.o, y.o))) continue;
+    out.push(x);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+function buildView(opts) {
+  const all = opts.map((o, i) => ({ o, i }));
+  const tv = S.tripVeh && S.tripVeh.cls;
+  let prim = all.filter((x) => x.o.your_vehicle === true);
+  if (!prim.length && tv) prim = all.filter((x) => famOf(x.o) === tv);
+  if (!prim.length) {
+    const r = opts.find((o) => o.recommended) || opts[0];
+    prim = all.filter((x) => famOf(x.o) === famOf(r));
+  }
+  /* the server's mode_pick is the truth wherever it sits; only an older
+     server (no flag anywhere) falls back to the contract rule */
+  const serverPickI = opts.findIndex((o) => o.mode_pick === true);
+  const flagged = prim.find((x) => x.o.mode_pick === true);
+  const pickI = flagged ? flagged.i : (serverPickI >= 0 ? -1 : rulePick(prim, S.mode));
+  const distinct = collapse(prim, pickI, S.mode);
+  /* other ways: the best of each other vehicle, cleanest first */
+  const primFam = new Set(prim.map((x) => famOf(x.o)));
+  const key = keyFor(S.mode);
+  const fams = new Map();
+  for (const x of all) {
+    const f = famOf(x.o);
+    if (primFam.has(f)) continue;
+    const cur = fams.get(f);
+    if (!cur || key(x.o) < key(cur.o)) fams.set(f, x);
+  }
+  if (serverPickI >= 0 && !flagged) {
+    const f = famOf(opts[serverPickI]);
+    fams.set(f, { o: opts[serverPickI], i: serverPickI });
+  }
+  const other = [...fams.values()].sort((a, b) => doseOf(a.o) - doseOf(b.o)).slice(0, 6);
+  return { prim: distinct, other, pickI, otherPickI: flagged ? -1 : serverPickI };
+}
+const baseLabel = (o) => String(o.label || '').split(' · ')[0].trim() || t('vehicle_' + famOf(o));
+const ROADISH = /^[A-Z0-9]/;
+function viaOf(o) {
+  if (o.stations && o.stations.board && o.stations.alight) return `${o.stations.board} → ${o.stations.alight}`;
+  let names = Array.isArray(o.via_streets) && o.via_streets.length ? o.via_streets
+    : Array.isArray(o.via_names) && o.via_names.length ? o.via_names : null;
+  if (!names && Array.isArray(o.steps)) {
+    const m = new Map();
+    for (const s of o.steps) {
+      const st = String((s && s.street) || '').trim();
+      if (st) m.set(st, (m.get(st) || 0) + ((s && s.distance_m) || 0));
+    }
+    names = [...m.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0]);
+  }
+  if (!names) return '';
+  const seen = new Set(), pick = [];
+  for (const n of names) {
+    const s = String(n || '').trim();
+    if (s.length < 3 || !ROADISH.test(s) || seen.has(s.toLowerCase())) continue;
+    seen.add(s.toLowerCase()); pick.push(s);
+    if (pick.length >= 2) break;
+  }
+  return pick.length ? t('viaStreets', { streets: pick.join(', ') }) : '';
+}
+const amt = (n) => (n < 0.1 ? n.toFixed(2) : n.toFixed(1));
+function fuelBits(o) {
+  /* "0.6 L petrol" · "0.3 kg CNG" · "saves 0.2 L" — zero-fuel rows only
+     say "no petrol" where petrol is the question (Petrol + Health) */
+  const out = [];
+  const petrolMode = S.mode === 'petrol_health';
+  const kind = String(o.fuel_type || (o.emissions && o.emissions.fuel) || '').toLowerCase();
+  const l = num(o.fuel_l), kg = num(o.fuel_kg);
+  if (l != null && l > 0) out.push(`${amt(l)} L ${kind === 'diesel' ? 'diesel' : 'petrol'}`);
+  else if (l == null && kg != null && kg > 0) out.push(`${amt(kg)} kg CNG`);
+  else if (l === 0 && petrolMode) out.push('no petrol');
+  const sl = num(o.fuel_saved_l), sk = num(o.fuel_saved_kg);
+  if (sl != null && sl >= 0.01) out.push(`saves ${amt(sl)} L`);
+  else if (sk != null && sk >= 0.01) out.push(`saves ${amt(sk)} kg`);
+  return out;
+}
+function optionCard(o, i, other) {
   const sel = i === S.sel;
-  const bandLoR = d && d.lo != null ? Math.round(d.lo) : null;
-  const bandHiR = d && d.hi != null ? Math.round(d.hi) : null;
-  const band = d && (d.lo != null || d.hi != null) && (d.lo !== d.mid || d.hi !== d.mid)
-    ? (d.lo != null && d.hi != null
-        ? (bandLoR !== bandHiR ? `${bandLoR}–${bandHiR}` : null)
-        : d.lo != null ? `${bandLoR}+` : t('bandUpTo', { n: bandHiR ?? 0 }))
-    : null;
-  const dCol = d && d.avg_conc_ugm3 != null ? doseColor(d.avg_conc_ugm3) : INK;
-  const doseGap = d && d.mid != null && minDose < Infinity && d.mid - minDose >= 0.5 ? Math.round(d.mid - minDose) : null;
-  const lightestWord = lightest ? (lightest.label || 'the lightest') : '';
-  const felt = doseGap != null && d && d.mid != null
-    ? (minDose > 0 && d.mid / minDose >= 2
-        ? t('compare_feltMore', { x: (d.mid / minDose).toFixed(1).replace(/\.0$/, ''), m: lightestWord })
-        : t('compare_moreVs', { n: doseGap, m: lightestWord }))
-    : null;
-  const meta = (o.distance_km != null ? `${o.distance_km} ${t('unitsKm')} · ` : '')
-    + t('arriveAt', { t: clockLabel(Date.now() + ((o.eta_s != null ? o.eta_s : (o.duration_min || 0) * 60)) * 1000) })
-    + (o.stations ? ` · ${esc(o.stations.board)}→${esc(o.stations.alight)}` : '');
-  const tag = o.tag ? (T[TAG_KEY[String(o.tag).toLowerCase()]] || o.tag) : null;
-  const lbl = modeLabel(o);
-  const cut = lbl.lastIndexOf(' · ');
-  const lblBase = cut > 0 ? lbl.slice(0, cut) : lbl;
-  const lblQual = (cut > 0 ? lbl.slice(cut) : '') + (o.your_vehicle ? ` · ${t('compare_yours')}` : '');
-  const dline = deltaLine(o, minDose);
-  const via = Array.isArray(o.via_streets) && o.via_streets.length
-    ? t('viaStreets', { streets: o.via_streets.slice(0, 2).join(' → ') + (o.via_streets.length > 2 ? '…' : '') })
-    : (o.via || null);
-  const cov = d && d.coverage != null && d.coverage < 0.999 ? t('plan_coverage_note') : null;
-  const frac = d && d.mid != null && o.distance_km ? Math.min(1, d.mid / Math.max(1e-6, worstDose())) : 0;
-  const fillCol = frac > 0.66 ? BREATH3 : frac > 0.33 ? BREATH2 : BREATH1;
-  const chip = o.safest
-    ? `<span class="wt-chip on">${icon('leaf', 11, ACCENT)} ${t('compare_safest')}</span>`
-    : tag ? `<span class="wt-chip">${esc(tag)}</span>`
-    : o.recommended ? `<span class="wt-chip pl">${t('compare_pick')}</span>` : '';
-  const det = S.detOpen === i ? `<span class="wt-det">
-      ${band ? `<div class="wt-det-row"><span>dose band</span><b>µg ${band}</b></div>` : ''}
-      ${d && d.avg_conc_ugm3 != null ? `<div class="wt-det-row"><span>avg along the way</span><b>${Math.round(d.avg_conc_ugm3)} µg/m³</b></div>` : ''}
-      ${d && d.note ? `<div class="wt-det-row"><span>${esc(doseNote(d.note))}</span></div>` : ''}
-      ${o.engine && o.engine.note ? `<div class="wt-det-row"><span>${esc(o.engine.note)}</span></div>` : ''}
-      ${S.plan && S.plan.field && S.plan.field.age_s != null ? `<div class="wt-det-row"><span>air map age</span><b>${Math.max(0, Math.round(S.plan.field.age_s / 60))} min</b></div>` : ''}
-    </span>` : '';
-  return `<button class="wt-opt${sel ? ' sel' : ''}" type="button" data-i="${i}">
+  const md = modeDef(S.mode);
+  const pick = S.view && (other ? i === S.view.otherPickI : i === S.view.pickI);
+  const e = etaOf(o);
+  const mins = isFinite(e) ? Math.max(1, Math.round(e / 60)) : null;
+  const d = o.dose;
+  let air;
+  if (d && typeof d.mid === 'number') {
+    const bi = typeof d.avg_conc_ugm3 === 'number' ? bandIdx(d.avg_conc_ugm3) : null;
+    air = `<span class="wt-oair">${bi != null ? `<i class="wt-odot" style="background:${BAND_HEX[bi]}"></i>` : ''}<b>${doseTxt(d.mid)}</b><span class="wt-obr">${t('breathed')}</span>${bi != null ? `<span class="wt-oword" style="background:var(--w${bi})">${BAND_WORD[bi]} air</span>` : ''}</span>`;
+  } else air = `<span class="wt-oair wt-na">${t('compare_doseNA')}</span>`;
+  const extra = [];
+  if (typeof o.traffic_delay_s === 'number' && o.traffic_delay_s > 60) extra.push(`<span class="wt-otraf">+${Math.round(o.traffic_delay_s / 60)} min ${t('traffic')}</span>`);
+  for (const fb of fuelBits(o)) extra.push(`<span class="wt-ofuel${S.mode === 'petrol_health' ? ' hl' : ''}">${fb}</span>`);
+  const meta = [baseLabel(o), o.distance_km != null ? `${o.distance_km} ${t('unitsKm')}` : null, viaOf(o)].filter(Boolean).join(' · ');
+  const why = o.why ? String(o.why).trim() : '';
+  return `<button class="wt-opt${sel ? ' sel' : ''}${other ? ' oth' : ''}" type="button" data-i="${i}" aria-pressed="${sel}">
     <span class="wt-selbg"></span>
     <span class="wt-well">${icon(vehicleGlyph(o.mode), 24, sel ? ACCENT : INK2)}</span>
     <span class="wt-omid">
-      <span class="wt-oline"><span class="wt-olbl">${esc(lblBase)}</span>${lblQual ? `<span class="wt-oqual">${esc(lblQual)}</span>` : ''}${chip}</span>
-      ${dline ? `<span class="wt-delta ${dline.tone}">${esc(dline.text)}</span>` : ''}
-      <span class="wt-meta">${meta}</span>
-      ${felt ? `<span class="wt-felt">${esc(felt)}</span>` : ''}
-      ${o.reason_line ? `<span class="wt-rsn">${esc(reasonTxt(o.reason_line))}</span>` : ''}
-      ${via ? `<span class="wt-via">${esc(via)}</span>` : ''}
-      ${cov ? `<span class="wt-cov">${esc(cov)}</span>` : ''}
+      ${pick ? `<span class="wt-badge">${icon(md.glyph, 12, ACC_INK)}<span>${esc(md.badge)}</span></span>` : ''}
+      <span class="wt-otop">${mins != null ? `<b class="wt-oeta">${fmtMins(mins)}</b><span class="wt-oarr">· ${t('arriveAt', { t: clockLabel(Date.now() + e * 1000) })}</span>` : ''}</span>
+      ${air}
+      ${extra.length ? `<span class="wt-oext">${extra.join('<span class="wt-osep">·</span>')}</span>` : ''}
+      ${why ? `<span class="wt-owhy">${esc(why)}</span>` : ''}
+      <span class="wt-ometa">${esc(meta)}</span>
     </span>
-    <span class="wt-oright">
-      ${d && d.mid != null
-        ? `<span class="wt-dose" style="color:${dCol}">≈${doseRound(d.mid)}</span>
-           <span class="wt-dsub">µg${band ? ` ${band}` : ''}</span>`
-        : `<span class="wt-dna">${t('compare_doseNA')}</span>`}
-      <span class="wt-eta">${o.eta_s != null ? `${Math.max(1, Math.round(o.eta_s / 60))} ${t('minUnit')}` : (o.duration_min != null ? `${Math.round(o.duration_min)} ${t('minUnit')}` : '')}</span>
-      ${d && d.mid != null ? `<span class="wt-barsrow">${icon('dust', 11, INK3)}<i class="wt-track"><i style="width:${Math.round(frac * 100)}%;background:${fillCol}"></i></i><span class="wt-i" data-info="${i}">${icon('info', 13, INK3)}</span></span>` : ''}
-    </span>
-    ${det}
   </button>`;
 }
-const doseRound = (x) => Math.round(x);
-function worstDose() {
-  const opts = (S.plan && S.plan.options) || [];
-  return opts.reduce((m, o) => o.dose && o.dose.mid != null ? Math.max(m, o.dose.mid) : m, 0);
-}
-const DOSE_NOTE = {
-  'dose engine unavailable': 'doseNote_engineDown',
-  'dose engine error': 'doseNote_engineError',
-  'field unavailable': 'doseNote_fieldDown',
-};
-const DOSE_NOTE_TXT = {
-  doseNote_engineDown: 'smoke estimate unavailable',
-  doseNote_engineError: 'smoke estimate error',
-  doseNote_fieldDown: 'air map unavailable',
-};
-const doseNote = (n) => DOSE_NOTE_TXT[DOSE_NOTE[n]] || n;
-const REASON_KEY = {
-  'Least smoke for you — no emissions estimate for this set.': 'reason_noEmis',
-  'Least smoke for you and lowest emissions — the easy pick.': 'reason_easyPick',
-  'Least smoke for you, but heavier for Delhi.': 'reason_heavierDelhi',
-  "Lowest emissions of the options — but you'd breathe more.": 'reason_lowestEmis',
-  'Within ~10% of the lightest dose and the lightest exhaust of those — a fair trade.': 'reason_fairTrade',
-};
-const REASON_TXT = {
-  reason_noEmis: 'Least smoke for you — no emissions estimate for this set.',
-  reason_easyPick: 'Least smoke for you and lowest emissions — the easy pick.',
-  reason_heavierDelhi: 'Least smoke for you, but heavier for Delhi.',
-  reason_lowestEmis: 'Lowest emissions of the options — but you\'d breathe more.',
-  reason_fairTrade: 'Within ~10% of the lightest dose and the lightest exhaust of those — a fair trade.',
-};
-function reasonTxt(n) {
-  const m = String(n).match(/ \+(\d+) min vs fastest\.$/);
-  const base = m ? n.slice(0, -m[0].length) : n;
-  const out = REASON_TXT[REASON_KEY[base]] || base;
-  return m ? out + ` ${m[1]} min slower than the fastest.` : out;
-}
 function renderPlan() {
+  setHalf(true);
   let mid = '';
   if (S.planning) {
-    mid = `<div class="wt-state">${icon('dust', 30, INK3)}<span class="wt-st-t">${t('checkingRoutes')}</span></div>`;
+    mid = `<div class="wt-list wt-plist" aria-busy="true">
+      <div class="wt-prog"><i></i></div>
+      <div class="wt-pstat">${t('checkingRoutes')}</div>
+      <div class="wt-skel wt-skc" aria-hidden="true"><i></i><i></i></div>
+    </div>`;
   } else if (S.planErr) {
     const title = S.planErr === 'outside' ? t('plan_outside_title') : S.planErr === 'noroutes' ? t('noRoutes') : t('plan_failed');
     const body = S.planErr === 'outside' ? t('plan_outside_body') : '';
     const cta = S.planErr === 'outside' ? t('plan_outside_cta') : t('plan_retry');
-    mid = `<div class="wt-state">${icon('warn', 52, INK4)}<span class="wt-st-t">${esc(title)}</span>
+    mid = `<div class="wt-state">${icon('warn', 40, INK4)}<span class="wt-st-t">${esc(title)}</span>
       ${body ? `<span class="wt-st-s">${esc(body)}</span>` : ''}
-      <button class="wt-retry" type="button" data-act="retry">${esc(cta)}</button></div>`;
-  } else if (S.plan) {
-    const opts = S.plan.options;
-    const minDose = minDoseOf(opts);
-    const lightest = lightestOf(opts);
-    const anyDose = opts.some((o) => o.dose && o.dose.mid != null);
-    mid = `<div class="wt-list">
-      ${anyDose ? `<div class="wt-legend">${icon('dust', 13, INK3)}<span>${t('compare_smokeIn')}</span></div>` : ''}
-      ${S.partial ? `<div class="wt-notice"><span>a few routes timed out — showing what we have</span></div>` : ''}
-      ${opts.map((o, i) => optionCard(o, i, minDose, lightest)).join('')}
+      <button class="wt-retry" type="button" data-act="${S.planErr === 'outside' ? 'edit' : 'retry'}">${esc(cta)}</button></div>`;
+  } else if (S.plan && S.view) {
+    const v = S.view;
+    mid = `<div class="wt-list wt-plist">
+      ${S.partial ? '<div class="wt-notice"><span>a few routes timed out — showing what we have</span></div>' : ''}
+      ${v.prim.map((x) => optionCard(x.o, x.i, false)).join('')}
+      ${v.other.length ? `<button class="wt-oth-t${S.showOther ? ' open' : ''}" type="button" data-act="other" aria-expanded="${!!S.showOther}"><span>${t('otherWays')}</span>${CHEV_SVG(INK3, 16)}</button>` : ''}
+      ${S.showOther ? v.other.map((x) => optionCard(x.o, x.i, true)).join('') : ''}
     </div>`;
   }
-  const veh = S.veh;
-  const chipTxt = veh ? vehicleLabel(veh) + (veh.puc ? ` · ${t('puc_badge')}` : '') : t('vehicle_likeYours');
-  const inCls2 = S._anim !== 'plan' ? ' wt-in' : ''; S._anim = 'plan';
-  S.body.innerHTML = `<div class="wt${inCls2}">
-    <div class="wt-trip">
-      <button class="wt-th" type="button" data-arm="from"><i class="wt-tdot"></i><span class="wt-tt">${esc(S.from ? S.from.label : '—')}</span></button>
-      <span class="wt-tarr">→</span>
-      <button class="wt-th" type="button" data-arm="to"><i class="wt-tdot to"></i><span class="wt-tt">${esc(S.to ? S.to.label : '—')}</span></button>
+  const md = modeDef(S.mode);
+  /* the pill stays short: fuel + ride ("petrol car") — the year lives in the wizard */
+  const vehTxt = S.tripVeh ? vehicleLabel({ cls: S.tripVeh.cls, fuel: S.tripVeh.fuel }) : t('vehicle_likeYours');
+  const inCls = S._anim !== 'plan' ? ' wt-in' : ''; S._anim = 'plan';
+  S.body.innerHTML = `<div class="wt${inCls}">
+    ${tripRow()}
+    <div class="wt-pills">
+      <button class="wt-pill wt-pmode" type="button" data-act="mode">${icon(md.glyph, 16, ACCENT)}<span>${esc(md.title)}</span>${CHEV_SVG(INK3, 14)}</button>
+      <button class="wt-pill" type="button" data-act="veh">${icon(vehicleGlyph(S.tripVeh && S.tripVeh.cls), 16, INK2)}<span>${esc(vehTxt)}</span>${CHEV_SVG(INK3, 14)}</button>
     </div>
     ${mid}
-    <div class="wt-vrow"><button class="wt-vchip" type="button" data-act="veh">
-      ${icon(vehicleGlyph(veh && veh.cls), 15, INK2)}<span>${esc(chipTxt)}</span>${CHEV_SVG(INK3, 11)}
-    </button></div>
-    <div class="wt-foot"><button class="wt-go" type="button" data-act="go" ${S.plan ? '' : 'disabled'}>${t('startJourney')}</button></div>
+    <div class="wt-foot"><button class="wt-go" type="button" data-act="go" ${S.plan && S.view ? '' : 'disabled'}>${t('startJourney')}</button></div>
   </div>`;
   const root = S.body.querySelector('.wt');
-  root.querySelectorAll('.wt-th').forEach((b) => b.addEventListener('click', () => {
-    S.armed = b.dataset.arm; S.phase = 'search'; S.q = ''; S.results = null; renderSearch(true);
-  }));
+  bindTrip(root);
   const retry = root.querySelector('[data-act="retry"]');
-  if (retry) retry.addEventListener('click', () => { S.planErr = null; plan(); });
-  root.querySelectorAll('.wt-opt').forEach((b) => b.addEventListener('click', (e) => {
-    const info = e.target.closest('[data-info]');
-    if (info) { S.detOpen = S.detOpen === +info.dataset.info ? -1 : +info.dataset.info; renderPlan(); return; }
+  if (retry) retry.addEventListener('click', () => plan());
+  const edit = root.querySelector('[data-act="edit"]');
+  if (edit) edit.addEventListener('click', () => { S.armed = 'to'; S.q = ''; S.results = null; S.final = true; renderSearch(true); });
+  root.querySelector('[data-act="mode"]').addEventListener('click', showModes);
+  root.querySelector('[data-act="veh"]').addEventListener('click', () => openVehicle('edit'));
+  const oth = root.querySelector('[data-act="other"]');
+  if (oth) oth.addEventListener('click', () => {
+    S.showOther = !S.showOther;
+    const sc = root.querySelector('.wt-plist');
+    const top = sc ? sc.scrollTop : 0;
+    renderPlan(); paintRoutes(false);
+    const sc2 = S.body.querySelector('.wt-plist');
+    if (sc2) sc2.scrollTop = top;
+  });
+  root.querySelectorAll('.wt-opt').forEach((b) => b.addEventListener('click', () => {
     S.sel = +b.dataset.i;
-    root.querySelectorAll('.wt-opt').forEach((x) => x.classList.toggle('sel', x === b));
+    root.querySelectorAll('.wt-opt').forEach((x) => {
+      const on = x === b;
+      x.classList.toggle('sel', on);
+      x.setAttribute('aria-pressed', on);
+      const w = x.querySelector('.wt-well svg');
+      if (w) w.setAttribute('fill', on ? ACCENT : INK2);
+    });
     paintRoutes();
   }));
-  const vehBtn = root.querySelector('[data-act="veh"]');
-  if (vehBtn) vehBtn.addEventListener('click', openVehicle);
   const go = root.querySelector('[data-act="go"]');
   if (go) go.addEventListener('click', () => {
     if (!S.plan) return;
     const o = S.plan.options[S.sel];
+    if (!o) return;
     if (A.screensReady && A.screensReady.journey) {
       A.show('journey', { option: o, from: S.from, to: S.to,
         options: S.plan && S.plan.options,
+        mode: S.mode, vehicle: S.tripVeh ? S.tripVeh.cls : famOf(o),
         field_age_s: S.plan && S.plan.field && S.plan.field.age_s });
     } else {
       A.toast('journey is still landing');
@@ -1051,138 +1142,180 @@ function renderPlan() {
   });
 }
 
-/* flat paint — RouteTint law: picked forest on a paper casing,
-   alternatives a quiet 3px hairline, never a band strip */
-function paintRoutes() {
-  if (!S.plan || !A.map) return;
+/* ── map: route lines (picked forest on paper casing, the rest a quiet
+   hairline), the two ends, live jams of the picked route, live flow ── */
+function trafficLayer(on) {
+  const tr = A.map && A.map.traffic;
+  if (!tr || (!on && !S.trafficOn)) return;
+  S.trafficOn = !!on;
+  try {
+    const r = typeof tr === 'function'
+      ? (tr.length >= 2 ? tr(null, !!on) : tr(!!on))
+      : tr && typeof tr.show === 'function' ? (on ? tr.show() : tr.hide()) : null;
+    if (r && typeof r.catch === 'function') r.catch(() => {});
+  } catch (e) { /* the overlay is optional — the routes stand alone */ }
+}
+function pinEnds() {
+  if (!A.map || !A.map.pin) return;
+  if (S.from) A.map.pin('wt-a', S.from.lon, S.from.lat, '<i class="wt-pa"></i>', 'wt-endpin');
+  if (S.to) A.map.pin('wt-b', S.to.lon, S.to.lat, '<i class="wt-pb"></i>', 'wt-endpin');
+}
+function clearJams() {
+  if (!S || !A.map) return;
+  (S.jamIds || []).forEach((id) => A.map.unpin(id));
+  S.jamIds = [];
+}
+function paintJams(o) {
+  clearJams();
+  const jams = o && Array.isArray(o.jams) ? o.jams : [];
+  jams.slice(0, 10).forEach((j, k) => {
+    if (!j || j.lat == null || j.lon == null) return;
+    const ds = Number(j.delay_s);
+    if (!(ds >= 30)) return;
+    const id = `wt-jam${k}`;
+    A.map.pin(id, j.lon, j.lat, `<div class="wt-jam"><i></i><span>+${Math.max(1, Math.round(ds / 60))} min</span></div>`, 'wt-jampin');
+    S.jamIds.push(id);
+  });
+}
+function clearMapExtras() {
+  if (!S || !A.map) return;
+  clearJams();
+  A.map.unpin('wt-a'); A.map.unpin('wt-b');
+  trafficLayer(false);
+}
+function paintRoutes(fit) {
+  if (!S || !S.plan || !S.view || !A.map) return;
   const opts = S.plan.options;
-  opts.forEach((o, i) => {
-    const g = o.geometry || o.route_geojson;
-    if (!g) return;
+  const show = new Set(S.view.prim.map((x) => x.i));
+  if (S.showOther) S.view.other.forEach((x) => show.add(x.i));
+  show.add(S.sel);
+  for (const id of S.paintedIds || []) if (!show.has(id)) A.map.hideRoute(`wt${id}`);
+  const order = [...show].filter((i) => i !== S.sel).concat([S.sel]);
+  for (const i of order) {
+    const o = opts[i];
+    const g = o && (o.geometry || o.route_geojson);
+    if (!g) continue;
     const picked = i === S.sel;
-    A.map.showRoute(`wt${i}`, g, o.segments);
+    A.map.showRoute(`wt${i}`, g, null);
     A.map.ready((m) => {
-      const line = `route-wt${i}-line`, seg = `route-wt${i}-segs-line`, cas = `route-wt${i}-casing`;
+      const line = `route-wt${i}-line`, cas = `route-wt${i}-casing`;
       if (m.getLayer(line)) {
         m.setPaintProperty(line, 'line-color', picked ? ACCENT : MAP_QUIET);
-        m.setPaintProperty(line, 'line-opacity', picked ? 1 : 0.5);
-        m.setPaintProperty(line, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 3 : 1.8, 14, picked ? 6 : 3]);
+        m.setPaintProperty(line, 'line-opacity', picked ? 1 : 0.55);
+        m.setPaintProperty(line, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 3.5 : 2, 14, picked ? 7 : 3.5]);
       }
       if (m.getLayer(cas)) {
         m.setPaintProperty(cas, 'line-color', picked ? PAPER : MAP_QUIET);
         m.setPaintProperty(cas, 'line-opacity', picked ? 1 : 0);
-        m.setPaintProperty(cas, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 5 : 2.5, 14, picked ? 9 : 4]);
+        m.setPaintProperty(cas, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 6 : 2.5, 14, picked ? 11 : 4]);
       }
-      /* RouteTint flat law — no band strips on the map at all */
-      if (m.getLayer(seg)) m.setPaintProperty(seg, 'line-opacity', 0);
+      if (picked) { try { if (m.getLayer(cas)) m.moveLayer(cas); if (m.getLayer(line)) m.moveLayer(line); } catch (e) { /* order is cosmetic */ } }
     });
-  });
-  for (let i = opts.length; i < (S.painted || 0); i++) A.map.hideRoute(`wt${i}`);
-  S.painted = opts.length;
+  }
+  S.paintedIds = [...show];
+  pinEnds();
+  paintJams(opts[S.sel]);
+  trafficLayer(true);
   const g = opts[S.sel] && (opts[S.sel].geometry || opts[S.sel].route_geojson);
-  if (g) A.map.fit(g, { top: 70, left: 24, right: 24, bottom: 340 });
+  if (g && fit !== false) {
+    const sh = S.el.querySelector('.sheet');
+    const h = sh ? sh.getBoundingClientRect().height : 360;
+    A.map.fit(g, { top: 76, left: 32, right: 32, bottom: Math.round(Math.min(h, window.innerHeight * 0.7) + 18) });
+  }
 }
 
-/* ═══════════════ VEHICLE SURFACE — VehicleSheet.tsx twin ═══════════ */
-function openVehicle() {
+/* ═══════════════ VEHICLE — VehicleSheet.tsx twin ═══════════════════
+   ctx 'trip': the step between modes and routes — one tap on the ride
+   you saved goes straight on; a new ride asks fuel + year only.
+   ctx 'edit': from the routes pill — the full wizard incl. PUC. */
+function openVehicle(ctx) {
   S.phase = 'veh';
-  S.wiz = { step: S.veh ? 'cls' : 'intro', cls: S.veh ? S.veh.cls : null, fuel: S.veh ? S.veh.fuel : null, year: S.veh ? S.veh.year : null, bs: S.veh && S.veh.puc ? S.veh.puc.bs : null, puc: S.veh && S.veh.puc ? { ...S.veh.puc } : {} };
+  S.pseq++;
+  clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
+  setHalf(false);
+  const v = S.veh;
+  S.wiz = { ctx: ctx || 'edit', step: 'cls', cls: v ? v.cls : null, fuel: v ? v.fuel : null, year: v ? v.year : null, bs: v && v.puc ? v.puc.bs : null, puc: v && v.puc ? { ...v.puc } : {} };
   renderVehicle();
 }
 const wizSteps = () => {
   const s = ['cls'];
   if (needsFuel(S.wiz.cls)) s.push('fuel');
-  if (needsYear(S.wiz.cls)) s.push('year', 'puc');
+  if (needsYear(S.wiz.cls)) s.push('year');
+  if (S.wiz.ctx === 'edit' && needsYear(S.wiz.cls)) s.push('puc');
   return s;
 };
 const stepQ = { cls: 'vehicleQ1', fuel: 'vehicleQ2', year: 'vehicleQ3', puc: 'puc_title' };
 function renderVehicle() {
   const w = S.wiz;
-  let inner = '';
-  if (w.step === 'intro') {
-    inner = `<div class="wt-vhead"><span class="wt-vq">${t('veh_introTitle')}</span></div>
-      <div class="wt-list">
-        <p class="wt-vbody">${t('veh_introBody')}</p>
-        <p class="wt-vhonest">${t('veh_introHonest')}</p>
-        <button class="wt-vstart" type="button" data-act="start">${t('veh_start')}</button>
-      </div>
-      <div class="wt-vfoot"><span></span><button class="wt-vfb" type="button" data-act="skip">${t('vehicleQ_skip')}</button></div>`;
-  } else if (w.step === 'done') {
-    const lbl = vehicleLabel({ cls: w.cls, fuel: w.fuel, year: w.year });
-    inner = `<div class="wt-vdone"><span class="wt-vdt">${t('vehicleDone')}</span>
-      <span class="wt-vds">${esc(lbl)}${w.puc && (w.puc.bs || w.puc.co_pct || w.puc.hc_ppm || w.puc.smoke_pct) ? ` · ${t('puc_badge')}` : ''}</span></div>`;
-  } else {
-    const steps = wizSteps();
-    const idx = Math.max(0, steps.indexOf(w.step));
-    let cards = '';
-    if (w.step === 'cls') {
-      cards = CLASS_GROUPS.map(([gk, items]) => `
-        <div class="wt-vgrp">${t(gk)}</div>
-        <div class="wt-vgrid">${items.map((c) => `
-          <button class="wt-vcard${w.cls === c ? ' on' : ''}" type="button" data-k="${c}">
-            <span class="wt-vg">${icon(vehicleGlyph(c), 24, w.cls === c ? ACCENT : INK2)}</span>
-            <span class="wt-vcard-mid"><span class="wt-vt">${t('vehicle_' + c)}</span><span class="wt-vcap">${t(CLS_CAP[c])}</span></span>
-            <span class="wt-radio"><i></i></span>
-          </button>`).join('')}</div>`).join('');
-    } else if (w.step === 'fuel') {
-      cards = `<div class="wt-vgrid">${fuelsFor(w.cls).map((f) => `
-        <button class="wt-vcard${w.fuel === f ? ' on' : ''}" type="button" data-k="${f}">
-          <span class="wt-vcard-mid"><span class="wt-vt">${t(FUEL_KEY[f])}</span><span class="wt-vcap">${t(FUEL_CAP[f])}</span></span>
-          <span class="wt-radio"><i></i></span>
-        </button>`).join('')}</div>`;
-    } else if (w.step === 'year') {
-      cards = YEAR_ORDER.map((y) => `
-        <button class="wt-vcard wt-vrow${w.year === y ? ' on' : ''}" type="button" data-k="${y}">
-          <span class="wt-vcard-mid"><span class="wt-vt">${t(YEAR_KEY[y])}</span>${y === 'not_sure' ? `<span class="wt-vcap">${t('veh_cap_y_notsure')}</span>` : ''}</span>
-          <span class="wt-radio"><i></i></span>
-        </button>`).join('');
-    } else if (w.step === 'puc') {
-      const fields = (w.fuel === 'diesel')
-        ? [['smoke_pct', 'puc_smoke', 'puc_smokeHint']]
-        : [['co_pct', 'puc_co', 'puc_coHint'], ['hc_ppm', 'puc_hc', 'puc_hcHint']];
-      cards = `<div class="wt-vgrp">${t('puc_bsQ')}</div>
-        <div class="wt-vgrid">${BS_STAGES.map(([bs, k]) => `
-          <button class="wt-vcard${w.bs === bs ? ' on' : ''}" type="button" data-bs="${bs}">
-            <span class="wt-vcard-mid"><span class="wt-vt">${t(k)}</span></span>
-            <span class="wt-radio"><i></i></span>
-          </button>`).join('')}</div>
-        <div class="wt-vfields">${fields.map(([f, lk, hk]) => `
-          <div class="wt-vfield">
-            <span class="wt-vfl">${t(lk)}</span>
-            <input class="wt-vin" type="text" inputmode="decimal" maxlength="6" data-f="${f}" value="${w.puc[f] != null ? esc(w.puc[f]) : ''}">
-            <span class="wt-vfh">${t(hk)}</span>
-          </div>`).join('')}</div>`;
-    }
-    inner = `<div class="wt-vhead">
-        <span class="wt-vq">${t(stepQ[w.step])}</span>
-        <span class="wt-dots">${steps.map((s, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('')}</span>
-      </div>
-      <p class="wt-vwhy">${w.step === 'puc' ? t('puc_helper') : (S.veh && w.step === 'cls' ? `${t('veh_now', { v: vehicleLabel(S.veh) })} — ${t('veh_why')}` : t('veh_why'))}</p>
-      <div class="wt-list">${cards}</div>
-      <div class="wt-vfoot">
-        <button class="wt-vfb" type="button" data-act="back">${t('vehicleQ_back')}</button>
-        <span class="wt-vfr">
-          ${w.step === 'puc' ? `<button class="wt-vfb wt-vsave" type="button" data-act="save">${t('receipt_save')}</button>` : ''}
-          <button class="wt-vfb" type="button" data-act="skip">${t('vehicleQ_skip')}</button>
-        </span>
-      </div>`;
+  const steps = wizSteps();
+  const idx = Math.max(0, steps.indexOf(w.step));
+  let cards = '';
+  if (w.step === 'cls') {
+    cards = CLASS_GROUPS.map(([gk, items]) => `
+      <div class="wt-vgrp">${t(gk)}</div>
+      <div class="wt-vgrid">${items.map((c) => `
+        <button class="wt-vcard${w.cls === c ? ' on' : ''}" type="button" data-k="${c}" aria-pressed="${w.cls === c}">
+          <span class="wt-vg">${icon(vehicleGlyph(c), 24, w.cls === c ? ACCENT : INK2)}</span>
+          <span class="wt-vcard-mid"><span class="wt-vt">${t('vehicle_' + c)}</span><span class="wt-vcap">${t(CLS_CAP[c])}</span></span>
+        </button>`).join('')}</div>`).join('');
+  } else if (w.step === 'fuel') {
+    cards = `<div class="wt-vgrid">${fuelsFor(w.cls).map((f) => `
+      <button class="wt-vcard${w.fuel === f ? ' on' : ''}" type="button" data-k="${f}" aria-pressed="${w.fuel === f}">
+        <span class="wt-vcard-mid"><span class="wt-vt">${t(FUEL_KEY[f])}</span><span class="wt-vcap">${t(FUEL_CAP[f])}</span></span>
+      </button>`).join('')}</div>`;
+  } else if (w.step === 'year') {
+    cards = YEAR_ORDER.map((y) => `
+      <button class="wt-vcard wt-vline${w.year === y ? ' on' : ''}" type="button" data-k="${y}" aria-pressed="${w.year === y}">
+        <span class="wt-vcard-mid"><span class="wt-vt">${t(YEAR_KEY[y])}</span>${y === 'not_sure' ? `<span class="wt-vcap">${t('veh_cap_y_notsure')}</span>` : ''}</span>
+      </button>`).join('');
+  } else if (w.step === 'puc') {
+    const fields = (w.fuel === 'diesel')
+      ? [['smoke_pct', 'puc_smoke', 'puc_smokeHint']]
+      : [['co_pct', 'puc_co', 'puc_coHint'], ['hc_ppm', 'puc_hc', 'puc_hcHint']];
+    cards = `<div class="wt-vgrp">${t('puc_bsQ')}</div>
+      <div class="wt-vgrid wt-vg3">${BS_STAGES.map(([bs, k]) => `
+        <button class="wt-vcard${w.bs === bs ? ' on' : ''}" type="button" data-bs="${bs}" aria-pressed="${w.bs === bs}">
+          <span class="wt-vcard-mid"><span class="wt-vt">${t(k)}</span></span>
+        </button>`).join('')}</div>
+      <div class="wt-vfields">${fields.map(([f, lk, hk]) => `
+        <label class="wt-vfield">
+          <span class="wt-vfl">${t(lk)}</span>
+          <input class="wt-vin" type="text" inputmode="decimal" maxlength="6" data-f="${f}" value="${w.puc[f] != null ? esc(w.puc[f]) : ''}">
+          <span class="wt-vfh">${t(hk)}</span>
+        </label>`).join('')}</div>`;
   }
-  const inCls3 = S._anim !== 'veh' ? ' wt-in' : ''; S._anim = 'veh';
-  S.body.innerHTML = `<div class="wt${inCls3}">${inner}</div>`;
+  const inCls = S._anim !== 'veh' ? ' wt-in' : ''; S._anim = 'veh';
+  S.body.innerHTML = `<div class="wt${inCls}">
+    ${tripRow()}
+    <div class="wt-vhead">
+      <span class="wt-vq">${t(stepQ[w.step])}</span>
+      ${steps.length > 1 ? `<span class="wt-dots">${steps.map((s, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('')}</span>` : ''}
+    </div>
+    <div class="wt-list">${cards}</div>
+    <div class="wt-vfoot">
+      <button class="wt-vfb" type="button" data-act="back">${t('vehicleQ_back')}</button>
+      <span class="wt-vfr">
+        ${w.step === 'puc' ? `<button class="wt-vfb wt-vsave" type="button" data-act="save">${t('receipt_save')}</button>` : ''}
+        <button class="wt-vfb" type="button" data-act="skip">${w.step === 'puc' ? t('puc_skip') : t('vehicleQ_skip')}</button>
+      </span>
+    </div>
+  </div>`;
   bindVehicle();
 }
 function bindVehicle() {
   const root = S.body.querySelector('.wt'), w = S.wiz;
   const q = (s) => root.querySelector(s);
-  const stepIdx = () => wizSteps().indexOf(w.step);
+  bindTrip(root);
   const goStep = (s) => { w.step = s; renderVehicle(); };
+  const toRoutes = () => { S.vehChosen = true; plan(); };
   const prevStep = () => {
     const steps = wizSteps(), i = steps.indexOf(w.step);
     if (i > 0) goStep(steps[i - 1]);
-    else if (S.veh) { S.phase = 'plan'; renderPlan(); }
-    else goStep('intro');
+    else if (w.ctx === 'trip') showModes();
+    else if (S.plan) { S.phase = 'plan'; renderPlan(); paintRoutes(); }
+    else plan();
   };
-  const finish = (savePuc) => {
+  const done = (savePuc) => {
     const p = { cls: w.cls, fuel: needsFuel(w.cls) ? w.fuel : null, year: needsYear(w.cls) ? w.year : null };
     if (savePuc && (w.bs || Object.keys(w.puc).length)) {
       const puc = {};
@@ -1192,34 +1325,38 @@ function bindVehicle() {
         if (!isNaN(v)) puc[f] = v;
       }
       if (Object.keys(puc).length) p.puc = puc;
-    } else if (!savePuc && S.veh && S.veh.puc) p.puc = S.veh.puc;
+    } else if (!savePuc && S.veh && S.veh.puc && S.veh.cls === p.cls) p.puc = S.veh.puc;
     S.veh = p;
+    S.tripVeh = p;
     A.store.set(K_VEH, p);
-    w.step = 'done';
-    renderVehicle();
-    setTimeout(() => { if (A.current() === 'whereto') { S.phase = 'plan'; if (S.from && S.to) plan(); else renderPlan(); } }, 1000);
+    toRoutes();
   };
-  if (q('[data-act="start"]')) q('[data-act="start"]').addEventListener('click', () => goStep('cls'));
   root.querySelectorAll('[data-act="skip"]').forEach((b) => b.addEventListener('click', () => {
-    if (w.step === 'puc') finish(false);
-    else { S.phase = 'plan'; if (S.plan || (S.from && S.to)) renderPlan(), plan(); else { S.phase = 'search'; renderSearch(true); } }
+    if (w.step === 'puc') { done(false); return; }
+    S.tripVeh = null;            /* a typical Delhi ride — the server's fleet prior */
+    toRoutes();
   }));
   if (q('[data-act="back"]')) q('[data-act="back"]').addEventListener('click', prevStep);
-  if (q('[data-act="save"]')) q('[data-act="save"]').addEventListener('click', () => finish(true));
+  if (q('[data-act="save"]')) q('[data-act="save"]').addEventListener('click', () => done(true));
   root.querySelectorAll('.wt-vcard').forEach((b) => b.addEventListener('click', () => {
-    const steps = wizSteps();
     if (b.dataset.bs) { w.bs = w.bs === b.dataset.bs ? null : b.dataset.bs; renderVehicle(); return; }
     const k = b.dataset.k;
     if (w.step === 'cls') {
+      const same = S.veh && S.veh.cls === k;
       w.cls = k;
-      if (!needsFuel(k)) w.fuel = null;
-      if (!needsYear(k)) { w.year = null; w.puc = {}; w.bs = null; }
+      if (!same) { w.fuel = null; w.year = null; w.puc = {}; w.bs = null; }
+      /* the saved ride, already described → straight on (trip ctx) */
+      const complete = (!needsFuel(k) || w.fuel) && (!needsYear(k) || w.year);
+      if (w.ctx === 'trip' && same && complete) { done(false); return; }
       const next = wizSteps()[1];
-      if (next) goStep(next); else finish(false);
+      if (next) goStep(next); else done(false);
       return;
     }
-    if (w.step === 'fuel') { w.fuel = k; goStep('year'); return; }
-    if (w.step === 'year') { w.year = k; goStep('puc'); return; }
+    const steps = wizSteps();
+    const nxt = steps[steps.indexOf(w.step) + 1];
+    if (w.step === 'fuel') w.fuel = k;
+    if (w.step === 'year') w.year = k;
+    if (nxt) goStep(nxt); else done(false);
   }));
   root.querySelectorAll('.wt-vin').forEach((inp) => inp.addEventListener('input', () => {
     S.wiz.puc[inp.dataset.f] = inp.value;
@@ -1230,45 +1367,46 @@ function bindVehicle() {
 A.screen('whereto', {
   mount(elm, params) {
     const chrome = A.sheetChrome(elm, 'where to');
-    /* RN SearchScreen carries no title row — the back chevron lives in
-       the search pill. Keep the grab (shared sheet affordance), drop
-       the chrome title. */
+    /* no title row — the back chevron lives in the from/to card */
     const title = chrome.sheetEl.querySelector('.sheet-title');
     if (title) title.remove();
+    const m0 = loadJ(K_MODE, null);
     S = {
       el: elm, chrome, body: chrome.body,
       phase: 'search', armed: 'to', armedPin: null,
-      from: null, to: null, q: '', results: null, pending: false, seq: 0,
+      from: null, to: null, q: '', results: null, final: true, seq: 0, cur: null, retired: [], guard: 0,
       saveFor: null, notice: null,
-      saved: loadJ(K_SAVED, {}),
-      recents: loadJ(K_RECENT, []).map((r) => ({ name: r.name || r.label, sub: r.sub, lat: r.lat, lon: r.lon })).filter((r) => r.name != null),
+      saved: loadJ(K_SAVED, {}) || {},
+      recents: (loadJ(K_RECENT, []) || []).map((r) => ({ name: r.name || r.label, sub: r.sub, lat: r.lat, lon: r.lon })).filter((r) => r.name != null && r.name !== 'dropped pin' && r.name !== t('yourLocation')),
       veh: loadJ(K_VEH, null),
-      plan: null, planning: false, planErr: null, sel: 0, detOpen: -1, painted: 0, partial: null,
+      mode: MODES.some((m) => m.id === m0) ? m0 : 'health_max',
+      modeChosen: false, vehChosen: false, tripVeh: null,
+      plan: null, view: null, planning: false, planErr: null, sel: 0, pseq: 0, partial: null,
+      showOther: false, paintedIds: [], jamIds: [], trafficOn: false,
       wiz: null, _tapOff: null, _anim: null,
     };
-    const last = loadJ(K_LAST, null);
-    if (last) {
-      if (last.from) S.from = last.from;
-      if (last.to) S.to = last.to;
-    }
-    if (params) {
-      if (params.from) S.from = params.from;
-      if (params.to) S.to = params.to;
-      if (params.arm) S.armed = params.arm;
-    }
-    if (!S.from && A.geo && A.geo.pos) S.from = { label: t('yourLocation'), lat: A.geo.pos.lat, lon: A.geo.pos.lon };
-    S.armed = S.to ? 'from' : (S.from ? 'to' : 'from');
-    if (S.from && S.to) { S.phase = 'plan'; plan(); }
+    if (S.veh && !S.veh.cls) S.veh = null;
+    S.tripVeh = S.veh;
+    params = params || {};
+    /* From = your location by default; To starts empty — a fresh "where to?" */
+    if (params.from) S.from = params.from;
+    else if (A.geo && A.geo.pos) S.from = { label: t('yourLocation'), lat: A.geo.pos.lat, lon: A.geo.pos.lon };
+    if (params.to) S.to = params.to;
+    S.armed = params.arm || 'to';
+    if (S.from && S.to) showModes();
     else renderSearch(true);
     A.map.setFieldVisible(false);
     return () => {
       disarmPin();
-      clearTimeout(qTimer);
+      cancelLive();
+      if (S) S.pseq++;
+      clearMapExtras();
       document.querySelectorAll('.wt-pinbar').forEach((x) => x.remove());
       A.map.hideAllRoutes();
       S = null;
     };
   },
-  show() { if (S && S.plan) paintRoutes(); },
+  show() { if (S && S.phase === 'plan' && S.plan) { setHalf(true); paintRoutes(); } },
+  hide() { if (S) clearMapExtras(); },
 });
 })();

@@ -593,21 +593,17 @@ def _districts_field_key(F):
             getattr(F, "_snap_epoch", None))
 
 
-@router.get("/districts")
-async def v2_districts():
+def _districts_payload(F) -> tuple:
+    """(payload, built_ts) — the district rows over the field's /grid
+    cells, cached on the field key. Shared by /v2/districts and
+    /v2/purest so one grid solve feeds both."""
     global _DIST_CACHE
-    from .plan import _field_refresh_bounded
-    await _field_refresh_bounded()
-    F = deps.field()
     fkey = _districts_field_key(F)
     if (_DIST_CACHE and _DIST_CACHE[1] == fkey
             and time.time() - _DIST_CACHE[0] < _DIST_TTL_S):
-        built, _k, payload = _DIST_CACHE
-        return {**payload, "ts": time.time(), "cached_s":
-                round(time.time() - built, 1)}
+        return _DIST_CACHE[2], _DIST_CACHE[0]
     import districts as _d
     import grid as _g
-    F = deps.field()
     geo = _g.as_geojson(F, cells=40, param="pm2_5")
     rows = _d.live(geo.get("features", []))
     rows = _d.finalize(rows, lambda la, lo: F.value(la, lo, "pm2_5"))
@@ -621,8 +617,269 @@ async def v2_districts():
         "field_age_s": (F.status() or {}).get("age_s")
         if hasattr(F, "status") else None,
     }
-    _DIST_CACHE = (time.time(), fkey, payload)
-    return {**payload, "ts": time.time(), "cached_s": 0.0}
+    built = time.time()
+    _DIST_CACHE = (built, fkey, payload)
+    return payload, built
+
+
+@router.get("/districts")
+async def v2_districts():
+    from .plan import _field_refresh_bounded
+    await _field_refresh_bounded()
+    F = deps.field()
+    payload, built = _districts_payload(F)
+    now = time.time()
+    return {**payload, "ts": now, "cached_s": round(now - built, 1)}
+
+
+# ---------------------------------------------------------------- purest
+#
+# GET /v2/purest?lat&lon[&radius_km=15][&scope=ncr] — the cleanest named
+# places NEAR the asker, on solid data only. A candidate is a gazetteer
+# locality or park; it is kept only when ALL hold at its own coordinates:
+#   * inside the served field's extent (beyond_field_edge False)
+#   * a NAMED live monitor within PUREST_SOLID_KM (nearest_station_km —
+#     model fill points never count as a monitor)
+#   * its finest district/sub-district row reads confidence 'field' and
+#     NOT partial_field_coverage (the /v2/districts honesty flags)
+# Ranked by the live field pm2.5 at the place itself — the same F.value
+# /aqi and /v2/stays read. Thin-data places are excluded and COUNTED,
+# never ranked: the old district ranking put Meerut (partial field, no
+# nearby monitor) on top because thin data reads smooth.
+
+PUREST_RADIUS_KM = 15.0
+PUREST_SOLID_KM = 6.0      # ~Delhi's mean instrument spacing
+PUREST_K = 8
+PUREST_MIN_SEP_KM = 1.2    # two picks never share one neighbourhood
+_PUREST_TTL_S = 60.0
+_PUREST_CACHE: dict = {}
+
+_AREA_KINDS = frozenset((
+    "locality", "neighborhood", "neighbourhood", "suburb", "quarter",
+    "sector", "village", "town", "city", "place:neighbourhood",
+    "place:locality", "place:suburb", "place:quarter", "place:village",
+    "synthetic:sector"))
+_PARK_KINDS = frozenset((
+    "park", "overture:park", "leisure:park", "garden", "overture:garden",
+    "forest", "overture:forest", "nature_reserve", "overture:nature_reserve",
+    "national_park", "overture:national_park"))
+import re as _re  # noqa: E402
+_PARK_WORD = _re.compile(
+    r"\b(park|garden|gardens|bagh|van|vatika|udyan|forest|ridge|reserve|"
+    r"sanctuary|lake|biodiversity)\b", _re.I)
+_PARK_JUNK = _re.compile(
+    r"banquet|domino|restaurant|hotel|cafe|caf\u00e9|school|playhouse|"
+    r"embassy|water ?park|amusement|adventure|parking|motel|resort|club|"
+    r"mall|hospital|bouncing|play ?zone|marriage|farm ?house|\bpvt\b", _re.I)
+_PUREST_NAMES = None
+
+
+def _purest_names() -> list:
+    """(lat, lon, name, kind) naming rows: localities + real parks from
+    the process-shared gazetteer load. Junk park rows (banquets, a
+    Domino's, embassies) never name a place."""
+    global _PUREST_NAMES
+    if _PUREST_NAMES is not None:
+        return _PUREST_NAMES
+    out = []
+    try:
+        rows = GAZ._load()
+    except Exception:
+        rows = []
+    for r in rows:
+        la, lo = r.get("lat"), r.get("lon")
+        if la is None or lo is None:
+            continue
+        k = (r.get("kind") or "").lower()
+        nm = (r.get("name") or "").strip(" .,;-")
+        if len(nm) < 3 or not any(ch.isalpha() for ch in nm):
+            continue
+        if k in _AREA_KINDS:
+            cls = "area"
+        elif (k in _PARK_KINDS and _PARK_WORD.search(nm)
+              and not _PARK_JUNK.search(nm)):
+            cls = "park"
+        else:
+            continue
+        out.append((float(la), float(lo), nm, cls,
+                    float(r.get("pop") or 0.0)))
+    _PUREST_NAMES = out
+    return out
+
+
+def _station_km(F, lat: float, lon: float):
+    try:
+        km = F.nearest_station_km(lat, lon)
+    except Exception:
+        return None
+    return round(float(km), 1) if km is not None and math.isfinite(km) \
+        else None
+
+
+def _beyond(F, lat: float, lon: float) -> bool:
+    try:
+        return bool(F.beyond_field_edge(lat, lon))
+    except Exception:
+        return False
+
+
+def purest_places(F, district_rows: list, lat: Optional[float],
+                  lon: Optional[float], radius_km: Optional[float],
+                  k: int = PUREST_K, names: Optional[list] = None) -> dict:
+    """Pure-ish core of /v2/purest (no network): rank solid-data named
+    places around (lat, lon) inside radius_km (None = NCR-wide)."""
+    import districts as _d
+    names = _purest_names() if names is None else names
+    by_area = {r.get("name"): r for r in district_rows or []}
+    near = lat is not None and lon is not None and radius_km is not None
+    bucket = 0.02 if near and radius_km <= 25 else 0.04
+
+    # one candidate per ~2 km bucket — parks first, then the corpus'
+    # own prominence; keeps the list a spread of neighbourhoods
+    buckets: dict = {}
+    if near:
+        dlat = radius_km / 111.0
+        dlon = radius_km / (111.0 * max(0.2, math.cos(math.radians(lat))))
+    for la, lo, nm, cls, pop in names:
+        if near:
+            if abs(la - lat) > dlat or abs(lo - lon) > dlon:
+                continue
+            if _haversine_m(lat, lon, la, lo) > radius_km * 1000.0:
+                continue
+        key = (math.floor(la / bucket), math.floor(lo / bucket))
+        rank = (cls == "park", pop)
+        cur = buckets.get(key)
+        if cur is None or rank > cur[0]:
+            buckets[key] = (rank, (la, lo, nm, cls))
+
+    thin = 0
+    scored = []
+    for _r, (la, lo, nm, cls) in buckets.values():
+        skm = _station_km(F, la, lo)
+        if skm is None or skm > PUREST_SOLID_KM or _beyond(F, la, lo):
+            thin += 1
+            continue
+        try:
+            v = F.value(la, lo)
+        except Exception:
+            v = None
+        if v is None or not math.isfinite(float(v)):
+            thin += 1
+            continue
+        if nm.isupper():
+            nm = nm.title()          # 'JANKI DEVI PARK' -> 'Janki Devi Park'
+        d_km = (_haversine_m(lat, lon, la, lo) / 1000.0
+                if lat is not None and lon is not None else 0.0)
+        scored.append((float(v), la, lo, nm, cls, skm, d_km))
+    # cleanest first; places reading the same (to the µg) — closer wins
+    scored.sort(key=lambda t: (round(t[0]), t[6], t[0]))
+    scored = [t[:6] for t in scored]
+
+    places, partial = [], 0
+    seen = set()
+    for v, la, lo, nm, cls, skm in scored:
+        if len(places) >= k:
+            break
+        key = nm.lower()
+        if key in seen:
+            continue
+        if any(_haversine_m(la, lo, p["lat"], p["lon"])
+               < PUREST_MIN_SEP_KM * 1000.0 for p in places):
+            continue
+        area = _d.area_for_point(lo, la)
+        arow = by_area.get(area["name"]) if area else None
+        if (arow is None or arow.get("partial_field_coverage")
+                or arow.get("confidence") != "field"):
+            partial += 1
+            continue
+        seen.add(key)
+        pm = round(v, 1)
+        aqi = _d.us_aqi(pm)
+        cat, col = _d.cpcb_band(_d.cpcb_aqi(pm))
+        places.append({
+            "name": nm,
+            "kind": cls,
+            "lat": round(la, 5), "lon": round(lo, 5),
+            "pm25": pm,
+            "aqi": aqi,
+            "aqi_basis": "us epa, pm2.5",
+            "category": cat, "color": col,
+            "area": area["name"] if area else None,
+            "dist_km": (round(_haversine_m(lat, lon, la, lo) / 1000.0, 1)
+                        if lat is not None and lon is not None else None),
+            "nearest_station_km": skm,
+            "basis": "now",
+        })
+
+    here = None
+    if lat is not None and lon is not None:
+        try:
+            hv = F.value(lat, lon)
+        except Exception:
+            hv = None
+        if hv is not None:
+            hv = round(float(hv), 1)
+            here = {"pm25": hv, "aqi": _d.us_aqi(hv),
+                    "solid": (_station_km(F, lat, lon) or 1e9)
+                    <= PUREST_SOLID_KM and not _beyond(F, lat, lon)}
+    pick = None
+    if places:
+        pick = {"index": 0,
+                "why": ("cleanest air near you right now" if near
+                        else "cleanest air in NCR right now")}
+    return {
+        "places": places,
+        "pick": pick,
+        "here": here,
+        "excluded": {"thin_data": thin, "partial_area": partial},
+        "solid_rule": (f"named live monitor within {PUREST_SOLID_KM:g} km, "
+                       "inside the field, area fully covered"),
+    }
+
+
+@router.get("/purest")
+async def v2_purest(lat: Optional[float] = None, lon: Optional[float] = None,
+                    radius_km: float = PUREST_RADIUS_KM,
+                    scope: Optional[str] = None, k: int = PUREST_K):
+    """Cleanest named places near (lat, lon) — solid data only."""
+    from fastapi import HTTPException
+    if (lat is None) != (lon is None):
+        raise HTTPException(422, "lat and lon go together")
+    if lat is not None and not (math.isfinite(lat) and math.isfinite(lon)):
+        raise HTTPException(422, "non-finite coordinate")
+    k = max(1, min(int(k), 20))
+    radius_km = max(1.0, min(float(radius_km), 120.0))
+    ncr = (scope or "").lower() == "ncr" or lat is None
+    if lat is not None:
+        from airfield import in_service_area, OUT_OF_AREA
+        if not in_service_area(lat, lon):
+            return {"places": [], "pick": None, "error": OUT_OF_AREA,
+                    "scope": "ncr" if ncr else "near",
+                    "radius_km": None if ncr else radius_km}
+    from .plan import _field_refresh_bounded
+    await _field_refresh_bounded()
+    F = deps.field()
+    ckey = (None if lat is None else round(lat, 3),
+            None if lon is None else round(lon, 3),
+            None if ncr else radius_km, k, _districts_field_key(F))
+    hit = _PUREST_CACHE.get(ckey)
+    if hit and time.time() - hit[0] < _PUREST_TTL_S:
+        return {**hit[1], "cached_s": round(time.time() - hit[0], 1)}
+    dpay, _b = _districts_payload(F)
+    out = purest_places(F, dpay.get("districts") or [], lat, lon,
+                        None if ncr else radius_km, k)
+    payload = {
+        **out,
+        "anchor": None if lat is None else {"lat": lat, "lon": lon},
+        "scope": "ncr" if ncr else "near",
+        "radius_km": None if ncr else radius_km,
+        "field_age_s": dpay.get("field_age_s"),
+        "ts": time.time(),
+    }
+    if len(_PUREST_CACHE) > 256:
+        _PUREST_CACHE.clear()
+    _PUREST_CACHE[ckey] = (time.time(), payload)
+    return {**payload, "cached_s": 0.0}
 
 
 # ---------------------------------------------------------------- moves

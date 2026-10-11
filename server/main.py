@@ -2386,6 +2386,11 @@ except Exception:
 
 try:  # rate limit + body cap + security headers (all env-tunable)
     import middleware as _mw
+    # A map pulls ~10-30 TomTom flow tiles (/v2/p/flow_tile) per pan/zoom;
+    # its own bucket keeps a busy map from starving /v2/plan & co. (the
+    # tiles are 60 s cached server-side). Not an explicit kwarg, so
+    # ALIVE_RATE_LIMIT=0 still disables the limiter for tests/local dev.
+    _mw._DEFAULT_PATH_LIMITS.setdefault("/v2/p/flow_tile", (20.0, 80))
     _mw.attach(app)
 except Exception:
     pass

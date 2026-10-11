@@ -4,33 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>alive · engine room</title>
+<title>alive · admin</title>
 <meta name="description" content="The engine room — an operator's ledger of Delhi's air system, every number measured live off this server.">
 <meta property="og:title" content="alive · engine room">
 <meta property="og:description" content="An operator's ledger of Delhi's air system — measured live, aggregate-only, no person ever shown.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%230B0B0A%27/%3E%3Crect x=%273%27 y=%273%27 width=%2710%27 height=%2710%27 fill=%27%235e8a6e%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <style>
-  /* v14 register — cognition.com dark: near-black, hairlines, margin
-     indices, small quiet type. a section is whitespace + a 1px rule +
-     content. band colour only where it means air; forest only as a
-     speck. no cards, no shadows, no navbar. */
+  /* oct11 register — cognition.com dark, the landing's own night: near-
+     black, 1px hairlines, margin indices, small quiet type. band colour
+     only where it means air (map tiles, the live-air dot on a street
+     row); counts are ink, never band. no cards, no shadows. */
   :root{
-    /* the page's tokens — warm near-black, warm paper ink */
     --paper:#0B0B0A; --surf:#111110;
-    --rInk:#ECE9E2; --rInk2:rgba(236,233,226,.60);
-    --rInk3:rgba(236,233,226,.42); --rInk4:rgba(236,233,226,.26);
-    --rLine:rgba(236,233,226,.10); --rLine2:rgba(236,233,226,.17);
-    --acc:#5E8A6E; --accInk:#8FB99B; --link:#9db4e8;
-    --brick:#C96F64; --blk:#ECE9E2;
-    /* muted CPCB band — the same ramp the landing wears; on the dark
-       page the fill itself carries the meaning */
-    --b0:#7aab59; --b1:#c8b25a; --b2:#d58c4a;
-    --b3:#b85442; --b4:#8f3c49; --b5:#6e3c54;
-    /* the gate's tokens — the gate markup/auth is byte-identical to the
-       r5 console's; only the palette moved, so these names keep its
-       roles with dark values */
+    --rInk:#ECE9E2; --rInk2:rgba(236,233,226,.62);
+    --rInk3:rgba(236,233,226,.44); --rInk4:rgba(236,233,226,.26);
+    --rLine:rgba(236,233,226,.10); --rLine2:rgba(236,233,226,.18);
+    --acc:#5E8A6E; --accInk:#8FB99B; --brick:#C96F64;
+    /* the gate's tokens — same roles as the r5 console, dark values */
     --surface:#111110;
     --ink:#E8E5DE; --ink2:rgba(232,229,222,.60);
     --ink3:rgba(232,229,222,.44); --ink4:rgba(232,229,222,.30);
@@ -43,7 +36,7 @@
   *{margin:0;padding:0;box-sizing:border-box}
   html{background:var(--paper);-webkit-text-size-adjust:100%}
   body{background:var(--paper);color:var(--rInk);font-family:var(--sans);
-       font-variant-numeric:tabular-nums;min-height:100vh;
+       font-variant-numeric:tabular-nums;min-height:100vh;overflow-x:hidden;
        -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   ::selection{background:rgba(236,233,226,.18)}
   a{color:inherit;text-decoration:none}
@@ -103,219 +96,192 @@
   .tokbtn:hover{background:#cfc9bd;border-color:#cfc9bd}
   /* ===================== end gate ===================== */
 
-  /* ---------- the rail — tiny mark + text links, no navbar ---------- */
-  .top{padding:20px 22px 0;position:relative;z-index:5}
-  .top-in{display:flex;align-items:baseline;gap:26px;flex-wrap:wrap}
-  .wm{font-family:var(--sans);font-weight:600;font-size:15px;
-      letter-spacing:-.01em;color:var(--rInk)}
-  .top nav{display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
-  .top nav a{font-size:13px;color:var(--rInk2)}
-  .top nav a:hover{color:var(--rInk)}
-  #toplive{margin-left:auto;font-family:var(--mono);font-size:10px;
-           color:var(--rInk3);line-height:1.9}
+  /* ---------- the rail ---------- */
+  .top{position:sticky;top:0;z-index:20;background:rgba(11,11,10,.92);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--rLine)}
+  .top-in{max-width:1040px;margin:0 auto;padding:14px 20px;display:flex;
+    align-items:center;gap:12px;min-height:56px}
+  .top .wm{font-weight:700;font-size:16px;letter-spacing:-.02em;
+    color:var(--rInk);display:inline-flex;align-items:center}
+  .top .wm .wdot{width:5px;height:5px;margin-left:5px;background:var(--acc)}
+  .tsub{font-family:var(--mono);font-size:11px;color:var(--rInk3)}
+  #toplive{margin-left:auto;font-family:var(--mono);font-size:11px;
+    color:var(--rInk3);text-align:right;line-height:1.5;min-width:0}
   #toplive b{color:var(--rInk);font-weight:500}
-  #tokbtn{margin-left:14px;flex:none}
-  @media(max-width:640px){
-    .top{padding:14px 16px 0}
-    .top-in{gap:14px}
-    .top nav{gap:14px}
-    #toplive{flex-basis:100%;margin-left:0}
-    #tokbtn{margin-left:0}}
-  @media(min-width:1024px){
-    .top{position:fixed;top:0;left:0;bottom:auto;right:auto;z-index:6;
-      width:216px;padding:26px 0 0 26px;background:none}
-    .top-in{flex-direction:column;align-items:flex-start;gap:22px}
-    .top nav{flex-direction:column;gap:9px;align-items:flex-start}
-    .top nav a{font-size:13.5px}
-    .top nav a.cur{color:var(--rInk);border-left:2px solid var(--acc);
-      padding-left:7px;margin-left:-9px}
-    #toplive{margin-left:0}
-    #tokbtn{margin-left:0}
-    .stack{margin-left:216px}}
+  #toplive .err{color:var(--brick)}
+  #tokbtn{flex:none;min-height:40px;font-size:12px}
 
   /* ---------- one measure, hairlines, margin indices ---------- */
   .stack{display:flex;flex-direction:column;counter-reset:sec}
   .stack>section{border-top:1px solid var(--rLine)}
-  .stack>section:first-child{border-top:0}
-  .col{max-width:1180px;margin:0 auto;
-    padding:clamp(40px,7vw,96px) 20px clamp(40px,7vw,96px)}
-  .stack>section:not(.open):not(.noidx) .col{position:relative;
-    padding-left:clamp(0px,12vw,200px);counter-increment:sec}
-  .stack>section:not(.open):not(.noidx) .col::before{
-    content:counter(sec,decimal-leading-zero);
-    position:absolute;left:clamp(10px,3vw,40px);top:clamp(40px,7vw,96px);
-    font-family:var(--mono);font-size:10px;color:var(--rInk3)}
-  @media(max-width:860px){
-    .stack>section:not(.open):not(.noidx) .col{padding-left:20px}
-    .stack>section:not(.open):not(.noidx) .col::before{position:static;
-      display:block;margin-bottom:26px}}
-  @media(min-width:1024px){
-    .stack>section:not(.open):not(.noidx) .col{padding-left:58px;
-      max-width:960px;margin:0}
-    .stack>section:not(.open):not(.noidx) .col::before{left:14px}
-    .stack>section.open .col,.stack>section.noidx .col{max-width:960px;margin:0}}
+  .stack>section:first-of-type{border-top:0}
+  .col{max-width:1040px;margin:0 auto;padding:44px 20px 52px;position:relative}
+  .stack>section:not(.noidx) .col{counter-increment:sec;padding-left:84px}
+  .stack>section:not(.noidx) .col::before{content:counter(sec,decimal-leading-zero);
+    position:absolute;left:24px;top:49px;font-family:var(--mono);font-size:11px;
+    color:var(--rInk3)}
+  @media(max-width:720px){
+    .col{padding:30px 16px 38px}
+    .stack>section:not(.noidx) .col{padding-left:16px}
+    .stack>section:not(.noidx) .col::before{position:static;display:block;
+      margin-bottom:10px}}
 
-  /* ---------- shared type — small, quiet, serif prose voice ---------- */
-  .lbl2{font-family:var(--mono);font-size:10px;color:var(--rInk3);
-    margin-bottom:18px;display:flex;align-items:center;line-height:1.8}
-  .lbl2 .livedot{margin-right:8px}
-  .livedot{display:inline-block;width:6px;height:6px;border-radius:1.5px;
-    background:var(--bhex,var(--rLine2));flex:none;
-    transition:background .6s ease}
-  .lead{font-family:var(--serif);font-weight:400;
-    font-size:clamp(21px,2.5vw,30px);line-height:1.28;
-    letter-spacing:-.008em;color:var(--rInk);max-width:34ch;margin:0}
-  .prose{font-family:var(--serif);font-size:15px;line-height:1.68;
-    color:var(--rInk2);max-width:56ch;margin-top:16px}
-  .prose b{color:var(--rInk);font-weight:700}
-  .sub3{font-family:var(--serif);font-size:13.5px;line-height:1.65;
-    color:var(--rInk3);max-width:56ch;margin-top:26px}
-  .sub3 b{color:var(--rInk2);font-weight:700}
+  /* ---------- panel head: title + 'as of' ---------- */
+  .ph{display:flex;align-items:baseline;gap:8px 16px;flex-wrap:wrap;
+    justify-content:space-between;margin-bottom:22px}
+  .ph h2{font-family:var(--serif);font-weight:400;font-size:clamp(21px,2.6vw,28px);
+    line-height:1.25;letter-spacing:-.01em;color:var(--rInk);max-width:30ch}
+  .ph h3{font-family:var(--mono);font-weight:400;font-size:11px;color:var(--rInk3)}
+  .ph2{margin:30px 0 10px}
+  .asof{font-family:var(--mono);font-size:11px;color:var(--rInk3);white-space:nowrap}
+  .asof b{color:var(--rInk2);font-weight:500}
+  .asof.stale{color:var(--brick)}
 
-  /* ---------- the live numeral — unboxed plain text ---------- */
-  .hnum{margin-top:26px;position:relative}
-  .hnum-row{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap}
-  .hnum-v{font-weight:500;font-size:clamp(56px,8vw,96px);line-height:1;
-    letter-spacing:-.03em;color:var(--hink,var(--rInk));
-    font-variant-numeric:tabular-nums;transition:color .8s ease}
-  .hnum-v.na{color:var(--rInk4);font-size:clamp(30px,4.5vw,44px)}
-  .hnum .u{font-size:14px;color:var(--rInk2);font-weight:400}
-  .bandw{display:inline-flex;align-items:center;gap:8px;
-    font-family:var(--mono);font-size:10px;color:var(--rInk2)}
-  .bsq{display:inline-block;width:8px;height:8px;border-radius:2px;
-    background:var(--bhex,var(--rLine2));flex:none;transition:background .6s ease}
-  .hnum-s{display:block;font-family:var(--mono);font-size:10px;
-    color:var(--rInk3);margin-top:14px;line-height:1.9}
-  .hnum-s b{color:var(--rInk);font-weight:500}
-  .felt{font-family:var(--serif);font-size:16px;line-height:1.55;
-    color:var(--rInk2);max-width:38ch;margin-top:14px}
-  .felt b{font-weight:700;white-space:nowrap;color:var(--rInk)}
-
-  /* ---------- data lines — label / value rows on 1px rules ---------- */
-  .dl{margin-top:26px;border-top:1px solid var(--rLine)}
-  .dr{display:grid;grid-template-columns:minmax(120px,1fr) auto;
-    align-items:baseline;gap:8px 18px;padding:11px 0;
-    border-bottom:1px solid var(--rLine)}
-  .dr .dk{font-family:var(--mono);font-size:10px;color:var(--rInk3);
-    line-height:1.7}
-  .dr .dv{font-family:var(--sans);font-size:15px;font-weight:500;
-    color:var(--rInk);text-align:right;white-space:nowrap}
-  .dr .dv i{font-style:normal;color:var(--rInk3);font-weight:400}
-  .dr .ds{grid-column:1/-1;font-family:var(--serif);font-size:13px;
-    color:var(--rInk3);line-height:1.6}
-  .dr.stale .dv{color:var(--brick)}
-  /* the leaderboard — ruled rows for routes and feeds */
-  .lr{display:grid;grid-template-columns:24px 1fr auto;align-items:baseline;
-    gap:14px;padding:9px 0;border-bottom:1px solid var(--rLine)}
-  .lr .li{font-family:var(--mono);font-size:10px;color:var(--rInk4)}
-  .lr .ln{font-family:var(--mono);font-size:12px;color:var(--rInk);
+  /* ---------- numerals ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+    border-top:1px solid var(--rLine)}
+  .kpi{padding:16px 14px 18px 0;border-right:1px solid var(--rLine);min-width:0}
+  .kpi+.kpi{padding-left:16px}
+  .kpi:last-child{border-right:0}
+  .kpi .k{font-family:var(--mono);font-size:11px;color:var(--rInk3);display:block}
+  .kpi .v{display:block;font-weight:500;font-size:clamp(30px,7vw,60px);line-height:1.05;
+    letter-spacing:-.03em;color:var(--rInk);margin-top:10px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .lr .ln i{font-style:normal;color:var(--rInk3)}
-  .lr .lv{font-family:var(--sans);font-size:14px;font-weight:500;
-    color:var(--rInk);text-align:right;white-space:nowrap}
-  .lr .lv i{font-style:normal;color:var(--rInk3);font-weight:400;
-    font-size:11px}
-  .lr.bad .lv{color:var(--brick)}
+  .kpi .v.dim{color:var(--rInk4)}
+  .kpi .s{display:block;font-family:var(--mono);font-size:11px;color:var(--rInk3);
+    margin-top:8px;line-height:1.5}
+  .hero{border-top:1px solid var(--rLine);padding-top:16px}
+  .hero .v{display:block;font-weight:500;font-size:clamp(40px,9vw,84px);line-height:1;
+    letter-spacing:-.035em;color:var(--rInk)}
+  .hero .v.dim{color:var(--rInk4);font-size:clamp(30px,6vw,48px)}
+  .hero .v small{font-size:.32em;letter-spacing:0;color:var(--rInk2);font-weight:400;
+    margin-left:8px}
+  .hero .s{display:block;font-family:var(--serif);font-size:15px;line-height:1.6;
+    color:var(--rInk2);margin-top:12px;max-width:52ch}
+  .hero .s b{color:var(--rInk);font-weight:700}
+  .zero{font-family:var(--serif);font-size:15px;color:var(--rInk2);line-height:1.6;
+    padding:14px 0;border-bottom:1px solid var(--rLine)}
+  .zero b{color:var(--rInk)}
+  .locked{font-family:var(--mono);font-size:11px;color:var(--rInk3);padding:16px 0;
+    border-top:1px solid var(--rLine)}
 
-  /* ---------- the field map — the corridor of tile + hairline ---------- */
-  .mapwrap{margin-top:30px}
-  .mapbox{position:relative;height:420px;border:1px solid var(--rLine2);
-    overflow:hidden}
-  .mapbox canvas{position:absolute;inset:0;width:100%;height:100%;
-    display:block}
+  /* ---------- data rows ---------- */
+  .dl{margin-top:20px;border-top:1px solid var(--rLine)}
+  .dl:empty{display:none}
+  .dr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;
+    gap:4px 16px;padding:11px 0;border-bottom:1px solid var(--rLine)}
+  .dr .dk{font-family:var(--mono);font-size:11px;color:var(--rInk3);line-height:1.6;min-width:0}
+  .dr .dv{font-size:15px;font-weight:500;color:var(--rInk);text-align:right;white-space:nowrap}
+  .dr .dv i{font-style:normal;color:var(--rInk3);font-weight:400;font-size:12px}
+  .dr .ds{grid-column:1/-1;font-family:var(--serif);font-size:13px;color:var(--rInk3);line-height:1.55}
+
+  /* ---------- journeys table ---------- */
+  .tbl{margin-top:20px;border-top:1px solid var(--rLine)}
+  .tr{display:grid;grid-template-columns:minmax(64px,1.2fr) repeat(3,minmax(0,1fr));
+    gap:10px;padding:10px 0;border-bottom:1px solid var(--rLine);align-items:baseline}
+  .tr span{font-size:15px;font-weight:500;text-align:right;color:var(--rInk);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tr span:first-child{text-align:left;font-family:var(--mono);font-size:11px;
+    color:var(--rInk3);font-weight:400}
+  .tr.th span{font-family:var(--mono);font-size:11px;color:var(--rInk3);font-weight:400}
+  .tr span i{font-style:normal;color:var(--rInk4)}
+
+  /* ---------- 14-day columns: started (hairline) vs completed (ink) ---------- */
+  .cols14{margin-top:24px}
+  .cols14 .cg{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:4px;
+    align-items:end;height:72px;border-bottom:1px solid var(--rLine2)}
+  .cols14 .c{position:relative;height:100%}
+  .cols14 .c i,.cols14 .c b{position:absolute;left:0;right:0;bottom:0;display:block}
+  .cols14 .c i{background:var(--rLine2)}
+  .cols14 .c b{background:var(--rInk);left:25%;right:25%}
+  .cols14 .cx{display:flex;justify-content:space-between;margin-top:8px;
+    font-family:var(--mono);font-size:11px;color:var(--rInk3)}
+  .cols14 .lg{display:flex;gap:16px;margin-top:6px;font-family:var(--mono);
+    font-size:11px;color:var(--rInk3)}
+  .cols14 .lg i{display:inline-block;width:10px;height:6px;margin-right:6px;
+    vertical-align:1px;background:var(--rLine2)}
+  .cols14 .lg b{display:inline-block;width:10px;height:6px;margin-right:6px;
+    vertical-align:1px;background:var(--rInk)}
+
+  /* ---------- bars — ink on a hairline track ---------- */
+  .bars{border-top:1px solid var(--rLine)}
+  .bar{display:grid;grid-template-columns:minmax(96px,170px) minmax(0,1fr) auto;
+    align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--rLine)}
+  .bar .bn{font-size:14px;color:var(--rInk);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .bar .bt{height:3px;background:var(--rLine);position:relative}
+  .bar .bt i{position:absolute;left:0;top:0;bottom:0;background:var(--rInk);
+    transform-origin:left;transition:transform .6s cubic-bezier(.3,.7,.2,1)}
+  .bar .bv{font-size:15px;font-weight:500;color:var(--rInk);text-align:right;white-space:nowrap}
+  .bar .bv i{font-style:normal;color:var(--rInk3);font-weight:400;font-size:12px}
+  .bar.zero0 .bn,.bar.zero0 .bv{color:var(--rInk3)}
+
+  /* ---------- the map ---------- */
+  .mapbox{position:relative;height:min(64vh,560px);min-height:340px;
+    border:1px solid var(--rLine2);overflow:hidden;background:#0e0e0d}
+  .mapgl{position:absolute;inset:0}
+  .mapbox canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   .maptip{position:absolute;pointer-events:none;z-index:3;display:none;
-    font-family:var(--mono);font-size:10px;line-height:1.7;color:var(--rInk);
-    background:rgba(11,11,10,.88);border:1px solid var(--rLine2);
-    padding:5px 8px;white-space:nowrap}
-  .mapcap{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
-    margin-top:10px;font-family:var(--mono);font-size:10px;
-    color:var(--rInk3);line-height:1.8}
+    font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--rInk);
+    background:rgba(11,11,10,.9);border:1px solid var(--rLine2);padding:5px 8px;
+    white-space:nowrap}
+  .maptip i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;
+    vertical-align:-1px}
+  .mapcap{display:flex;justify-content:space-between;gap:6px 16px;flex-wrap:wrap;
+    margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--rInk3);line-height:1.6}
   .mapcap b{color:var(--rInk);font-weight:500}
-  .leg{display:flex;gap:14px;flex-wrap:wrap;align-items:center;
-    margin-top:14px;font-family:var(--mono);font-size:10px;color:var(--rInk3)}
-  .leg i{display:inline-block;width:8px;height:8px;border-radius:1.5px;
-    margin-right:5px;vertical-align:-1px}
+  .leg{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;margin-top:10px;
+    font-family:var(--mono);font-size:11px;color:var(--rInk3)}
+  .leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;
+    vertical-align:-1px}
+  .maplibregl-ctrl-attrib{background:rgba(11,11,10,.7)!important;color:var(--rInk3)!important;
+    font-size:10px!important}
+  .maplibregl-ctrl-attrib a{color:var(--rInk2)!important}
+  .maplibregl-ctrl-group{background:#161615!important}
+  .maplibregl-ctrl-group button{width:40px!important;height:40px!important}
+  .maplibregl-ctrl-group button span{filter:invert(.9)}
 
-  /* ---------- mode share — 1px tracks, ink fill ---------- */
-  .mb{display:grid;grid-template-columns:minmax(96px,130px) 1fr auto;
-    align-items:center;gap:12px;padding:8px 0;
-    border-bottom:1px solid var(--rLine)}
-  .mb .mn{font-family:var(--mono);font-size:11px;color:var(--rInk);
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .mb .mt{height:2px;background:var(--rLine);position:relative}
-  .mb .mt i{position:absolute;left:0;top:0;bottom:0;background:var(--rInk)}
-  .mb .mv{font-family:var(--sans);font-size:13px;font-weight:500;
-    color:var(--rInk);text-align:right;white-space:nowrap}
-  .mb .mv i{font-style:normal;color:var(--rInk3);font-weight:400;font-size:11px}
-
-  /* ---------- corridor rows — load through real air ---------- */
-  .crr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 18px;
-    padding:11px 0;border-bottom:1px solid var(--rLine);
-    align-items:baseline}
-  .crr .cn{font-family:var(--mono);font-size:12px;color:var(--rInk);
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .crr .cn i{font-style:normal;color:var(--rInk3)}
-  .crr .cv{font-family:var(--sans);font-size:14px;font-weight:500;
-    color:var(--rInk);text-align:right;white-space:nowrap}
-  .crr .cv i{font-style:normal;color:var(--rInk3);font-weight:400;font-size:11px}
-  .crr .cs{grid-column:1/-1;font-family:var(--mono);font-size:10px;
-    color:var(--rInk3);line-height:1.8;display:flex;gap:14px;flex-wrap:wrap}
-  .crr .cs .cdot{display:inline-block;width:7px;height:7px;border-radius:1.5px;
-    margin-right:5px;vertical-align:0}
+  /* ---------- street rows (segregation) ---------- */
+  .crr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;
+    padding:12px 0;border-bottom:1px solid var(--rLine);align-items:baseline}
+  .crr .cn{font-size:14px;color:var(--rInk);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .crr .cn i{font-style:normal;font-family:var(--mono);font-size:11px;
+    color:var(--rInk3);margin-right:10px}
+  .crr .cv{font-size:15px;font-weight:500;text-align:right;white-space:nowrap}
+  .crr .cv i{font-style:normal;color:var(--rInk3);font-weight:400;font-size:12px}
+  .crr .cs{grid-column:1/-1;font-family:var(--mono);font-size:11px;color:var(--rInk3);
+    line-height:1.7;display:flex;gap:4px 14px;flex-wrap:wrap}
   .crr .cs b{color:var(--rInk2);font-weight:500}
+  .cdot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;
+    vertical-align:-1px}
+  .note{font-family:var(--serif);font-size:13.5px;line-height:1.6;color:var(--rInk3);
+    margin-top:18px;max-width:60ch}
+  .note b{color:var(--rInk2);font-weight:700}
 
-  /* ---------- sparkline — a real series only, ink line ---------- */
-  .spark{margin-top:34px}
-  .spark svg{display:block;width:100%;height:auto}
-  .spark .cap{display:flex;justify-content:space-between;gap:14px;
-    margin-top:8px;font-family:var(--mono);font-size:10px;
-    color:var(--rInk3);line-height:1.7}
-  .spark .cap b{color:var(--rInk);font-weight:500}
-  .spark .curve{stroke-dasharray:1;stroke-dashoffset:0}
-  .spark.dr .curve{animation:spd 1.1s cubic-bezier(.3,.7,.2,1) both}
-  @keyframes spd{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-  /* a phone can't afford a nowrap right column — values wrap onto
-     their own line instead of clipping off the edge. lives at the
-     END of the sheet: same-specificity base rules above must not win */
-  @media(max-width:640px){
-    .dr{grid-template-columns:1fr;row-gap:2px}
-    .dr .dv{text-align:left;white-space:normal}
-    .lr{grid-template-columns:18px 1fr}
-    .lr>:last-child{grid-column:2;text-align:left;white-space:normal}
-    .mapbox{height:300px}
-    .crr{grid-template-columns:1fr;row-gap:2px}
+  /* ---------- footer ---------- */
+  .foot{display:flex;justify-content:space-between;gap:10px 20px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:11px;color:var(--rInk3);line-height:1.8;
+    padding-top:28px!important;border-top:1px solid var(--rLine)}
+  .foot b{color:var(--rInk2);font-weight:500}
+
+  /* a phone can't afford nowrap right columns — they wrap instead */
+  @media(max-width:480px){
+    .top-in{padding:10px 16px;gap:10px}
+    .tsub{display:none}
+    #toplive{font-size:10px}
+    .kpi{padding-right:8px}
+    .kpi+.kpi{padding-left:10px}
+    .bar{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px}
+    .bar .bt{grid-column:1/-1;grid-row:2}
+    .crr{grid-template-columns:1fr}
     .crr .cv{text-align:left;white-space:normal}
-    .mb{grid-template-columns:minmax(72px,100px) 1fr auto;gap:8px}}
-
-  @media(prefers-reduced-motion:reduce){
-    .spark .curve{animation:none!important}}
-
-  /* ---------- alarm line — the one loud-ish sentence ---------- */
-  .alarmline{margin-top:26px;font-family:var(--serif);font-size:16px;
-    line-height:1.55;color:var(--rInk2);max-width:56ch}
-  .alarmline b{color:var(--rInk);font-weight:700}
-  .alarmline.quiet b{color:var(--accInk)}
-  .alarmline.hot b{color:var(--brick)}
-
-  .statusline{margin-top:26px;font-family:var(--mono);font-size:10px;
-    color:var(--rInk3);line-height:2.1;border-top:1px solid var(--rLine);
-    padding-top:14px}
-  .statusline>span+span::before{content:"·";margin:0 12px;color:var(--rInk4)}
-  .statusline b{color:var(--rInk);font-weight:500}
-  .statusline .ok{color:var(--accInk)}
-  .statusline .err{color:var(--brick)}
-
-  /* ---------- footer — hairline + the one ghost object ---------- */
-  .foot{position:relative;overflow:hidden}
-  .foot .cols{display:flex;justify-content:space-between;gap:20px;
-    flex-wrap:wrap;font-family:var(--mono);font-size:10px;
-    color:var(--rInk3);line-height:2}
-  .foot .cols b{color:var(--rInk);font-weight:500}
-  .foot nav{display:flex;gap:16px}
-  .foot nav a{color:var(--rInk2)}
-  .ghost{font-family:var(--sans);font-weight:700;font-size:clamp(72px,14vw,180px);
-    letter-spacing:-.05em;color:rgba(236,233,226,.045);line-height:.8;
-    margin:40px -6px -14px;user-select:none;pointer-events:none}
+    .dr .dv{white-space:normal}
+    .tr{gap:6px}
+    .tr span{font-size:14px}
+    .mapbox{height:380px;min-height:0}}
+  @media(prefers-reduced-motion:reduce){.bar .bt i{transition:none}}
 </style>
 </head>
 <body>
@@ -343,125 +309,86 @@
 </div>
 
 <header class="top"><div class="top-in">
-  <a class="wm" href="/">alive</a>
-  <nav>
-    <a class="cur" href="#" onclick="return false">engine room</a>
-    <a href="/city">the field</a>
-    <a href="/">delhi</a>
-    <a href="/community">community</a>
-  </nav>
+  <a class="wm" href="/">alive<i class="wdot"></i></a>
+  <span class="tsub">admin</span>
+  <span id="toplive">connecting…</span>
   <button class="tokbtn" id="tokbtn" type="button">operator sign in</button>
-  <span id="toplive"></span>
 </div></header>
 
 <main class="stack">
-  <noscript>
-    <section class="open noidx"><div class="col">
-      <p class="prose">this console is javascript-only — every figure on
-      it is a live render off the server's own endpoints.</p>
-    </div></section>
-  </noscript>
+  <noscript><section class="noidx"><div class="col">
+    <p class="note">this console needs javascript — every figure is a live read off the server.</p>
+  </div></section></noscript>
 
-  <!-- opening — what this page is and why a dash means something -->
-  <section class="open noidx"><div class="col" style="padding-top:clamp(30px,5vw,60px)">
-    <div class="lbl2"><i class="livedot" id="liveDot"></i>the engine room · operator only</div>
-    <h1 class="lead">Delhi's air system,<br>measured.</h1>
-    <p class="prose">every figure below is computed live off this server —
-      the feeds that feed it, the requests it answers, the phones that
-      share back. counters reset on deploy and say so; a reading the
-      machine doesn't have stays a dash, because a guess would be worse.</p>
-    <div class="statusline" id="stamp"><span>connecting…</span></div>
-  </div></section>
-
-  <!-- 01 live air — the honesty row: the number, its band, its age -->
-  <section><div class="col">
-    <div class="lbl2"><i class="livedot" id="airDot"></i>live air — the honesty row</div>
-    <div class="hnum">
-      <div class="hnum-row">
-        <b class="hnum-v na" id="pm">—</b><span class="u">µg/m³ · pm2.5, mean over the live map</span>
-        <span class="bandw" id="pmBW" hidden><i class="bsq" id="pmB"></i><span id="pmW"></span></span>
-      </div>
-      <i class="hnum-s" id="pmS">reading the field…</i>
+  <!-- 01 the air — /grid tiles over a detailed dark basemap -->
+  <section id="s-air"><div class="col">
+    <div class="ph"><h2>the air over delhi ncr</h2><span class="asof" id="airAsof">reading the field…</span></div>
+    <div class="mapbox" id="mapBox">
+      <div id="mapGL" class="mapgl" role="img" aria-label="live pm2.5 tile map over delhi ncr"></div>
+      <canvas id="mapCv" hidden></canvas>
+      <div class="maptip" id="mapTip"></div>
     </div>
-    <p class="felt" id="felt"></p>
-    <div class="dl" id="airRows"></div>
-    <div class="spark" id="fcWrap" hidden>
-      <svg id="fcSvg" viewBox="0 0 560 52" preserveAspectRatio="none" role="img"
-        aria-label="the next twelve hours of pm2.5, live-anchored forecast"></svg>
-      <div class="cap"><span id="fcL">the next twelve hours</span><span id="fcR"></span></div>
-    </div>
+    <div class="mapcap"><span id="fieldStamp"></span><span id="fieldNext"></span></div>
+    <div class="leg" id="bandLeg"></div>
   </div></section>
 
-  <!-- 02 the field — the live tile map, rebuilt on the field's own epoch -->
-  <section><div class="col">
-    <div class="lbl2"><i class="livedot" id="mapDot"></i>the field — the map the city breathes</div>
-    <div class="mapwrap">
-      <div class="mapbox" id="mapBox">
-        <canvas id="mapCv" role="img"
-          aria-label="live pm2.5 tile map over delhi ncr — every cell the server's own read"></canvas>
-        <div class="maptip" id="mapTip"></div>
-      </div>
-      <div class="mapcap"><span id="fieldStamp">reading the field…</span><span id="fieldTtl"></span></div>
-      <div class="leg" id="bandLeg"></div>
-    </div>
-    <p class="sub3">every tile is the server's own concentration read —
-      quieter fill where its certainty runs thinner, never hidden.
-      district hairlines from the baked ncr boundary.</p>
+  <!-- 02 users — distinct anonymous installs -->
+  <section id="s-users"><div class="col">
+    <div class="ph"><h2>who's using it</h2><span class="asof" id="usersAsof"></span></div>
+    <div class="kpis" id="usagecards"></div>
+    <div class="dl" id="usagefb"></div>
   </div></section>
 
-  <!-- 03 coverage — what the map is made of, and how sure it is -->
-  <section><div class="col">
-    <div class="lbl2">coverage — what the map is made of</div>
-    <div class="dl" id="covRows"></div>
-    <p class="sub3" id="covNote"></p>
+  <!-- 03 journeys -->
+  <section id="s-journeys"><div class="col">
+    <div class="ph"><h2>journeys</h2><span class="asof" id="jAsof"></span></div>
+    <div class="kpis" id="jKpis"></div>
+    <div class="tbl" id="jTbl"></div>
+    <div class="cols14" id="jCols"></div>
   </div></section>
 
-  <!-- 04 movement — who knocks on the door, counted since boot -->
-  <section><div class="col">
-    <div class="lbl2">movement — who knocks on the door</div>
-    <p class="prose" id="bootLine">…</p>
-    <div class="dl" id="reqRows"></div>
-    <div class="dl" id="routeRows" style="margin-top:0"></div>
-    <div class="spark" id="trWrap" hidden>
-      <svg id="trSvg" viewBox="0 0 560 52" preserveAspectRatio="none" role="img"
-        aria-label="journeys shared per utc hour, last twenty-four"></svg>
-      <div class="cap"><span id="trL">journeys shared per hour, utc — the last 24</span><span id="trR"></span></div>
-    </div>
-    <div class="dl" id="useRows"></div>
-    <div class="dl" id="modeRows"></div>
-    <div class="dl" id="savRows"></div>
-    <p class="sub3" id="useNote"></p>
+  <!-- 04 modes + vehicles -->
+  <section id="s-modes"><div class="col">
+    <div class="ph"><h2>modes used most</h2><span class="asof" id="mAsof"></span></div>
+    <div class="bars" id="modeBars"></div>
+    <div class="ph ph2"><h3>vehicles</h3></div>
+    <div class="bars" id="vehBars"></div>
   </div></section>
 
-  <!-- 05 one street, shared load — the segregation question -->
-  <section><div class="col">
-    <div class="lbl2">one street, shared load — is everybody on the same route</div>
-    <p class="sub3" id="segIntro" style="margin-top:0"></p>
+  <!-- 05 intake saved -->
+  <section id="s-intake"><div class="col">
+    <div class="ph"><h2>intake saved</h2><span class="asof" id="iAsof"></span></div>
+    <div class="hero" id="iHero"></div>
+    <div class="dl" id="iRows"></div>
+  </div></section>
+
+  <!-- 06 segregation — are people piling onto the same road? -->
+  <section id="s-seg"><div class="col">
+    <div class="ph"><h2>are people piling onto the same road?</h2><span class="asof" id="sAsof"></span></div>
+    <div class="hero" id="sHero"></div>
     <div class="dl" id="segRows"></div>
-    <div class="dl" id="areaRows" style="margin-top:0"></div>
-    <p class="sub3" id="segNote"></p>
+    <div class="dl" id="areaRows"></div>
+    <p class="note" id="segNote"></p>
   </div></section>
 
-  <!-- 06 health — alarms, errors, and the machine's own state -->
-  <section><div class="col">
-    <div class="lbl2">health — when it hurts</div>
-    <p class="alarmline quiet" id="alarm">reading the machine's nerves…</p>
-    <div class="dl" id="srcRows"></div>
-    <div class="dl" id="errRows"></div>
-    <div class="dl" id="sysRows"></div>
+  <!-- 07 audience — the age group + area people chose to give -->
+  <section id="s-who"><div class="col">
+    <div class="ph"><h2>who uses alive</h2><span class="asof" id="wAsof"></span></div>
+    <div class="kpis" id="wKpis"></div>
+    <div class="ph ph2"><h3>age group</h3></div>
+    <div class="bars" id="ageBars"></div>
+    <div class="ph ph2"><h3>top areas</h3></div>
+    <div class="dl" id="areaTop"></div>
+    <p class="note" id="whoNote">no names, no locations — age group and area only, by choice.</p>
   </div></section>
 
   <footer class="noidx"><div class="col foot">
-    <div class="cols">
-      <span>alive engine room · refreshes itself every 30 s ·
-        <b>groups of 3+ phones only, never a person</b></span>
-      <nav><a href="/city">/city ↗</a><a href="/v2/city">/v2/city ↗</a>
-        <a href="/health">/health ↗</a></nav>
-    </div>
-    <div class="ghost" aria-hidden="true">alive</div>
+    <span id="footL">alive admin · groups of 3+ phones only, never a person</span>
+    <span id="footR"></span>
   </div></footer>
 </main>
 
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 const NF=new Intl.NumberFormat('en-IN');
 const $=id=>document.getElementById(id);
@@ -472,28 +399,33 @@ const $=id=>document.getElementById(id);
 const M=location.pathname.replace(/\/+$/,'');
 const fmt=n=>n==null?'—':NF.format(Math.round(n));
 const fmt1=n=>n==null?'—':NF.format(Math.round(n*10)/10);
-const ago=s=>s==null?'—':s<60?`${Math.round(s)}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`;
-const timeIST=d=>d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',
-  hour:'2-digit',minute:'2-digit',second:'2-digit'})+' IST';
-const hmIST=ts=>new Date(ts*1000).toLocaleTimeString('en-IN',
-  {timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}).toLowerCase()+' ist';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TZ={timeZone:'Asia/Kolkata'};
+const hm=ts=>new Date(ts*1000).toLocaleTimeString('en-IN',{...TZ,hour:'2-digit',minute:'2-digit',hour12:false})+' IST';
+const dayLbl=d=>{const[y,m,dd]=String(d||'').split('-').map(Number);
+  return y?new Date(Date.UTC(y,m-1,dd)).toLocaleDateString('en-IN',{timeZone:'UTC',day:'numeric',month:'short'}):'—'};
+const dateIST=ts=>new Date(ts*1000).toLocaleDateString('en-IN',{...TZ,day:'numeric',month:'short'});
+const ago=s=>s==null?'—':s<90?`${Math.round(s)} s`:s<5400?`${Math.round(s/60)} min`:`${Math.round(s/3600)} h`;
+/* µg reads as µg until it is big enough to need a unit change */
+const ug=v=>v==null?'—':Math.abs(v)>=1e6?`${fmt1(v/1e6)} g`:Math.abs(v)>=1e4?`${fmt1(v/1e3)} mg`:`${fmt(v)} µg`;
+const asofHTML=(ts,extra)=>ts?`as of <b>${hm(ts)}</b>${extra?' · '+extra:''}`:'';
 
-/* muted CPCB ramp — the same six the landing wears; colour appears only
-   where it means air (the numeral's tint, the field tiles, the dose
-   dots on corridor rows). on the dark page the fill itself is the
-   readable tone — no separate ink variant needed */
+/* muted CPCB ramp — the six the landing wears; colour only where it
+   means air (tiles, the live-air dot on a street row) */
 const BAND=['#7aab59','#c8b25a','#d58c4a','#b85442','#8f3c49','#6e3c54'];
 const BAND_NAME=['good','satisfactory','moderate','poor','very poor','severe'];
-/* CPCB 24-hr pm2.5 breaks — same table as districts._CPCB_PM25 */
-const BAND_BREAKS=[30,60,90,120,250];
+const BAND_BREAKS=[30,60,90,120,250];   /* CPCB 24-h pm2.5 — districts._CPCB_PM25 */
 const bandIdx=v=>v==null?null:v<=30?0:v<=60?1:v<=90?2:v<=120?3:v<=250?4:5;
+const MODE_NAME={health_max:'Health Maxer',petrol_health:'Petrol + Health',
+  time_health:'Time + Health',none:'no mode picked'};
+const VEH_NAME={car:'car',cab:'cab',erick:'e-rickshaw',bike:'two-wheeler',auto:'auto',bus:'bus',metro:'metro',
+  cycle:'cycle',walk:'on foot',other:'other',none:'not set'};
 
 /* auth model: the login POST mints an HttpOnly SameSite=Strict
    cookie signed server-side — the token itself never lives in JS, so a
-   page-context script cannot steal it (the sessionStorage Bearer this
-   replaces could). AUT tracks 'is the session live' for short-circuiting
-   gated fetches; the session probe in tick() is what flips it. */
+   page-context script cannot steal it. AUT tracks 'is the session live'
+   for short-circuiting gated fetches; the session probe in tick() is
+   what flips it. */
 let AUT=false;
 async function checkSession(){
   try{
@@ -515,681 +447,370 @@ function hideGate(){
   $('gateerr').textContent='';tokBtnRefresh();
 }
 async function getJSON(u){
-  /* a stalled feed must land in its honest-empty state, not pin the
-     Promise.allSettled forever — every call carries a 15s deadline */
+  /* a stalled feed lands in its honest-empty state, never a forever
+     spinner — every call carries a 15 s deadline */
   const r=await fetch(u,{credentials:'same-origin',
     signal:AbortSignal.timeout(15000)});
   if(r.status===401||r.status===403){
-    /* the cookie died mid-view (8h expiry or a token rotation) — flip
-       the board to its locked render and put the gate back up */
     if(AUT){AUT=false;showGate('session ended — sign in again')}
     throw new Error(u+' '+r.status+' — sign-in required');
   }
   if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
 
-let LAST_OK=null;   /* last successful refresh — the honest 'as of' time */
-const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/* ---- row builders — every line is label + value + an honest note ---- */
-const row=(k,v,sub,stale)=>
-  `<div class="dr${stale?' stale':''}"><span class="dk">${k}</span>`+
-  `<b class="dv">${v}</b>${sub?`<i class="ds">${sub}</i>`:''}</div>`;
-const lrow=(i,name,val,stale)=>
-  `<div class="lr${stale?' bad':''}"><span class="li">${i}</span>`+
-  `<span class="ln">${name}</span><b class="lv">${val}</b></div>`;
-const DIR8=['n','ne','e','se','s','sw','w','nw'];
-const compass=d=>d==null?null:DIR8[Math.round(d/45)%8];
-/* vehicle-class tokens → plain words, display-only (the store keeps
-   the server's own vocabulary; this never invents a category) */
-const MODE_WORD={driving_car_ac:'car · ac',driving_car_open:'car',
-  auto_rickshaw:'auto',driving_two_wheeler:'two-wheeler',cycling:'cycle',
-  walking:'on foot',bus:'bus',metro:'metro','metro+walk':'metro + walk',
-  car:'car',bike:'two-wheeler',auto:'auto',cycle:'cycle',walk:'on foot'};
-const modeWord=m=>MODE_WORD[m]||String(m||'?').replace(/_/g,' ');
-
-/* one ink sparkline — real series only; nothing draws for absent data */
-function spark(svgId,vs,{fill=null,dot=null}={}){
-  const el=$(svgId);if(!el||!vs||vs.length<2)return false;
-  const lo=Math.min(...vs),hi=Math.max(...vs);
-  const W=560,H=52,pad=4,base=H-8;
-  const sx=i=>pad+i*(W-2*pad)/(vs.length-1);
-  const sy=v=>hi>lo?5+(hi-v)/(hi-lo)*(base-10):base/2;
-  const pts=vs.map((v,i)=>sx(i).toFixed(1)+','+sy(v).toFixed(1)).join(' ');
-  el.innerHTML=
-    `<line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="var(--rLine2)" stroke-width="1"/>`+
-    (fill?`<polygon points="${pad},${base} ${pts} ${sx(vs.length-1).toFixed(1)},${base}" fill="${fill}"/>`:'')+
-    `<polyline class="curve" pathLength="1" points="${pts}" fill="none" stroke="var(--rInk)" stroke-width="1.2"`+
-    ` stroke-linejoin="round" stroke-linecap="round"/>`+
-    (dot?`<circle cx="${sx(0).toFixed(1)}" cy="${sy(vs[0]).toFixed(1)}" r="2.7" fill="${dot}" stroke="var(--rInk)" stroke-width="1"/>`:'');
-  const wrap=el.closest('.spark');if(wrap)wrap.hidden=false;
-  return true;
-}
-const sparkDraw=(wrapId)=>{const w=$(wrapId);
-  if(w&&!RM){w.classList.remove('dr');void w.offsetWidth;w.classList.add('dr')}};
-
-/* ==================== the field map ====================
-   the owner's tile-map ask: /grid?cells=40 as a real choropleth —
-   one rect per served cell, band fill, alpha by the cell's own
-   confidence (hi/med/lo — a lo-confidence cell draws quieter, never
-   hidden), ncr borders as hairlines. equirectangular with cos(lat)
-   keeps delhi's proportions. rebuilt only when the field's own epoch
-   advances — the collection carries cell_epoch for exactly this. */
-const MAP={cells:null,proj:null,geo:null,range:null,epoch:null};
-const CONF={hi:1,med:.82,lo:.56};
+/* ============================ 01 the map ============================
+   /grid?cells=40 (the field's own 1,600-cell read) painted as tiles over
+   a detailed dark basemap — labels and roads stay on top. The field
+   rebuilds ~every 15 min; the grid is re-pulled on that cadence and the
+   stamp reads the field's OWN build time (cell_epoch), never the fetch
+   time. No WebGL / no basemap → the same cells on a plain canvas. */
+const GRID_URL='/grid?cells=40&param=pm2_5';
+const GRID_EVERY_MS=15*60*1000;
+const STALE_S=45*60;
+const MAP={gl:null,ready:false,data:null,geo:null,epoch:null,fetched:null,cells:null,proj:null,canvas:false};
 function bandLeg(){
   $('bandLeg').innerHTML=BAND_NAME.map((n,i)=>
-    `<span><i style="background:${BAND[i]}"></i>${n}${i<5?` ≤${BAND_BREAKS[i]}`:' >250'}</span>`).join('');
+    `<span><i style="background:${BAND[i]}"></i>${n} ${i<5?`≤${BAND_BREAKS[i]}`:'>250'}</span>`).join('')+
+    '<span>µg/m³ pm2.5</span>';
 }
+function initGL(){
+  if(!window.maplibregl){MAP.canvas=true;return}
+  try{
+    const m=new maplibregl.Map({container:'mapGL',
+      style:'https://tiles.openfreemap.org/styles/dark',
+      bounds:[[76.8,28.2],[77.9,28.95]],fitBoundsOptions:{padding:8},
+      attributionControl:{compact:true},dragRotate:false,pitchWithRotate:false,
+      cooperativeGestures:matchMedia('(pointer:coarse)').matches});
+    m.touchZoomRotate.disableRotation();
+    m.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+    m.on('load',()=>{MAP.ready=true;paintGL()});
+    m.on('error',()=>{});          /* a missing tile is not a dead map */
+    MAP.gl=m;
+    /* the basemap never came up (blocked / offline / no webgl) → canvas */
+    setTimeout(()=>{if(!MAP.ready){MAP.canvas=true;$('mapGL').hidden=true;
+      $('mapCv').hidden=false;drawCanvas()}},12000);
+  }catch(e){MAP.canvas=true;$('mapGL').hidden=true;$('mapCv').hidden=false}
+}
+function tipHTML(p){
+  const bi=bandIdx(p.pm25);
+  return `<i style="background:${bi==null?'var(--rLine2)':BAND[bi]}"></i>`+
+    `${fmt1(p.pm25)} µg/m³ · ${bi==null?'—':BAND_NAME[bi]}${p.conf?` · ${esc(p.conf)} confidence`:''}`;
+}
+function placeTip(x,y,html){
+  const tip=$('mapTip'),W=$('mapBox').clientWidth;
+  tip.innerHTML=html;tip.style.display='block';
+  tip.style.left=Math.max(6,Math.min(x+12,W-tip.offsetWidth-6))+'px';
+  tip.style.top=Math.max(6,y-36)+'px';
+}
+function paintGL(){
+  const m=MAP.gl;if(!m||!MAP.ready||!MAP.data)return;
+  const src=m.getSource('air');
+  if(src){src.setData(MAP.data);return}
+  /* air sits under the street network and the labels — roads and place
+     names stay crisp on top of the tiles, the map stays a map */
+  const layers=m.getStyle().layers||[];
+  const road=layers.find(l=>l.type==='line'&&/road|highway|transport|tunnel|bridge|rail/i.test(l.id));
+  const sym=layers.find(l=>l.type==='symbol');
+  const before=(road||sym||{}).id;
+  m.addSource('air',{type:'geojson',data:MAP.data});
+  m.addLayer({id:'air',type:'fill',source:'air',paint:{
+    'fill-color':['step',['get','pm25'],BAND[0],30,BAND[1],60,BAND[2],90,BAND[3],120,BAND[4],250,BAND[5]],
+    'fill-opacity':['match',['get','conf'],'hi',.78,'med',.68,'lo',.48,.6],
+    'fill-antialias':false}},before);
+  if(MAP.geo){
+    m.addSource('ncr',{type:'geojson',data:MAP.geo});
+    m.addLayer({id:'ncr',type:'line',source:'ncr',paint:{
+      'line-color':'rgba(236,233,226,.42)','line-width':.8}},before);
+  }
+  m.on('mousemove','air',e=>{const f=e.features&&e.features[0];if(!f)return;
+    m.getCanvas().style.cursor='crosshair';placeTip(e.point.x,e.point.y,tipHTML(f.properties))});
+  m.on('mouseleave','air',()=>{m.getCanvas().style.cursor='';$('mapTip').style.display='none'});
+  m.on('click','air',e=>{const f=e.features&&e.features[0];if(f)placeTip(e.point.x,e.point.y,tipHTML(f.properties))});
+}
+/* the canvas fallback — equirectangular with cos(lat), district hairlines */
 function projFor(W,H){
   let lon0=1e9,lon1=-1e9,lat0=1e9,lat1=-1e9;
   for(const c of MAP.cells){if(c.lo0<lon0)lon0=c.lo0;if(c.lo1>lon1)lon1=c.lo1;
     if(c.la0<lat0)lat0=c.la0;if(c.la1>lat1)lat1=c.la1}
-  const kx=Math.cos((lat0+lat1)/2*Math.PI/180),pad=14;
+  const kx=Math.cos((lat0+lat1)/2*Math.PI/180),pad=10;
   const s=Math.min((W-2*pad)/((lon1-lon0)*kx),(H-2*pad)/(lat1-lat0));
   const ox=(W-(lon1-lon0)*kx*s)/2,oy=(H-(lat1-lat0)*s)/2;
   return {X:lo=>ox+(lo-lon0)*kx*s,Y:la=>H-oy-(la-lat0)*s,
           lon:x=>lon0+(x-ox)/(kx*s),lat:y=>lat0+(H-oy-y)/s};
 }
-function drawMap(){
-  const cv=$('mapCv');if(!cv||!MAP.cells)return;
+const CONF={hi:1,med:.82,lo:.56};
+function drawCanvas(){
+  const cv=$('mapCv');if(!MAP.canvas||!cv||!MAP.cells)return;
   const box=$('mapBox'),W=box.clientWidth,H=box.clientHeight;
   const dpr=Math.min(2,devicePixelRatio||1),cx=cv.getContext('2d');
   cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0);
   cx.clearRect(0,0,W,H);
   MAP.proj=projFor(W,H);
-  const [mn,mx]=MAP.range;
   for(const c of MAP.cells){
-    const x0=MAP.proj.X(c.lo0),x1=MAP.proj.X(c.lo1),
-          y0=MAP.proj.Y(c.la1),y1=MAP.proj.Y(c.la0);
+    const x0=MAP.proj.X(c.lo0),x1=MAP.proj.X(c.lo1),y0=MAP.proj.Y(c.la1),y1=MAP.proj.Y(c.la0);
     const bi=bandIdx(c.v);
-    cx.globalAlpha=(.34+.62*Math.min(1,Math.max(0,(c.v-mn)/((mx-mn)||1))))*(CONF[c.conf]||.7);
-    cx.fillStyle=bi==null?'var(--rLine2)':BAND[bi];
-    cx.fillRect(x0+.5,y0+.5,Math.max(1,x1-x0-1),Math.max(1,y1-y0-1));
+    cx.globalAlpha=.85*(CONF[c.conf]||.7);
+    cx.fillStyle=bi==null?'#333':BAND[bi];
+    cx.fillRect(x0,y0,Math.max(1,x1-x0+.5),Math.max(1,y1-y0+.5));
   }
   cx.globalAlpha=1;
   if(MAP.geo&&MAP.geo.features){
-    cx.strokeStyle='rgba(236,233,226,.30)';cx.lineWidth=.8;cx.beginPath();
+    cx.strokeStyle='rgba(236,233,226,.36)';cx.lineWidth=.8;cx.beginPath();
     for(const f of MAP.geo.features){
       const g=f.geometry;if(!g)continue;
       const polys=g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[];
       for(const poly of polys)for(const ring of poly)
-        ring.forEach(([lo,la],i)=>{const x=MAP.proj.X(lo),y=MAP.proj.Y(la);
-          i?cx.lineTo(x,y):cx.moveTo(x,y)});
+        ring.forEach(([lo,la],i)=>{const x=MAP.proj.X(lo),y=MAP.proj.Y(la);i?cx.lineTo(x,y):cx.moveTo(x,y)});
     }
     cx.stroke();
   }
 }
+function canvasTip(ev){
+  if(!MAP.canvas||!MAP.proj||!MAP.cells)return;
+  const r=$('mapBox').getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;
+  const lon=MAP.proj.lon(x),lat=MAP.proj.lat(y);
+  const c=MAP.cells.find(c=>lon>=c.lo0&&lon<=c.lo1&&lat>=c.la0&&lat<=c.la1);
+  if(!c){$('mapTip').style.display='none';return}
+  placeTip(x,y,tipHTML({pm25:c.v,conf:c.conf}));
+}
 function mapStamp(){
-  if(!MAP.cells)return;
-  const [mn,mx]=MAP.range;
-  const built=MAP.epoch?`built ${ago(Date.now()/1000-MAP.epoch)} ago`:'live';
-  $('fieldStamp').innerHTML=`<b>${fmt(MAP.cells.length)}</b> cells · <b>${fmt1(mn)}–${fmt1(mx)}</b> µg/m³ · ${built}`;
-  const bi=bandIdx((mn+mx)/2);
-  $('mapDot').style.background=bi==null?'var(--rLine2)':BAND[bi];
+  const now=Date.now()/1000;
+  if(!MAP.data){return}
+  const n=MAP.cells.length,vs=MAP.cells.map(c=>c.v);
+  const lo=Math.min(...vs),hi=Math.max(...vs);
+  const stale=MAP.epoch&&now-MAP.epoch>STALE_S;
+  const el=$('airAsof');
+  el.className='asof'+(stale?' stale':'');
+  el.innerHTML=MAP.epoch
+    ?`as of <b>${hm(MAP.epoch)}</b> · ${stale?`stale — the field is ${ago(now-MAP.epoch)} old`:`${ago(now-MAP.epoch)} old`}`
+    :'as of — the field sent no build time';
+  $('fieldStamp').innerHTML=`<b>${fmt(n)}</b> tiles · <b>${fmt1(lo)}–${fmt1(hi)}</b> µg/m³ pm2.5`;
+  $('fieldNext').textContent=MAP.fetched?`checked ${hm(MAP.fetched)} · re-read every 15 min`:'';
 }
 async function fetchGrid(){
-  /* the collection is deterministic on (cells, param, epoch) and the
-     server caches it — we only re-pull when the field's own epoch
-     advanced, so 'refreshes every ~15 min' is the field's real TTL,
-     not a page timer pretending */
   try{
-    const r=await fetch('/grid?cells=40&param=pm2_5',
-      {signal:AbortSignal.timeout(20000)});
-    if(!r.ok)throw 0;
+    const r=await fetch(GRID_URL,{signal:AbortSignal.timeout(20000)});
+    if(!r.ok)throw new Error('grid '+r.status);
     const g=await r.json();
     const fs=(g.features||[]).filter(f=>f.geometry&&f.properties&&f.properties.pm25!=null);
-    if(!fs.length){if(!MAP.cells)$('fieldStamp').textContent='the live field is reconnecting';return}
-    const ep=g.properties&&g.properties.cell_epoch?g.properties.cell_epoch[0]:null;
-    if(ep&&MAP.epoch&&ep<=MAP.epoch){mapStamp();return}
-    if(ep)MAP.epoch=ep;
-    MAP.cells=fs.map(f=>{const r=f.geometry.coordinates[0],
-      los=r.map(p=>p[0]),las=r.map(p=>p[1]);
-      return {v:f.properties.pm25,conf:f.properties.conf,
-        lo0:Math.min(...los),lo1:Math.max(...los),
+    MAP.fetched=Date.now()/1000;
+    if(!fs.length){if(!MAP.data)$('airAsof').textContent='the field is empty right now — no tiles to draw';return}
+    const ep=g.properties&&g.properties.cell_epoch?Number(g.properties.cell_epoch[0])||null:null;
+    MAP.epoch=ep;
+    MAP.data={type:'FeatureCollection',features:fs};
+    MAP.cells=fs.map(f=>{const ring=f.geometry.coordinates[0],los=ring.map(p=>p[0]),las=ring.map(p=>p[1]);
+      return {v:f.properties.pm25,conf:f.properties.conf,lo0:Math.min(...los),lo1:Math.max(...los),
         la0:Math.min(...las),la1:Math.max(...las)}});
-    MAP.range=[Math.min(...MAP.cells.map(c=>c.v)),Math.max(...MAP.cells.map(c=>c.v))];
     if(!MAP.geo){
       try{const gr=await fetch('/ncr.geojson',{signal:AbortSignal.timeout(12000)});
         MAP.geo=gr.ok?await gr.json():null}catch(e){MAP.geo=null}
     }
-    drawMap();mapStamp();
+    paintGL();drawCanvas();mapStamp();
   }catch(e){
-    if(!MAP.cells)$('fieldStamp').textContent='the field map is unreachable — no honest read';
+    if(!MAP.data)$('airAsof').textContent='the field map is unreachable — nothing to show';
+    else mapStamp();
   }
 }
-/* hover/tap a cell — the tooltip reads the tile's own numbers */
-function mapTipAt(ev){
-  const tip=$('mapTip');if(!MAP.proj||!MAP.cells){tip.style.display='none';return}
-  const r=$('mapBox').getBoundingClientRect();
-  const x=ev.clientX-r.left,y=ev.clientY-r.top;
-  const lon=MAP.proj.lon(x),lat=MAP.proj.lat(y);
-  const c=MAP.cells.find(c=>lon>=c.lo0&&lon<=c.lo1&&lat>=c.la0&&lat<=c.la1);
-  if(!c){tip.style.display='none';return}
-  const bi=bandIdx(c.v);
-  tip.innerHTML=`<i class="cdot" style="background:${bi==null?'var(--rLine2)':BAND[bi]};display:inline-block;width:7px;height:7px;border-radius:1.5px;margin-right:5px"></i>`+
-    `${fmt1(c.v)} µg/m³ · ${bi==null?'—':BAND_NAME[bi]} · conf ${esc(c.conf||'—')}`;
-  tip.style.display='block';
-  tip.style.left=Math.min(x+12,r.width-170)+'px';
-  tip.style.top=Math.max(6,y-34)+'px';
+
+/* ============================ panels 02–06 ============================ */
+const LOCK='<div class="locked">locked — sign in as operator</div>';
+const kpi=(k,v,s,dim)=>`<div class="kpi"><span class="k">${k}</span>`+
+  `<b class="v${dim?' dim':''}">${v}</b>${s?`<span class="s">${s}</span>`:''}</div>`;
+const row=(k,v,sub)=>`<div class="dr"><span class="dk">${k}</span><b class="dv">${v}</b>`+
+  `${sub?`<i class="ds">${sub}</i>`:''}</div>`;
+/* 'counting since' — the first IST day with a counted event; with nothing
+   counted yet, the moment this server armed its counters */
+function since(app){
+  if(!app)return '';
+  if(app.since)return dayLbl(app.since);
+  return app.server_start_ts?`${dateIST(app.server_start_ts)}, ${hm(app.server_start_ts)}`:'this deploy';
 }
-(function(){
-  const box=$('mapBox');
-  box.addEventListener('mousemove',mapTipAt);
-  box.addEventListener('mouseleave',()=>{$('mapTip').style.display='none'});
-  box.addEventListener('click',mapTipAt);
-  addEventListener('resize',()=>{if(MAP.cells)drawMap()});
-})();
-bandLeg();
+const zeroLine=(what,app)=>`<div class="zero"><b>0</b> ${what} so far — counting since ${esc(since(app))}</div>`;
 
-/* ============================== renders ============================== */
+function renderUsers(app,usage){
+  if(!app){$('usagecards').innerHTML=LOCK;$('usagefb').innerHTML='';return}
+  if(app.available===false){$('usagecards').innerHTML=`<div class="locked">the usage store can't be read right now${app.error?' — '+esc(app.error):''}</div>`;return}
+  const d=app.devices||{};
+  $('usersAsof').innerHTML=asofHTML(app.ts);
+  $('usagecards').innerHTML=
+    kpi('today',fmt(d.today),null,!d.today)+
+    kpi('7 days',fmt(d.d7),null,!d.d7)+
+    kpi('all time',fmt(d.total),null,!d.total);
+  const rows=[];
+  if(!d.total)rows.push(zeroLine('devices',app));
+  const op=app.opens||{};
+  rows.push(row('app opens today',fmt(op.today),
+    `one per device per day · ${fmt(op.d7)} in 7 days`));
+  const sh=usage&&usage.devices;
+  if(sh&&sh.total!=null)rows.push(row('devices sharing trips',fmt(sh.total),
+    'opted in to trip sharing — the only source of street-level data'));
+  $('usagefb').innerHTML=rows.join('')+
+    `<p class="note">anonymous installs — a random id per phone, no account, no location${d.total?` · counting since ${esc(since(app))}`:''}`+
+    `${app.persists?'':' · <b>this server keeps the counts in memory — a deploy resets them</b>'}.</p>`;
+}
 
-function renderAir(city,status){
-  const stats=(city&&city.pm25_stats)||{};
-  /* merge the two field snapshots — api/status's field is authoritative
-     for serving/age/stale, but the native engine reports the station
-     blend only on /v2/city's embedded field (stations_status/src) */
-  const f={...((city&&city.field)||{}),...((status&&status.field)||{})};
-  const mean=stats.mean;
-  const bi=bandIdx(mean);
-  const pmEl=$('pm');
-  if(mean==null){pmEl.textContent='no reading';pmEl.classList.add('na')}
-  else{pmEl.textContent=fmt1(mean);pmEl.classList.remove('na')}
-  document.documentElement.style.setProperty('--hink',
-    bi==null?'var(--rInk)':BAND[bi]);
-  if(bi==null){$('pmBW').hidden=true;$('airDot').style.background='var(--rLine2)'}
-  else{
-    $('pmB').style.background=BAND[bi];
-    $('pmW').textContent=BAND_NAME[bi];
-    $('pmBW').hidden=false;
-    $('airDot').style.background=BAND[bi];
-  }
-  /* the honesty line under the number — age + where it came from */
-  const age=f.age_s??city?.freshness?.field_age_s;
-  const st=f.stale??(city?.freshness?.label==='stale');
-  $('pmS').innerHTML=(age==null?`the field reports no age — reading straight off what it serves`
-    :`the data is <b>${ago(age)} old</b>${st?` — <b style="color:var(--brick)">stale, past the ${Math.round((f.stale_after_s||2700)/60)}-minute alarm</b>`:''}`);
-  /* felt line — the day's breath in cigarettes, the codebase's own
-     figure; hidden when the field can't answer honestly. a near-zero
-     bound must not collapse to a bare 0 — keep two decimals below 0.1 */
-  const cig=city&&city.breath&&city.breath.cigarettes;
-  const cl=v=>v!=null&&Math.abs(v)>0&&Math.abs(v)<0.1?(+v).toFixed(2):fmt1(v);
-  $('felt').innerHTML=cig
-    ?`a day outside in this air ≈ <b>${cl(cig.lo)}–${cl(cig.hi)} cigarettes</b> — berkeley earth's 316 µg rule, on the live map's own band`
+function renderJourneys(app){
+  if(!app||app.available===false){$('jKpis').innerHTML=app?'':LOCK;$('jTbl').innerHTML='';$('jCols').innerHTML='';return}
+  const J=app.journeys||{},t=J.total||{},td=J.today||{},w=J.d7||{};
+  $('jAsof').innerHTML=asofHTML(app.ts);
+  $('jKpis').innerHTML=
+    kpi('started',fmt(t.started),`${fmt(td.started)} today`,!t.started)+
+    kpi('completed',fmt(t.completed),`${fmt(td.completed)} today`,!t.completed)+
+    kpi('success rate',t.success_pct==null?'—':`${fmt1(t.success_pct)}%`,
+      t.success_pct==null?'no journey yet':'arrived ÷ started',t.success_pct==null);
+  const pct=v=>v==null?'<i>—</i>':`${fmt1(v)}%`;
+  const tr=(k,o)=>`<div class="tr"><span>${k}</span><span>${fmt(o.started)}</span><span>${fmt(o.completed)}</span><span>${pct(o.success_pct)}</span></div>`;
+  $('jTbl').innerHTML=(t.started||t.ended)
+    ?`<div class="tr th"><span></span><span>started</span><span>completed</span><span>success</span></div>`+
+      tr('today',td)+tr('7 days',w)+tr('all time',t)+
+      (t.km?`<div class="tr"><span>travelled</span><span>${fmt1(t.km)} km</span><span>${fmt(t.minutes)} min</span><span></span></div>`:'')
+    :zeroLine('journeys',app);
+  const days=app.daily||[];
+  const mx=Math.max(1,...days.map(d=>d.started||0));
+  $('jCols').innerHTML=(days.some(d=>d.started||d.completed))
+    ?`<div class="cg">${days.map(d=>`<div class="c" title="${esc(dayLbl(d.day))}: ${d.started} started, ${d.completed} completed">`+
+      `<i style="height:${(100*(d.started||0)/mx).toFixed(1)}%"></i><b style="height:${(100*Math.min(d.completed||0,mx)/mx).toFixed(1)}%"></b></div>`).join('')}</div>`+
+      `<div class="cx"><span>${esc(dayLbl(days[0].day))}</span><span>today</span></div>`+
+      `<div class="lg"><span><i></i>started</span><span><b></b>completed</span></div>`
     :'';
-  /* the honesty rows */
-  const w=f.wind||city?.wind||{};
-  const typ=city&&city.typical;
-  const rows=[];
-  const sstat=f.stations_status||{};
-  const feeds=Object.keys(sstat).length
-    ?Object.entries(sstat).map(([k,v])=>`${k} ${v==='ok'?'✓':'✗'}`).join(' · ')
-    :(f.stations_src||null);
-  rows.push(row('stations reporting',
-    f.station_readings!=null?`<b>${fmt(f.station_readings)}</b>`:'—',
-    feeds?`the live blend right now: ${esc(feeds)}`:'which feeds are in the blend — the feed reports nothing'));
-  rows.push(row('serving',
-    f.serving==='live'?'the live field'
-    :f.serving==='snapshot'?'the last built snapshot'
-    :f.serving==='none'?'nothing — the field is empty':'—',
-    f.serving==='snapshot'
-      ?`serving a saved snapshot${f.snapshot_age_s!=null?` · built ${ago(f.snapshot_age_s)} ago`:''} — the live builder is down`
-      :null,
-    f.serving==='none'));
-  rows.push(row('wind',
-    w.speed_kmh!=null?`${Math.round(w.speed_kmh)} km/h <i>from ${compass(w.from_deg)||'—'}</i>`:'—',
-    w.speed_kmh!=null?'where the smoke drifts from':'the met feed carries no wind right now'));
-  rows.push(row('vs a typical day',
-    typ&&typ.vs_now_pct!=null
-      ?`${typ.vs_now_pct>0?'+':''}${fmt1(typ.vs_now_pct)}%`
-      :'—',
-    typ&&typ.median!=null
-      ?`a typical ${new Date().toLocaleString('en',{month:'long'})} hour like this reads ${fmt1(typ.median)} µg/m³ — ten years of openaq, median`
-      :'the decade-climatology band has no answer for this hour'));
-  $('airRows').innerHTML=rows.join('');
-  /* the next twelve hours — the same live-anchored forecast /v2/city
-     already ships; absent horizon = no line, never a flat fake */
-  const hrs=(city&&city.next_hours||[]).map(h=>h&&h.pm25).filter(v=>v!=null);
-  if(hrs.length>=4){
-    const c=bi==null?BAND[2]:BAND[bi];
-    spark('fcSvg',hrs,{fill:`${c}22`,dot:c});
-    const lo=Math.min(...hrs),hi=Math.max(...hrs);
-    $('fcL').innerHTML=`the next ${hrs.length} hours — live forecast · <b>${fmt1(lo)}–${fmt1(hi)} µg/m³</b>`;
-    $('fcR').textContent='anchored to the live map';
-    sparkDraw('fcWrap');
-  }else{$('fcWrap').hidden=true}
 }
 
-function renderCoverage(status,city){
-  const f={...((city&&city.field)||{}),...((status&&status.field)||{})};
-  const arch=(status&&status.archive)||{};
-  const fc=(status&&status.forecast)||{};
-  const rt=(status&&status.routing)||{loaded:false};
-  const rows=[];
-  /* instruments + model — the field's own count, verbatim feeds */
-  const sstat=f.stations_status||{};
-  rows.push(row('stations into the blend',
-    f.station_readings!=null?fmt(f.station_readings):'—',
-    f.stations_src?`feeding right now: ${esc(f.stations_src)}`:null));
-  for(const[feed,st]of Object.entries(sstat)){
-    const sw=String(st).toLowerCase();
-    rows.push(row(`&nbsp;&nbsp;${esc(feed)}`,esc(st),null,
-      !sw.startsWith('ok')&&!sw.startsWith('skipped')));
-  }
-  rows.push(row('model grid',f.samples!=null?`${fmt(f.samples)} samples`:'—',
-    f.source?`source ${esc(f.source)}`:null));
-  /* plain words for the estimator — the mechanic's name stays in
-     brackets for whoever wants it, never as the headline */
-  rows.push(row('between the stations',
-    f.kriging==='on'?'smoothed by the full spatial model'
-    :f.kriging==='idw'?'simple distance-averaging':'—',
-    f.kriging==='on'?'ordinary kriging under the hood'
-    :f.kriging==='idw'?'the cheaper guess — cells get answers but no honest certainty band':null,
-    f.kriging==='idw'));
-  rows.push(row('how sure each cell is',
-    f.sigma_coverage==='per-query'?'every query gets an honest certainty band'
-    :f.sigma_coverage==='full'?'every served cell carries a certainty band'
-    :(f.sigma_coverage||'').startsWith('partial:')?`a certainty band on ${esc(f.sigma_coverage.slice(8))} of the cells`
-    :f.sigma_coverage==='none'?'no certainty band — the field answers without one':'—',
-    null,f.sigma_coverage==='none'));
-  const cov=f.coverage||{};
-  rows.push(row('the served field',cov.cells!=null?`${fmt(cov.cells)} cells`:'—',
-    cov.bbox?`from ${fmt1(cov.bbox[1])}°n to ${fmt1(cov.bbox[3])}°n`+(cov.out_beyond_km?` · outside it, ${cov.out_beyond_km} km of slack then no answer`:' · outside it, no answer'):null));
-  /* the archive — the hourly recording of this same field */
-  if(arch.enabled===false){
-    rows.push(row('the archive','off','the hourly recorder is disabled on this task'))
-  }else if(arch.snapshots_total!=null){
-    const t=arch.today||{};
-    rows.push(row('the archive',
-      `${fmt(arch.snapshots_total)} snapshot${arch.snapshots_total===1?'':'s'}`,
-      `recorded since ${esc((arch.since_ist||'').slice(0,10)||'—')} · today ${fmt(t.hours_recorded)} of ${fmt(t.hours_elapsed)} hours on disk`+
-      (t.gaps&&t.gaps.length?` · missing ${t.gaps.length} hour${t.gaps.length>1?'s':''}`:'')));
-  }else if(arch.error){
-    rows.push(row('the archive','—',`can't be counted right now — ${esc(arch.error)}`,true));
-  }
-  /* the horizon + the route engine — both only counted when loaded */
-  if(fc.hours!=null)rows.push(row('the forecast',
-    `${fmt(fc.hours)} hours ahead`,fc.age_s!=null?`refreshed ${ago(fc.age_s)} ago`:null));
-  if(rt.loaded)rows.push(row('the route engine',
-    rt.edges_priced!=null&&rt.edges!=null
-      ?`${fmt(rt.edges_priced)} of ${fmt(rt.edges)} streets priced`:'loaded',
-    `least-smoke paths priced off the live map`+(rt.reweight_age_s!=null?` · repriced ${ago(rt.reweight_age_s)} ago`:'')));
-  $('covRows').innerHTML=rows.join('');
-  $('covNote').innerHTML=`a cell the field can't honestly answer is never
-    smoothed into fiction — the page says how each number is estimated.
-    the archive is delhi's air as recorded history, one snapshot an hour.`;
+function bars(rows,nameOf){
+  const tot=rows.reduce((a,r)=>a+(r.started||0),0);
+  return rows.map(r=>{
+    const p=tot?100*(r.started||0)/tot:0;
+    return `<div class="bar${r.started?'':' zero0'}"><span class="bn">${esc(nameOf(r.name))}</span>`+
+      `<span class="bt"><i style="transform:scaleX(${(p/100).toFixed(4)});right:0"></i></span>`+
+      `<b class="bv">${fmt(r.started)}<i>${tot?` · ${fmt1(p)}%`:''}</i></b></div>`}).join('');
+}
+function renderModes(app){
+  if(!app||app.available===false){$('modeBars').innerHTML=app?'':LOCK;$('vehBars').innerHTML='';return}
+  $('mAsof').innerHTML=asofHTML(app.ts,'all time');
+  const modes=((app.modes&&app.modes.total)||[]).filter(r=>r.name!=='none'||r.started);
+  const veh=((app.vehicles&&app.vehicles.total)||[]).filter(r=>r.started);
+  const any=modes.some(r=>r.started);
+  $('modeBars').innerHTML=bars(modes,n=>MODE_NAME[n]||n)+(any?'':zeroLine('journeys with a mode',app));
+  $('vehBars').innerHTML=veh.length?bars(veh,n=>VEH_NAME[n]||n):zeroLine('journeys with a vehicle',app);
 }
 
-function renderUsage(usage,timing,api,donations,glob){
-  const trips=(usage&&usage.trips)||{};
-  const dev=(usage&&usage.devices)||{};
-  const dose=(usage&&usage.dose)||{};
-  const fb=(usage&&usage.feedback)||{};
-  const corr=(usage&&usage.corridors)||{};
-  const req=(timing&&timing.requests)||{};
-  /* the boot caption — counters live in-process, a deploy zeroes them;
-     the page says so instead of implying a longer history */
-  const up=(api&&api.uptime_s);
-  $('bootLine').innerHTML=(up!=null
-    ?`counted since boot <b>${hmIST(Date.now()/1000-up)}</b> — the server's own stopwatch, in-process. <b>every counter resets on deploy.</b>`
-    :`the server's own stopwatch — in-process counts since boot. <b>every counter resets on deploy.</b>`);
-  /* requests — the registry's real histograms, busiest first.
-     /health usually tops this board — uptime monitoring pings it
-     constantly; it's real traffic, just not people, and the note says so */
-  const routes=(timing&&timing.routes)||[];
-  const inflight=timing&&timing.gauges&&timing.gauges.alive_requests_in_flight;
-  const rrows=[];
-  const healthN=(routes.find(r=>r.path==='/health')||{}).n;
-  const totalN=req.total!=null?req.total:routes.reduce((a,r)=>a+(r.n||0),0);
-  rrows.push(row('requests served',fmt(totalN),
-    (inflight?`${fmt(inflight)} in flight right now · `:'')+
-    (healthN&&totalN?`/health alone is ${fmt(healthN)} — uptime monitors pinging, real but not people`:'')));
-  $('reqRows').innerHTML=rrows.join('');
-  const shortPath=p=>p&&p.startsWith(M)?p.slice(M.length)||'/':p;
-  const top=routes.filter(r=>r.n>0).slice(0,8);
-  $('routeRows').innerHTML=top.map((r,i)=>lrow(
-    String(i+1).padStart(2,'0'),
-    esc(shortPath(r.path)),
-    `${fmt(r.n)} <i>· ≈${r.mean_ms!=null?fmt(r.mean_ms):'—'}ms each</i>`)).join('')||
-    lrow('01','—','nothing has knocked yet');
-  /* journeys sparkline — donations per hour over the rolling 24h, the
-     ledger's own buckets (more of the story than today-only) */
-  const jph=(trips.per_hour&&trips.per_hour.length>=2?trips.per_hour:null)
-    ||(api&&api.journeys_per_hour);
-  if(jph&&jph.length>=2){
-    spark('trSvg',jph,{});
-    const tot=jph.reduce((a,b)=>a+(b||0),0);
-    $('trR').innerHTML=`<b>${fmt(tot)}</b> ${tot===1?'journey':'journeys'} in the window`;
-    sparkDraw('trWrap');
-  }else{$('trWrap').hidden=true}
-  const urows=[];
-  urows.push(row('devices that shared',
-    dev.total!=null?`<b>${fmt(dev.total)}</b> all-time`:'—',
-    dev.seen_24h!=null||dev.seen_7d!=null
-      ?`${dev.seen_24h!=null?fmt(dev.seen_24h)+' in 24h':''}${dev.seen_24h!=null&&dev.seen_7d!=null?' · ':''}${dev.seen_7d!=null?fmt(dev.seen_7d)+' in 7d':''} — true installs are unknowable by design`
-      :usage&&usage.devices_basis?esc(usage.devices_basis):null));
-  const live=api&&api.live_users;
-  urows.push(row('active right now',
-    live!=null?fmt(live):'—',
-    'phones that shared inside the last half hour'));
-  /* the last 24h answers 'who touched it today' better than the
-     day-boundary counter — a fresh IST/UTC day reads zero by definition */
-  const l24=trips.last_24h;
-  const today=trips.today;
-  urows.push(row('journeys · the last 24 hours',
-    l24&&l24.trips!=null?`<b>${fmt(l24.trips)}</b>`:'none',
-    l24&&l24.trips!=null
-      ?`${fmt1(l24.km)} km · ${fmt1(l24.dose_ug)} µg · ${fmt(l24.devices)} phones${today&&today.trips!=null?` · ${fmt(today.trips)} of them since the day turned`:''}`
-      :'the window counter exists — it just hasn\'t heard a trip yet'));
-  urows.push(row('every donation ever',
-    trips.total!=null?`<b>${fmt(trips.total)}</b> <i>journeys</i>`:'—',
-    trips.total!=null?`${fmt1(trips.km)} km · ${fmt1(trips.dose_ug)} µg · ${fmt1(trips.co2_kg_mid)} kg co₂${trips.latest_donation_age_min!=null?` · last one ${ago(trips.latest_donation_age_min*60)} ago`:''}`:null));
-  urows.push(row('a journey, averaged',
-    dose.mean_ug_per_trip!=null?`${fmt1(dose.mean_ug_per_trip)} µg`:'—',
-    dose.median_ug_per_trip!=null?`median ${fmt1(dose.median_ug_per_trip)} µg over the ${fmt(dose.median_n)} ledgered trips`:'the median waits on the device ledger'));
-  urows.push(row('streets that qualify',
-    corr.publishable!=null?`${fmt(corr.publishable)} <i>of ${fmt(corr.tracked)}</i>`:'—',
-    `a street cell publishes only when ≥${corr.k_min||3} distinct phones crossed it in ${corr.window_h||72}h — the rest are counted, never shown`));
-  const rv=fb.reviews,hz=fb.hazard_reports;
-  urows.push(row('what riders told us',
-    rv&&rv.count!=null?`<b>${fmt(rv.count)}</b> <i>reviews</i>`:'—',
-    `${rv&&rv.avg!=null?`avg ${fmt1(rv.avg)} ★ · `:''}${hz&&hz.active!=null?fmt(hz.active)+' hazard flags live':''}`||null));
-  /* riders by day — the closest honest answer to 'who used it': trips +
-     distinct phones per day, the ledger's own rollup (thin day-slices
-     are already withheld server-side under the 3-phone rule) */
-  const MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-  const days=(api&&api.contributors)||[];
-  if(days.length){
-    urows.push(`<div class="dr"><span class="dk">riders by day</span>`+
-      `<b class="dv"><i>journeys · phones</i></b></div>`);
-    days.slice(0,5).forEach(d=>{
-      const[y,m,dd]=String(d.day||'').split('-').map(Number);
-      urows.push(lrow('',
-        `${MON[m-1]||''} ${dd||''}`,
-        `${fmt(d.trips)} <i>· ${fmt(d.contributors)} phones</i>`));
-    });
+function renderIntake(app){
+  if(!app||app.available===false){$('iHero').innerHTML=app?'':LOCK;$('iRows').innerHTML='';return}
+  const I=app.intake||{},t=I.total||{},td=I.today||{},w=I.d7||{};
+  $('iAsof').innerHTML=asofHTML(app.ts);
+  if(!t.reports){
+    $('iHero').innerHTML=`<b class="v dim">0 µg</b><span class="s">no finished journey has reported a saving yet — counting since ${esc(since(app))}.</span>`;
+    $('iRows').innerHTML='';return;
   }
-  $('useRows').innerHTML=urows.join('');
-  /* most-used modes — the donation ledger's own mode_share: every
-     recorded trip, not only the publishable-corridor set. ink bars,
-     not band colour — a mode is not an air reading */
-  const share=(donations&&donations.mode_share)||[];
-  const totM=share.reduce((a,s)=>a+(s.trips||0),0);
-  if(share.length&&totM){
-    $('modeRows').innerHTML=
-      `<div class="dr"><span class="dk">most-used modes</span>`+
-      `<b class="dv"><i>share of donated journeys</i></b></div>`+
-      share.slice(0,8).map(s=>
-        `<div class="mb"><span class="mn">${esc(modeWord(s.mode))}</span>`+
-        `<span class="mt"><i style="width:${Math.max(1,(s.pct!=null?s.pct:(100*s.trips/totM))).toFixed(1)}%"></i></span>`+
-        `<b class="mv">${fmt(s.trips)}<i> · ${s.pct!=null?fmt1(s.pct):fmt1(100*s.trips/totM)}%</i></b></div>`).join('');
+  $('iHero').innerHTML=`<b class="v">${ug(t.saved_ug)}</b>`+
+    `<span class="s">pm2.5 not breathed versus the fastest route, over <b>${fmt(t.reports)}</b> finished journey${t.reports===1?'':'s'}`+
+    `${t.mean_saved_ug!=null?` — <b>${ug(t.mean_saved_ug)}</b> a journey`:''}.</span>`;
+  $('iRows').innerHTML=
+    row('today',ug(td.saved_ug),td.reports?`${fmt(td.reports)} journeys`:null)+
+    row('7 days',ug(w.saved_ug),w.reports?`${fmt(w.reports)} journeys`:null)+
+    (t.dose_reports?row('breathed on those journeys',ug(t.dose_ug),
+      `${fmt(t.dose_reports)} journeys reported their dose`):'');
+}
+
+function renderSeg(corr,glob,usage,app){
+  if(!corr){$('sHero').innerHTML=LOCK;$('segRows').innerHTML='';$('areaRows').innerHTML='';$('segNote').textContent='';return}
+  $('sAsof').innerHTML=asofHTML(corr.ts,'last 72 h');
+  const rows=corr.rows||[];
+  const k=corr.k_min||3;
+  if(!rows.length){
+    const tracked=corr.cells_tracked||0;
+    $('sHero').innerHTML=`<b class="v dim">not yet</b><span class="s">no street stretch has been crossed by ${k}+ different phones in 72 h`+
+      `${tracked?` — <b>${fmt(tracked)}</b> stretch${tracked===1?' is':'es are'} tracked below the bar`:''}. `+
+      `0 so far — counting since ${esc(since(app))}.</span>`;
+    $('segRows').innerHTML='';
   }else{
-    $('modeRows').innerHTML=
-      `<div class="dr"><span class="dk">most-used modes</span>`+
-      `<b class="dv">—</b><i class="ds">the mode ledger exists — no donated `+
-      `journey has carried a vehicle class yet</i></div>`;
-  }
-  /* intake avoided — the savings the app itself computed: taken-dose
-     minus router-fastest dose, summed over only the trips whose receipts
-     carried the comparison. null block = 'no trip ever reported it',
-     never a zero wearing a costume */
-  const av=(glob&&glob.dose_avoided)||null;
-  const c2av=(glob&&glob.co2_avoided)||null;
-  const srows=[];
-  srows.push(row('smoke not breathed',
-    av&&av.dose_ug!=null?`<b>${fmt1(av.dose_ug)}</b> <i>µg</i>`:'—',
-    av&&av.dose_ug!=null
-      ?`taken-route minus router-fastest, summed over the ${fmt(av.trips_reporting)} trips whose receipts compared`
-      :'no donated trip has carried a taken-vs-fastest comparison yet — the ledger exists and stays empty'));
-  srows.push(row('exhaust not put out',
-    c2av&&c2av.co2_kg!=null?`<b>${fmt1(c2av.co2_kg)}</b> <i>kg co₂</i>`:'—',
-    c2av&&c2av.co2_kg!=null
-      ?`counted over ${fmt(c2av.puc_calibrated_trips)} PUC-calibrated receipts`
-      :'no PUC-calibrated receipt has landed yet'));
-  $('savRows').innerHTML=srows.join('');
-  const supp=api&&api.contributors_suppressed;
-  $('useNote').innerHTML=`aggregate-only by construction — nothing here
-    can collapse to one person${supp&&supp.day_rows?`; <b>${fmt(supp.day_rows)}</b> day-slice${supp.day_rows>1?'s':''} withheld under the 3-phone rule`:''}.`;
-}
-
-function renderSegregation(corridors,glob,api){
-  /* the owner's question: 'are all people taking the same route
-     creating more pollution'. the honest answer is the corridor table —
-     a ~500 m street stretch only exists on this board at all when ≥3
-     distinct phones crossed it in 72 h, so every row is a shared load:
-     crossings × the live air through it × the exhaust it put out. */
-  const rows=(corridors&&corridors.rows)||[];
-  const pub=corridors&&corridors.publishable_cells;
-  const tracked=corridors&&corridors.cells_tracked;
-  const tot=rows.reduce((a,r)=>a+(r.trips||0),0);
-  const supp=(glob&&glob.suppressed)||{};
-  const top=(api&&api.community&&api.community.top_corridors)||[];
-  $('segIntro').innerHTML=
-    `${pub!=null?`<b>${fmt(pub)}</b> street cell${pub===1?'':'s'} publish`:'street cells publish'}`+
-    `${tracked!=null?` of ${fmt(tracked)} tracked`:''} — each one a place `+
-    `at least ${corridors&&corridors.k_min||3} phones crossed inside `+
-    `${Math.round(((corridors&&corridors.window_s)||259200)/3600)} h. `+
-    `the rest are counted, never shown.`;
-  const rrows=[];
-  if(rows.length){
-    rows.slice(0,10).forEach((c,i)=>{
-      const share=tot?Math.round(100*c.trips/tot):null;
-      const fbi=bandIdx(c.field_pm25);
-      rrows.push(`<div class="crr">`+
-        `<span class="cn"><i>${String(i+1).padStart(2,'0')}</i>  ${esc(c.near||'unnamed cell')}</span>`+
-        `<b class="cv">${fmt(c.trips)} <i>crossings · ${fmt(c.devices)} phones${share!=null?` · ${share}%`+'' :''}</i></b>`+
+    /* the answer: the share of ALL shared trips that ran through the
+       busiest stretch (server-computed, <=100%). Half or more through one
+       stretch reads as piling up — the line is stated, not hidden. */
+    const shareOf=n=>corr.trips_total?Math.min(100,100*(n||0)/corr.trips_total):null;
+    const top=rows[0],pct=shareOf(top.trips);
+    const piled=pct!=null&&pct>=50;
+    $('sHero').innerHTML=pct==null
+      ?`<b class="v dim">—</b><span class="s">the trip total isn't readable right now, so no share can be computed.</span>`
+      :`<b class="v">${fmt(pct)}%</b>`+
+        `<span class="s">of all <b>${fmt(corr.trips_total)}</b> shared trips crossed the busiest stretch, <b>${esc(top.near||'an unnamed stretch')}</b> — `+
+        `<b>${piled?'yes, people are piling onto the same road':'no, the load is spread out'}</b> (half the trips on one stretch is the line).</span>`;
+    $('segRows').innerHTML=rows.slice(0,10).map((c,i)=>{
+      const bi=bandIdx(c.field_pm25);
+      return `<div class="crr"><span class="cn"><i>${String(i+1).padStart(2,'0')}</i>${esc(c.near||'unnamed stretch')}</span>`+
+        `<b class="cv">${fmt(c.trips)} <i>trips · ${fmt(c.devices)} phones${corr.trips_total?` · ${fmt(shareOf(c.trips))}% of all`:''}</i></b>`+
         `<span class="cs">`+
-          `${c.field_pm25!=null?`<span><i class="cdot" style="background:${fbi==null?'var(--rLine2)':BAND[fbi]}"></i>rides through <b>${fmt(c.field_pm25)}</b> µg/m³ live</span>`:''}`+
-          `${c.avg_dose_ug!=null?`<span>inhaled ≈<b>${fmt1(c.avg_dose_ug)}</b> µg a crossing <i>(est.)</i></span>`:''}`+
-          `${c.co2_g_per_100m!=null?`<span><b>${fmt1(c.co2_g_per_100m)}</b> g co₂ / 100 m ridden</span>`:''}`+
-        `</span></div>`);
-    });
-  }else{
-    rrows.push(`<div class="dr"><span class="dk">busiest shared streets</span>`+
-      `<b class="dv">—</b><i class="ds">no street cell has cleared the `+
-      `3-phones-in-72 h bar yet — the table is real, it is just still `+
-      `empty on this server</i></div>`);
+        (c.field_pm25!=null?`<span><i class="cdot" style="background:${bi==null?'var(--rLine2)':BAND[bi]}"></i>air there now <b>${fmt(c.field_pm25)}</b> µg/m³</span>`:'')+
+        (c.avg_dose_ug!=null?`<span>≈<b>${fmt1(c.avg_dose_ug)}</b> µg breathed a crossing</span>`:'')+
+        (c.co2_g_per_100m!=null?`<span><b>${fmt1(c.co2_g_per_100m)}</b> g co₂ per 100 m</span>`:'')+
+        `</span></div>`}).join('');
   }
-  $('segRows').innerHTML=rrows.join('');
-  /* where riders start + the flows — the same k≥3 gate at district
-     granularity (a coarser cell than a corridor, so rows appear sooner) */
-  const areas=(glob&&glob.areas)||[];
   const ods=(glob&&glob.od_pairs)||[];
-  const arows=[];
-  if(areas.length){
-    arows.push(`<div class="dr"><span class="dk">where riders start</span>`+
-      `<b class="dv"><i>journeys · phones</i></b></div>`);
-    areas.slice(0,6).forEach(a=>arows.push(lrow('',
-      esc(a.area||'unnamed area'),
-      `${fmt(a.trips)} <i>· ${fmt(a.devices)} phones</i>`)));
-  }
-  if(ods.length){
-    arows.push(`<div class="dr"><span class="dk">the flows</span>`+
-      `<b class="dv"><i>journeys · phones</i></b></div>`);
-    ods.slice(0,5).forEach(o=>arows.push(lrow('',
-      `${esc(o.origin||'?')} <i>→</i> ${esc(o.dest||'?')}`,
-      `${fmt(o.trips)} <i>· ${fmt(o.devices)} phones</i>`)));
-  }
-  $('areaRows').innerHTML=arows.join('');
-  /* the suppression note — the rule itself goes on the page verbatim */
-  const ruleTxt=corridors&&corridors.rule;
-  $('segNote').innerHTML=
-    `${ruleTxt?`<b>${esc(ruleTxt)}</b>. `:''}`+
-    `${supp.areas||supp.od_pairs
-      ?`under the same bar the server withheld <b>${fmt(supp.areas||0)}</b> area row${(supp.areas||0)===1?'':'s'} and <b>${fmt(supp.od_pairs||0)}</b> flow row${(supp.od_pairs||0)===1?'':'s'} this window. `
-      :''}`+
-    `crossings, not people — a name on this board is a street stretch `+
-    `the city shares, never a rider.`;
+  $('areaRows').innerHTML=ods.length
+    ?ods.slice(0,5).map(o=>row(`${esc(o.origin||'?')} → ${esc(o.dest||'?')}`,
+      `${fmt(o.trips)} <i>· ${fmt(o.devices)} phones</i>`)).join('')
+    :'';
+  const supp=(glob&&glob.suppressed)||{};
+  const sharing=usage&&usage.devices&&usage.devices.total;
+  $('segNote').innerHTML=`only from trips people chose to share${sharing!=null?` (<b>${fmt(sharing)}</b> device${sharing===1?'':'s'} so far)`:''} · `+
+    `a stretch appears only once ${k}+ different phones crossed it in 72 h`+
+    `${supp.od_pairs?` · ${fmt(supp.od_pairs)} thinner flow${supp.od_pairs===1?'':'s'} withheld`:''}.`;
 }
 
-function renderHealth(status,sources,timing,health){
-  const f={...((health&&health.field)||{}),...((status&&status.field)||{})};
-  const src=(sources&&sources.sources)||{};
-  const hs=(health&&health.sources)||{};
-  const disk=(status&&status.disk)||{};
-  const led=(status&&status.ledger)||{};
-  const alarms=[];
-  /* every alarm names itself — the count is real conditions, not vibes */
-  if(f.serving==='none')alarms.push('the field serves nothing');
-  if(f.stale===true)alarms.push(`the map itself is ${ago(f.age_s)} old — past the ${Math.round((f.stale_after_s||2700)/60)}-minute rule`);
-  /* each feed's verdict word is computed once here — the alarm line and
-     the rows below both read it, so they can never disagree */
-  const feedWord={};
-  for(const[n,s]of Object.entries(src)){
-    const st=String(s.status||'').toLowerCase();
-    const word=s.enabled===false?'off'
-      :s.stale===true?'stale'
-      :s.up===false?'down'
-      :st.startsWith('unavailable')||st.startsWith('down')||st.startsWith('error')||st.startsWith('fail')?'down'
-      :st.startsWith('skipped')?'off'
-      :s.status?s.status
-      :s.up===true?'listening'
-      :'unknown';
-    feedWord[n]=word;
-    if(s&&s.stale===true)
-      alarms.push(`${n} is stale${s.age_s!=null?` — ${ago(s.age_s)} old`:''}`);
-    else if(word==='down')
-      alarms.push(`${n} isn't answering${s&&s.age_s!=null?` — last heard ${ago(s.age_s)} ago`:''}`);
-  }
-  if(disk.low===true)alarms.push(`disk only ${fmt1(disk.free_pct)}% free`);
-  if(led.error)alarms.push(`the ledger: ${led.error}`);
-  const lw=(f.load_warnings||[]).length;
-  if(lw)alarms.push(`${lw} load warning${lw>1?'s':''} from the model`);
-  const al=$('alarm');
-  if(alarms.length){
-    al.className='alarmline hot';
-    al.innerHTML=`<b>${alarms.length} thing${alarms.length>1?'s':''} hurting:</b> ${esc(alarms.join(' · '))}`;
-  }else{
-    al.className='alarmline quiet';
-    al.innerHTML=`<b>all quiet.</b> nothing is past its alarm rule — every feed inside its own cadence.`;
-  }
-  /* the feeds — each carries its own verdict, stale beats up.
-     the native engine often reports detail but no status/age; the
-     public /health rollup fills stations/fires/location words */
-  const clean=d=>String(d||'')
-    .replace(/\s*—\s*secrets?\b.*$/i,'')      /* config notes, not analytics */
-    .replace(/\s*\([^)]*\)\s*/g,' ')          /* env-var parentheticals */
-    .replace(/\s{2,}/g,' ').trim();
-  const srows=[];
-  for(const[name,s]of Object.entries(src)){
-    const word=feedWord[name]||'listening';
-    const bad=s.stale===true||s.up===false||word==='down';
-    const age=s.age_s!=null?` · ${ago(s.age_s)} ago`:'';
-    /* per-feed texture from /health where the engine is terse */
-    let what=clean(s.status||s.detail||'');
-    if(name==='stations'&&hs.stations){
-      const feeds=hs.stations.feeds||{};
-      const parts=Object.entries(feeds).map(([k,v])=>`${k} ${v==='ok'?'✓':'✗'}`);
-      what=`${fmt(hs.stations.count)} monitors in the blend`+(parts.length?` — ${parts.join(' · ')}`:'');
-    }else if(name==='fires'&&hs.fires&&hs.fires.fires!=null){
-      what=`${fmt(hs.fires.fires)} fires on the map`+(hs.fires.belt_fires!=null?` · ${fmt(hs.fires.belt_fires)} in the belt`:'');
-    }
-    srows.push(lrow('',`<b>${esc(name)}</b> — ${esc(what)}`,
-      `${esc(word)}<i>${age}</i>`,bad));
-  }
-  $('srcRows').innerHTML=srows.join('');
-  /* errors — the request logger's own counters, per route, since boot.
-     status classes get plain words; route labels get translations for
-     the two every prod box sees: path-scans ('unmatched') and wrong
-     sign-in links */
-  const errs=(timing&&timing.errors)||[];
-  const bs=(timing&&timing.requests&&timing.requests.by_status)||{};
-  const errows=[];
-  errows.push(row('errors since boot',
-    `turned away ${fmt(bs['4xx']||0)} · server errors ${fmt(bs['5xx']||0)}`,
-    errs.length?null:'no route has thrown or refused since boot',
-    (bs['5xx']||0)>0));
-  const name4route=p=>{
-    const q=p&&p.startsWith(M)?p.slice(M.length)||'/':p;
-    if(q==='unmatched')return 'paths that don\'t exist (scanners, mostly)';
-    if(q==='/in/{secret}')return 'wrong sign-in links';
-    if(q==='/')return '/ (the front page)';
-    return q||'?';
-  };
-  errs.slice(0,5).forEach((e,i)=>errows.push(
-    lrow(String(i+1).padStart(2,'0'),esc(name4route(e.route)),
-      `${fmt(e.n)} <i>${e.class==='5xx'?'server error':'turned away'}</i>`,e.class==='5xx')));
-  $('errRows').innerHTML=errows.join('');
-  /* the machine's own vitals */
-  const sysrows=[];
-  sysrows.push(row('disk',disk.free_pct!=null?`${fmt1(disk.free_pct)}% free`:'—',
-    disk.path?esc(disk.path):null,disk.low===true));
-  sysrows.push(row('the ledger',
-    led.backend?esc(led.backend):'—',
-    led.devices_tracked!=null?`${fmt(led.devices_tracked)} device tokens tracked`:null,
-    !!led.error));
-  sysrows.push(row('build',
-    status&&status.build_sha?`<i>${esc(status.build_sha)}</i>`:'—',
-    `${status&&status.version?esc(status.version):''}${status&&status.uptime_s!=null?` · up ${ago(status.uptime_s)}`:''}`||null));
-  $('sysRows').innerHTML=sysrows.join('');
+/* 07 — who uses alive: age group + area, only what people chose to give.
+   Each device counts once, by its latest answer; age and area are tallied
+   apart (never crossed), so no row pairs an age with a place. */
+const AGE_NAME={under13:'under 13','13-17':'13–17','18-29':'18–29','30-44':'30–44','45-59':'45–59','60plus':'60+'};
+const WHO_PRIV='no names, no locations — age group and area only, by choice';
+function renderWho(app){
+  if(!app||app.available===false){$('wKpis').innerHTML=app?'':LOCK;$('ageBars').innerHTML='';$('areaTop').innerHTML='';return}
+  const a=app.audience||{},tot=a.profiles_total||0;
+  $('wAsof').innerHTML=asofHTML(a.as_of||app.ts);
+  const sinceA=a.since?dayLbl(a.since):since({server_start_ts:app.server_start_ts});
+  $('wKpis').innerHTML=
+    kpi('answered',fmt(tot),'devices, all time',!tot)+
+    kpi('today',fmt(a.today),'devices',!a.today)+
+    kpi('areas',fmt(a.areas_total),'named so far',!a.areas_total);
+  const ab=a.age_bands||{};
+  const rows=Object.keys(AGE_NAME).map(k=>({name:k,started:ab[k]||0}));
+  $('ageBars').innerHTML=bars(rows,n=>AGE_NAME[n]||n)+
+    (rows.some(r=>r.started)?'':`<div class="zero"><b>0</b> answers so far — counting since ${esc(sinceA)}</div>`);
+  const top=a.top_areas||[],withArea=a.with_area||0;
+  $('areaTop').innerHTML=top.length
+    ?top.map((r,i)=>`<div class="crr"><span class="cn"><i>${String(i+1).padStart(2,'0')}</i>${esc(r.area)}</span>`+
+      `<b class="cv">${fmt(r.count)} <i>device${r.count===1?'':'s'}${withArea?` · ${fmt(100*r.count/withArea)}%`:''}</i></b></div>`).join('')+
+      (a.areas_other?row('everywhere else',`${fmt(a.areas_other)} <i>devices</i>`):'')
+    :`<div class="zero"><b>0</b> areas named so far — counting since ${esc(sinceA)}</div>`;
+  $('whoNote').innerHTML=`${esc(WHO_PRIV)}${tot?` · counting since ${esc(sinceA)}`:''}.`;
 }
 
 /* ============================== the tick ============================== */
+let LAST_OK=null;
 async function tick(){
   /* each feed settles on its own — one failing endpoint must not blank
-     the rest; a section renders only when its payload lands.
-     token check happens BEFORE any authed fetch — an unauthenticated
-     load fires zero 401s: /v2/city still serves (it's the public page's
-     own feed), gated slots reject instantly. */
-  const urls=[M+'/api/status',M+'/api/sources',M+'/api/timing',
-    M+'/api/usage',M+'/api','/v2/city',
-    /* the auth probe — not gated, always fetched; it is how sign-out /
-       expiry in another tab (or a token rotation) re-locks this board */
-    M+'/session',
-    /* the public health rollup — per-feed counts the terse native
-       /api/sources doesn't carry (station feeds, fire tallies) */
-    '/health',
-    /* the analytics reads the rebuild surfaced: the donation ledger's
-       own rollups (mode share, day counters), the global layer (areas,
-       flows, savings), the corridor table (the segregation answer) */
-    M+'/api/donations',M+'/api/global',M+'/api/corridors'];
+     the rest. An unauthenticated load fires zero gated requests. */
+  const urls=[M+'/api/app',M+'/api/corridors',M+'/api/global',M+'/api/usage',M+'/session'];
   const gated=!AUT;
   const isGatedPath=u=>u.startsWith(M+'/api');
   const res=await Promise.allSettled(urls.map(u=>
-    (gated&&isGatedPath(u))
-      ?Promise.reject(new Error(u+' — token required'))
-      :getJSON(u)));
-  const sess=res[6].status==='fulfilled'?res[6].value:null;
-  if(sess&&sess.authenticated===false&&AUT){
-    AUT=false;showGate('session ended — sign in again');
-  }
-  const data=res.slice(0,6),health=res[7].status==='fulfilled'?res[7].value:null,
-        extra=res.slice(8);
-  if(data.every(r=>r.status==='rejected')&&extra.every(r=>r.status==='rejected')){
-    /* keep the last good render on screen — flag its age, never blank it */
-    $('liveDot').style.background='var(--brick)';
-    $('stamp').innerHTML=
-      `<span class="err">the server isn't answering — ${esc((data[0].reason&&data[0].reason.message)||'all feeds failed')}</span>`+
-      (LAST_OK?`<span>showing last good data from <b>${timeIST(LAST_OK)}</b></span>`:'');
+    (gated&&isGatedPath(u))?Promise.reject(new Error('locked')):getJSON(u)));
+  const val=i=>res[i].status==='fulfilled'?res[i].value:null;
+  const sess=val(4);
+  if(sess&&sess.authenticated===false&&AUT){AUT=false;showGate('session ended — sign in again')}
+  const app=val(0),corr=val(1),glob=val(2),usage=val(3);
+  try{renderUsers(app,usage)}catch(e){}
+  try{renderJourneys(app)}catch(e){}
+  try{renderModes(app)}catch(e){}
+  try{renderIntake(app)}catch(e){}
+  try{renderSeg(corr,glob,usage,app)}catch(e){}
+  try{renderWho(app)}catch(e){}
+  if(!AUT){$('toplive').innerHTML='locked';return}
+  if(!app&&!corr&&!glob){
+    $('toplive').innerHTML=`<span class="err">the server isn't answering</span>`+
+      (LAST_OK?` · last good <b>${hm(LAST_OK)}</b>`:'');
     return;
   }
-  LAST_OK=new Date();
-  $('liveDot').style.background='';
-  const val=i=>data[i].status==='fulfilled'?data[i].value:null;
-  const xval=i=>extra[i].status==='fulfilled'?extra[i].value:null;
-  const status=val(0),sources=val(1),timing=val(2),usage=val(3),api=val(4),city=val(5);
-  const donations=xval(0),glob=xval(1),corridors=xval(2);
-  try{renderAir(city,status)}catch(e){}
-  try{renderCoverage(status,city)}catch(e){}
-  try{renderUsage(usage,timing,api,donations,glob)}catch(e){}
-  try{renderSegregation(corridors,glob,api)}catch(e){}
-  try{renderHealth(status,sources,timing,health)}catch(e){}
-  /* the tile map follows the field's own build epoch — a new build
-     lands ~every 15 min (field refresh_ttl_s) and the collection's
-     cell_epoch is the proof; between builds the painted epoch stays */
-  const builtEpoch=(city&&city.field&&city.field.built_epoch)
-    ||(status&&status.field&&status.field.built_epoch)||null;
-  $('fieldTtl').innerHTML=builtEpoch
-    ?`field epoch ${hmIST(builtEpoch)} · rebuilds ~every ${Math.round(((city&&city.field&&city.field.refresh_ttl_s)||900)/60)} min`
-    :(status&&status.field&&status.field.refresh_ttl_s?`rebuilds ~every ${Math.round(status.field.refresh_ttl_s/60)} min`:'');
-  if(builtEpoch&&MAP.epoch!==builtEpoch){fetchGrid()}
-  else if(!MAP.cells){fetchGrid()}
-  else{mapStamp()}
-  /* the stamp line — when this paint happened and what it cost */
-  $('stamp').innerHTML=
-    `<span>updated <b>${timeIST(LAST_OK)}</b></span>`+
-    `<span>refreshes itself every 30 s</span>`+
-    (status&&status.build_sha?`<span>build <b>${esc(status.build_sha)}</b></span>`:'');
-  $('toplive').innerHTML=`updated <b>${timeIST(LAST_OK)}</b>`;
+  LAST_OK=Date.now()/1000;
+  $('toplive').innerHTML=`as of <b>${hm(LAST_OK)}</b>`;
+  $('footR').innerHTML=app?`counters: <b>${esc(app.backend||'—')}</b> · refreshes every 60 s`:'';
 }
 
 /* sign-in is a real form on the gate screen now — the token crosses the
@@ -1227,14 +848,17 @@ $('gateform').addEventListener('submit',async e=>{
 tokBtnRefresh();
 /* first paint decides the gate: probe the session cookie before the
    first tick so an unauthenticated load lands on the sign-in card, not
-   a board of locked tiles. The probe is one tiny fetch — the auth
-   check is this, inlined into first paint; there is no splash.
-   tokBtnRefresh re-runs when the probe lands: the /in/ link always
-   starts a signed-in first paint, and a stale 'operator sign in' on a
-   live session was the old reload bug it exposes. */
+   a board of locked panels. The map is public data (/grid) and paints
+   behind the gate either way. */
+bandLeg();initGL();fetchGrid();setInterval(fetchGrid,GRID_EVERY_MS);
+setInterval(mapStamp,60000);
+$('mapBox').addEventListener('mousemove',canvasTip);
+$('mapBox').addEventListener('click',canvasTip);
+$('mapBox').addEventListener('mouseleave',()=>{if(MAP.canvas)$('mapTip').style.display='none'});
+addEventListener('resize',()=>{if(MAP.canvas)drawCanvas()});
 (async()=>{AUT=await checkSession();tokBtnRefresh();
   if(!AUT)showGate('');
-  tick();setInterval(tick,30000)})();
+  tick();setInterval(tick,60000)})();
 </script>
 </body>
 </html>

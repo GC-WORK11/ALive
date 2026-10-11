@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from . import deps
-from .gazetteer import GAZ, name_says_elsewhere
+from .gazetteer import AC, GAZ, name_says_elsewhere
 
 router = APIRouter()
 
@@ -54,7 +54,15 @@ def _loc_or_503():
 @router.get("/place/{pid}")
 async def place(pid: str):
     """Resolve a suggestion id: `amz:<PlaceId>` via GetPlace (cached),
-    `gaz:<idx>` from the bundled gazetteer."""
+    `gaz:<idx>` from the bundled gazetteer, `geo:<geonameid>` from the
+    /v2/ac outskirts rows."""
+    if pid.startswith(("gaz:", "geo:")) and AC.ready:
+        hit = AC.by_id(pid)
+        if hit is not None:
+            return hit
+    if pid.startswith("geo:"):
+        return JSONResponse(status_code=404,
+                            content={"error": "unknown place id"})
     if pid.startswith("gaz:"):
         try:
             idx = int(pid.split(":", 1)[1])

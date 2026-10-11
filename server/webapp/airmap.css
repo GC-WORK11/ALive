@@ -8,22 +8,33 @@
 /* the sheet is a tall detent — the field + cards stay live above it */
 .am-host .sheet { top: 42%; }
 
-/* ── AirMapCard — the floating field legend (Mobile/components/AirMapCard)
-   floats over the map just above the sheet — glass, 16 radius, hairline */
-.am-card { position: fixed; left: 12px; bottom: calc(58% + 12px); z-index: 40;
-  background: rgba(255,255,255,.86); border-radius: 16px;
-  border: .5px solid rgba(22,24,29,.06); box-shadow: 0 8px 22px rgba(59,52,35,.12);
-  padding: 9px 12px; display: flex; flex-direction: column; gap: 4px; max-width: 290px; }
-.amc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px }
-.amc-title { font-size: 13px; font-weight: 500; color: var(--ink) }
-.amc-stations { font-size: 11px; color: var(--ink3); flex-shrink: 1; white-space: nowrap;
+/* ── the band scale chip — colours + "good → severe" only, no caption.
+   sits on the map just above the sheet, never over the live dot */
+.am-chip { position: fixed; left: 10px; bottom: calc(58% + 10px); z-index: 40;
+  display: flex; align-items: center; gap: 7px; padding: 5px 9px 5px 8px;
+  background: rgba(255,255,255,.9); border-radius: 999px;
+  border: .5px solid rgba(22,24,29,.06); box-shadow: 0 4px 12px rgba(59,52,35,.10);
+  pointer-events: none; }
+.amc-dots { display: flex; gap: 2px }
+.amc-dots i { width: 9px; height: 6px; border-radius: 3px }
+.amc-scale { font-size: 11px; color: var(--ink3); white-space: nowrap }
+
+/* ── the hero — the air at your live spot, in its band colour ────── */
+.am-spot { min-height: 64px }
+.am-hero { padding: 18px 22px 16px }
+.am-hlead { color: var(--ink2); font-size: 15px; font-weight: 500; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis }
-.amc-line { font-size: 13px; color: var(--ink2) }
-.amc-foot { display: flex; align-items: center; gap: 8px }
-.amc-dots { display: flex; gap: 3px }
-.amc-dots i { width: 8px; height: 8px; border-radius: 4px }
-.amc-scale { font-size: 11px; color: var(--ink3) }
-.amc-age { font-size: 11px; color: var(--ink3); white-space: nowrap }
+.am-hwait { color: var(--ink3); font-size: 15px; margin-top: 10px }
+.am-hrow { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; flex-wrap: wrap }
+.am-hnum { font-size: 72px; line-height: 78px; letter-spacing: -3px; font-weight: 300;
+  margin-left: -2px }
+.am-hunit { color: var(--ink2); font-size: 15px; font-weight: 500 }
+.am-hband { font-size: 24px; font-weight: 500; letter-spacing: -.3px; margin-top: -4px }
+.am-hspecies { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 2px;
+  color: var(--ink2); font-size: 15px }
+.am-hspecies b { font-weight: 500; color: var(--ink3); font-size: 13px; margin-right: 2px }
+.am-hthin { color: var(--ink3); font-size: 13px; margin-top: 8px }
+.am-why { margin: 2px 22px 0 }
 
 /* ── TapReadout — the tap's compact answer card, floating top-center */
 .am-read { position: fixed; top: calc(64px + var(--sat)); bottom: auto; left: 50%; transform: translateX(-50%);
@@ -32,11 +43,13 @@
   padding: 9px 7px 9px 12px; max-width: 320px; display: flex; flex-direction: column; gap: 3px; }
 .am-read[hidden] { display: none }
 .amr-row { display: flex; align-items: center; gap: 8px }
-.amr-read { display: flex; align-items: center; gap: 8px; flex-shrink: 1; min-width: 0 }
+.amr-read { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; flex-shrink: 1; min-width: 0 }
 .amr-dot { width: 9px; height: 9px; border-radius: 5px; flex: none }
 .amr-num { font-size: 17px; font-weight: 500; white-space: nowrap }
 .amr-unit { font-size: 13px; font-weight: 400; color: var(--ink3) }
 .amr-band { font-size: 17px; font-weight: 500 }
+.amr-pm { font-size: 13px; color: var(--ink2); white-space: nowrap; padding-left: 2px }
+.amr-pm b { font-weight: 500; color: var(--ink3); font-size: 11px; margin-right: 2px }
 .amr-plain { font-size: 13px; font-weight: 500; color: var(--ink2); white-space: nowrap }
 .amr-x { padding: 2px 2px 2px 8px; line-height: 1; flex: none; position: relative }
 .amr-x::after { content: ''; position: absolute; inset: -11px -9px -11px -11px }
@@ -150,7 +163,7 @@
 .am-bw { font-size: 13px; padding: 6px 0; border-bottom: .5px solid var(--ink10) }
 .am-bw:last-child { border-bottom: 0 }
 .am-bw .bw-l { color: var(--ink3); font-size: 11.5px; margin-right: 6px }
-.am-meta { font-size: 10.5px; color: var(--ink4); margin-top: 6px; font-family: var(--mono) }
+.am-meta { font-size: 11px; color: var(--ink3); margin-top: 6px }
 .am-quick { display: flex; flex-direction: column; margin-bottom: 4px }
 .am-rows { margin-bottom: 8px }
 
@@ -188,7 +201,7 @@
 
 @media (min-width: 720px) {
   .am-host .sheet { top: 0 }
-  .am-card { bottom: auto; top: 72px }
+  .am-chip { bottom: auto; top: 72px }
   .am-read { left: auto; right: 480px; transform: none }
 }
 

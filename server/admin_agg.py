@@ -273,6 +273,201 @@ async def index():
     }
 
 
+# --- <mount>/api/app — anonymous app counters (oct11) --------------------------
+# users / journeys / modes / vehicles / intake saved, read from the usage
+# store POST /v2/tally feeds (agg_ddb.usage_store). Counts only: the store
+# has no location field and no per-device row to serve. Every window is
+# computed from IST-day counters; distinct users are exact set unions.
+
+_BOOT_TS = time.time()
+
+
+def _agg_ddb():
+    try:
+        import agg_ddb
+    except ImportError:  # imported as server.admin_agg from the repo root
+        from server import agg_ddb  # type: ignore
+    return agg_ddb
+
+
+def _window(days: dict, keys: set) -> dict:
+    """Sum the day rows whose IST day is in `keys` (None = every day)."""
+    t = {"opens": 0, "started": 0, "ended": 0, "completed": 0,
+         "dose_ug": 0.0, "dose_n": 0, "saved_ug": 0.0, "saved_n": 0,
+         "km": 0.0, "minutes": 0.0, "modes": {}, "vehicles": {}}
+    for day, d in days.items():
+        if keys is not None and day not in keys:
+            continue
+        for k in ("opens", "started", "ended", "completed", "dose_n",
+                  "saved_n"):
+            t[k] += int(d.get(k) or 0)
+        for k in ("dose_ug", "saved_ug", "km", "minutes"):
+            t[k] += float(d.get(k) or 0.0)
+        for bucket in ("modes", "vehicles"):
+            for name, r in (d.get(bucket) or {}).items():
+                row = t[bucket].setdefault(name, {"started": 0,
+                                                  "completed": 0})
+                row["started"] += int(r.get("started") or 0)
+                row["completed"] += int(r.get("completed") or 0)
+    return t
+
+
+def _journeys(t: dict) -> dict:
+    # completed ⊆ ended; a journey that crossed IST midnight can make
+    # ended > started inside one window, so the rate's denominator is the
+    # larger of the two — never a >100% rate, never a guess
+    den = max(t["started"], t["ended"])
+    return {"started": t["started"], "ended": t["ended"],
+            "completed": t["completed"],
+            "success_pct": (round(100.0 * t["completed"] / den, 1)
+                            if den else None),
+            "km": round(t["km"], 1), "minutes": round(t["minutes"], 1)}
+
+
+def _intake(t: dict) -> dict:
+    # every mean divides by the journeys that REPORTED that number (a trip
+    # with no GPS fix reports none) — never by all journeys, never a fake 0
+    return {"saved_ug": round(t["saved_ug"], 1), "reports": t["saved_n"],
+            "dose_ug": round(t["dose_ug"], 1), "dose_reports": t["dose_n"],
+            "mean_saved_ug": _intake_mean(t["saved_ug"], t["saved_n"]),
+            "mean_dose_ug": _intake_mean(t["dose_ug"], t["dose_n"])}
+
+
+TOP_AREAS = 12
+
+
+def _area_label(key: str) -> str:
+    # the store keeps a lowercase key; the console reads "Laxmi Nagar"
+    return " ".join(w[:1].upper() + w[1:] for w in str(key or "").split())
+
+
+def _audience(s: dict, agg, now: float) -> dict:
+    """Who uses Alive — the profile answers people CHOSE to give: an age
+    group and an area name, each device counted once by its latest
+    answer. Age bands always list all six (an honest 0 is a bar); areas
+    are the top TOP_AREAS by devices, 'other' (past the daily cap) last."""
+    a = s.get("audience") or {}
+    bands = a.get("age_bands") or {}
+    areas = a.get("areas") or {}
+    ranked = [(k, int(n or 0)) for k, n in areas.items()
+              if int(n or 0) > 0 and k != agg.AREA_OTHER]
+    ranked.sort(key=lambda kv: (-kv[1], kv[0]))
+    top = [{"area": _area_label(k), "count": n}
+           for k, n in ranked[:TOP_AREAS]]
+    other = int(areas.get(agg.AREA_OTHER) or 0) + sum(
+        n for _k, n in ranked[TOP_AREAS:])
+    return {
+        "age_bands": {b: int(bands.get(b) or 0) for b in agg.AGE_BANDS},
+        "top_areas": top,
+        "areas_other": other,
+        "areas_total": len(ranked),
+        "profiles_total": int(a.get("profiles_total") or 0),
+        "with_age": int(a.get("with_age") or 0),
+        "with_area": int(a.get("with_area") or 0),
+        "today": int(a.get("today") or 0),
+        "since": a.get("first_day"),
+        "as_of": now,
+        "basis": ("distinct anonymous installs that chose to give an age "
+                  "group and/or an area — each counted once, by its latest "
+                  "answer; age and area are never crossed"),
+        "privacy": ("no names, no locations — age group and area only, by "
+                    "choice"),
+    }
+
+
+def _intake_mean(total: float, n: int):
+    return round(total / n, 1) if n else None
+
+
+def _ranked(rows: dict, fixed: tuple = ()) -> list:
+    names = list(dict.fromkeys(list(fixed) + list(rows)))
+    tot = sum(int((rows.get(n) or {}).get("started") or 0) for n in names)
+    out = []
+    for n in names:
+        r = rows.get(n) or {}
+        s = int(r.get("started") or 0)
+        out.append({"name": n, "started": s,
+                    "completed": int(r.get("completed") or 0),
+                    "pct": round(100.0 * s / tot, 1) if tot else None})
+    out.sort(key=lambda r: (-r["started"], -r["completed"]))
+    return out
+
+
+@router.get("/app")
+async def app_usage():
+    """Anonymous app counters for the console's panels 02–05 — users
+    (distinct anonymous devices today / 7 IST days / all time), journeys
+    started/completed/success rate, modes and vehicles picked, intake
+    saved (µg the user's pick avoided vs the fastest option, as the app's
+    own receipt computed it). Honest absence: available=false + error when
+    the store can't be read; zeros only when the store answered zero."""
+    agg = _agg_ddb()
+    now = time.time()
+    store = agg.usage_store()
+    try:
+        s = store.summary(now)
+    except Exception as e:  # noqa: BLE001 - dashboard must live
+        s = None
+        store.last_error = f"{type(e).__name__}: {e}"
+    if s is None:
+        return {"ts": now, "available": False,
+                "backend": getattr(store, "backend", "memory"),
+                "error": getattr(store, "last_error", None)
+                or "usage store unreadable"}
+    days = s.get("days") or {}
+    today = s.get("today") or agg.ist_day(now)
+    last7 = {agg.ist_day(now - i * 86400) for i in range(7)}
+    w_today, w_7, w_all = (_window(days, {today}), _window(days, last7),
+                           _window(days, None))
+    daily = []
+    for i in range(13, -1, -1):
+        day = agg.ist_day(now - i * 86400)
+        d = days.get(day) or {}
+        daily.append({"day": day, "devices": int(d.get("devices") or 0),
+                      "started": int(d.get("started") or 0),
+                      "completed": int(d.get("completed") or 0),
+                      "saved_ug": round(float(d.get("saved_ug") or 0.0), 1)})
+    first = s.get("first_day")
+    return {
+        "ts": now,
+        "available": True,
+        "backend": s.get("backend") or getattr(store, "backend", "memory"),
+        "error": None,
+        "tz": "Asia/Kolkata",
+        "today": today,
+        "since": first,
+        "since_basis": ("first IST day with a counted event" if first else
+                        "nothing counted yet — counters armed at server "
+                        "start"),
+        "server_start_ts": _BOOT_TS,
+        "persists": getattr(store, "backend", "memory") == "dynamodb",
+        "last_event_ts": s.get("last_ts"),
+        "devices": {**(s.get("devices") or {"today": 0, "d7": 0, "total": 0}),
+                  "basis": ("distinct anonymous app installs (random id, "
+                            "no account, no location) that opened the app "
+                            "or logged a journey")},
+        "journeys": {"today": _journeys(w_today), "d7": _journeys(w_7),
+                     "total": _journeys(w_all)},
+        "modes": {"d7": _ranked(w_7["modes"], agg.USAGE_MODES),
+                  "total": _ranked(w_all["modes"], agg.USAGE_MODES)},
+        "vehicles": {"d7": _ranked(w_7["vehicles"]),
+                     "total": _ranked(w_all["vehicles"])},
+        "intake": {"today": _intake(w_today), "d7": _intake(w_7),
+                   "total": _intake(w_all),
+                   "basis": ("µg not inhaled vs the fastest option, as each "
+                             "finished journey's receipt computed it; "
+                             "negative when a pick breathed more")},
+        "opens": {"today": w_today["opens"], "d7": w_7["opens"],
+                  "total": w_all["opens"]},
+        "audience": _audience(s, agg, now),
+        "daily": daily,
+        "privacy": ("counts only — usage events carry no coordinates; the "
+                    "anonymous id is hashed and lives only in per-day "
+                    "distinct sets"),
+        "empty": not (w_all["opens"] or w_all["started"] or w_all["ended"]),
+    }
+
+
 @router.get("/timing")
 async def timing():
     """Measured request latencies — the API's own stopwatch, not a
@@ -328,7 +523,9 @@ async def timing():
             cls = (st[0] + "xx") if st[:1].isdigit() else "?xx"
             by_status[cls] = by_status.get(cls, 0) + int(v)
         elif name == "alive_http_errors_total":
-            err_rows.append({"route": labels.get("route", "?"),
+            # 'path', not 'route': an HTTP route label must not wear the
+            # banned geo-route key the privacy scan forbids (oct11)
+            err_rows.append({"path": labels.get("route", "?"),
                              "class": labels.get("class", "?"),
                              "n": int(v)})
     out["requests"] = {"total": sum(by_status.values()),
@@ -568,6 +765,16 @@ async def corridors(limit: int = 25):
         except Exception:
             return None
 
+    agg = TRIPS.city_aggregates() or {}
+    # the segregation answer (oct11): what share of ALL shared trips ran
+    # through each stretch. A cell's count is that cell's lifetime
+    # crossings (one per trip, TTL-refreshed), the denominator every
+    # recorded shared trip — so the share is <= 100% by construction and
+    # 'everyone took the same road' reads as ~100% on its cells, which a
+    # crossings-share between cells can never show. Rows keep their
+    # documented shape; the console divides row.trips by trips_total.
+    trips_total = sum(int((d or {}).get("trips") or 0)
+                      for d in (agg.get("days") or {}).values())
     rows = [{
         "cell": r.get("cell"),
         "near": _corridor_label(r.get("cell")),
@@ -578,8 +785,8 @@ async def corridors(limit: int = 25):
         "co2_trips": r.get("co2_trips"),
         "field_pm25": _field_at(r.get("cell")),
     } for r in raw]
-    agg = TRIPS.city_aggregates() or {}
     return {
+        "trips_total": trips_total,
         "ts": time.time(),
         "k_min": K_MIN,
         "window_s": CORRIDOR_WINDOW_S,

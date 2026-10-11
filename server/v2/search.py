@@ -19,9 +19,22 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from . import deps
-from .gazetteer import GAZ, classify, name_says_elsewhere, normalize
+from .gazetteer import (AC, GAZ, alias_table, classify, hub_class,
+                        hub_reclass, name_says_elsewhere, normalize)
 
 router = APIRouter()
+
+# /v2/search wall-clock budget: the deep (Overpass) arm gets what's left
+# of it and the request answers with what the index has — a keystroke
+# never waits on erroring public mirrors (prod: 23/123 queries ≥3 s).
+_SEARCH_BUDGET_S = float(os.environ.get("V2_SEARCH_BUDGET_S", "1.5"))
+_AC_WARM = os.environ.get("ALIVE_AC_WARM", "1").strip().lower() not in (
+    "0", "off", "false", "no")
+# build the /v2/ac prefix index off the request path at import (pytest
+# processes opt in explicitly via AC.ensure() — a 5 s background build
+# would skew the suite's latency tests)
+if _AC_WARM and "_pytest" not in __import__("sys").modules:
+    AC.warm_async()
 
 DEDUPE_RADIUS_M = 75.0
 
@@ -548,6 +561,158 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
     return merged
 
 
+# ===========================================================================
+# GET /v2/ac — pure in-memory prefix type-ahead (lane X, oct11)
+# ===========================================================================
+@router.get("/ac")
+async def ac(q: str = Query(min_length=1, max_length=200),
+             lat: Optional[float] = None, lon: Optional[float] = None,
+             limit: int = Query(default=10, ge=1, le=20)):
+    """Keystroke type-ahead over the bundled gazetteer: earlier words
+    match whole name tokens (or aliases), the last word is a prefix.
+    Never calls the network and never waits on the index build — while
+    it warms the answer is an honest empty list with status 'warming'.
+    Same row shape as /v2/search results."""
+    t0 = time.perf_counter()
+    if lat is not None and not math.isfinite(lat):
+        lat = None
+    if lon is not None and not math.isfinite(lon):
+        lon = None
+    if lat is None or lon is None:
+        lat = lon = None
+    if not AC.ready:
+        AC.warm_async()
+        return {"q": q, "results": [], "count": 0,
+                "status": "warming" if AC.error is None else "unavailable",
+                "took_ms": round((time.perf_counter() - t0) * 1000.0, 2)}
+    rows = AC.query(q, lat, lon, limit)
+    return {"q": q, "results": rows, "count": len(rows), "status": "ok",
+            "bias": ({"lat": lat, "lon": lon} if lat is not None else None),
+            "index_rows": AC.stats.get("rows_indexed"),
+            "took_ms": round((time.perf_counter() - t0) * 1000.0, 2)}
+
+
+def _junk_filter(rows: list) -> list:
+    """Drop/reclassify junk rows other engines return, under the same
+    load-time mechanisms the /v2/ac index applies (far-named hubs,
+    uncorroborated hub copies, 'airport' rows that are businesses).
+    A no-op until the index is warm — never blocks a request."""
+    if not AC.ready or not rows:
+        return rows
+    out = []
+    for r in rows:
+        kind = r.get("kind") or ""
+        if hub_class(kind) is None:
+            out.append(r)
+            continue
+        try:
+            if AC.junk_reason(r.get("name") or "", kind,
+                              r["lat"], r["lon"]):
+                continue
+        except Exception:
+            pass
+        if _hub_reclass(r.get("name") or "", kind):
+            r["kind"] = "business"
+            r["subtitle"] = "business"
+        out.append(r)
+    return out
+
+
+def _hub_reclass(name: str, kind: str):
+    return hub_reclass(name, kind)
+
+
+_NF_STOP = frozenset("""
+of the near opp opposite in at and to from behind beside front next
+ke ki ka wala wali wale se
+""".split())
+_NF_HONORIFIC = frozenset(("shri", "sri", "shree", "the", "pracheen",
+                           "prachin"))
+_NF_ADDRESSY = frozenset("""
+house flat plot block sector phase pocket gali lane street road marg
+tower wing floor shop unit khasra village near opposite
+""".split())
+
+
+def _name_first(rows: list, q: str, qn: str, blat: float, blon: float,
+                limit: int) -> list:
+    """Name-first ranking: the query's leading word is the NAME, later
+    kind words only describe it ('pawan bakery' must not answer 'Amar
+    Bakery'; 'iskcon east of kailash' must not jump to 'OYO Rooms East
+    of Kailash ISKCON'). Rows whose name carries the lead word move
+    ahead of rows that don't (stable); with context words typed, rows
+    whose name STARTS with the lead lead the group. Skipped for
+    kind-first / place-plus-kind queries ('atm near cp', 'shahdara
+    bakery'), which the compound path answers by design."""
+    from .gazetteer import _AC_KIND_WORDS
+    toks = [t for t in qn.split() if t not in _NF_STOP]
+    if len(toks) < 2:
+        return rows
+    lead = toks[0]
+    # unit / address designators ('b-12 lajpat nagar', 'sector 62',
+    # 'h no 5') lead address queries — the subplace path owns those
+    if len(lead) < 3 or any(c.isdigit() for c in lead) or \
+            lead in _AC_KIND_WORDS or lead in _NF_ADDRESSY:
+        return rows
+    kind_at = next((i for i, t in enumerate(toks)
+                    if t in _AC_KIND_WORDS), None)
+    if kind_at is not None and AC.ready and \
+            AC.is_locality_phrase(toks[:kind_at]):
+        return rows        # '<place> <kind>' — a compound ask
+    alts = [(lead,)] + [tuple(p) for p in alias_table().get(lead, ())]
+
+    def _ntoks(r):
+        return normalize(r.get("name") or "").split()
+
+    def _lead_ok(nt):
+        return any(all(any(_tok_eq(a, t) for t in nt) for a in alt)
+                   for alt in alts)
+
+    def _starts(nt):
+        nt = [t for t in nt if t not in _NF_HONORIFIC] or nt
+        return bool(nt) and _tok_eq(lead, nt[0])
+
+    flags = []
+    for r in rows:
+        nt = _ntoks(r)
+        ok = _lead_ok(nt)
+        flags.append((ok, ok and _starts(nt)))
+    if any(f[0] for f in flags) and not all(f[0] for f in flags):
+        rows = ([r for r, f in zip(rows, flags) if f[0]]
+                + [r for r, f in zip(rows, flags) if not f[0]])
+        flags = ([f for f in flags if f[0]]
+                 + [f for f in flags if not f[0]])
+    if len(toks) >= 3:
+        head = [(r, f) for r, f in zip(rows, flags) if f[0]]
+        tail = [(r, f) for r, f in zip(rows, flags) if not f[0]]
+        head = ([x for x in head if x[1][1]]
+                + [x for x in head if not x[1][1]])
+        rows = [r for r, _ in head + tail]
+        flags = [f for _, f in head + tail]
+    # no row names the lead at all near the top: the prefix index has
+    # the name-first answers ('pawan …' rows) — put its best in front
+    if AC.ready and not any(f[0] for f in flags[:3]):
+        try:
+            extra = AC.query(q, blat, blon, limit=3)
+        except Exception:
+            extra = []
+        fresh = []
+        for x in extra:
+            if x.get("match_rank") == 3 and x.get("score", 0) < 3.0:
+                continue
+            xn = normalize(x["name"])
+            if any(normalize(r.get("name") or "") == xn and
+                   _hav_m(r["lat"], r["lon"], x["lat"], x["lon"]) < 75
+                   for r in rows):
+                continue
+            x = dict(x)
+            x["sources"] = ["t1"]
+            x["source"] = "gazetteer"
+            fresh.append(x)
+        rows = fresh + rows
+    return rows
+
+
 @router.get("/search")
 async def search(q: str = Query(min_length=1, max_length=200),
                  lat: Optional[float] = None, lon: Optional[float] = None,
@@ -573,11 +738,17 @@ async def search(q: str = Query(min_length=1, max_length=200),
 
     t1_rows = await t1_task
     t1_ms = (time.perf_counter() - t0) * 1000.0
+    t1_rows = _junk_filter(t1_rows)
 
     t2_rows, t2_ms = [], None
     if t2_task is not None:
         t1 = time.perf_counter()
-        t2_rows = await t2_task
+        try:
+            t2_rows = await asyncio.wait_for(
+                t2_task, timeout=max(0.2, _SEARCH_BUDGET_S
+                                     - (time.perf_counter() - t0)))
+        except asyncio.TimeoutError:
+            t2_rows = None
         t2_ms = (time.perf_counter() - t1) * 1000.0
         if t2_rows is None:  # upstream failed — honest, not an error tier
             t2_rows = []
@@ -639,9 +810,21 @@ async def search(q: str = Query(min_length=1, max_length=200),
                     _hav_m(blat, blon, r["lat"], r["lon"]))
         if _fire_query(local_rows, anchors):
             t3_start = time.perf_counter()
-            t3_rows, gaz_rows, t3_status = await _overpass_arm(
-                q, qn, blat, blon, limit, presolved)
-            t1_rows.extend(gaz_rows)
+            # the deep arm only gets what's left of the request budget;
+            # past it the answer is what the index already has
+            left = _SEARCH_BUDGET_S - (t3_start - t0)
+            if left < 0.25:
+                t3_status = "skipped:budget"
+            else:
+                try:
+                    t3_rows, gaz_rows, t3_status = await asyncio.wait_for(
+                        _overpass_arm(q, qn, blat, blon, limit, presolved,
+                                      fuse_s=left - 0.1),
+                        timeout=left + 0.15)
+                    t1_rows.extend(_junk_filter(gaz_rows))
+                    t3_rows = _junk_filter(t3_rows)
+                except asyncio.TimeoutError:
+                    t3_rows, t3_status = [], "timeout:budget"
             t3_ms = (time.perf_counter() - t3_start) * 1000.0
     elif limit > 0:
         t3_status = "off"
@@ -662,6 +845,10 @@ async def search(q: str = Query(min_length=1, max_length=200),
     merged = _merge(t1_rows, t2_rows + t3_rows, qn, blat, blon,
                     anchors=anchors,
                     pool=t1_rows + t2_rows + t3_rows)
+    try:
+        merged = _name_first(merged, q, qn, blat, blon, limit)
+    except Exception:
+        pass   # ranking polish must never fail a search
     tiers = ["t1"] + (["t2"] if t2_task is not None else []) \
         + (["t3"] if t3_status is not None and t3_status != "off" else [])
     return {
@@ -720,9 +907,14 @@ _OP_CACHE: dict = {}
 _THIN_MIN_HITS = 3
 _THIN_BEST_DIST_M = 2000.0
 
-# Overpass bbox wants (S,W,N,E); deps.NCR_BBOX is (lon_min,lat_min,lon_max,lat_max)
-_OSM_BBOX = (f"{deps.NCR_BBOX[1]},{deps.NCR_BBOX[0]},"
-             f"{deps.NCR_BBOX[3]},{deps.NCR_BBOX[2]}")
+# Overpass bbox wants (S,W,N,E). Search coverage = Delhi + whole NCR +
+# UP/Haryana outskirts (Panipat, Meerut, Bulandshahr, Rewari, Rohtak…),
+# wider than deps.NCR_BBOX (the AIR field's bbox, which stops at
+# 28.95N / 76.80E and cut Sonipat, Meerut, Rohtak, Rewari, Palwal out
+# of the deep pass). The /v2/search budget caps whatever this costs.
+SEARCH_BBOX = (75.9, 27.6, 78.5, 29.9)   # lon_min, lat_min, lon_max, lat_max
+_OSM_BBOX = (f"{SEARCH_BBOX[1]},{SEARCH_BBOX[0]},"
+             f"{SEARCH_BBOX[3]},{SEARCH_BBOX[2]}")
 
 # words that stop being place-name material once the locality spans are
 # peeled off — kept out of chained name probes ("near"/"and" in a regex
@@ -2163,7 +2355,8 @@ def _anchor_gap(qn: str, top_rows: list, anchors: list) -> bool:
 
 
 async def _overpass_arm(q: str, qn: str, blat: float, blon: float,
-                        limit: int, presolved: tuple = None) -> tuple:
+                        limit: int, presolved: tuple = None,
+                        fuse_s: Optional[float] = None) -> tuple:
     """The live arm: anchors -> engine requery -> overpass probes ->
     ranked rows. Returns (t3_rows, gaz_rows, status)."""
     loop = asyncio.get_running_loop()
@@ -2178,7 +2371,11 @@ async def _overpass_arm(q: str, qn: str, blat: float, blon: float,
         gaz_rows = await _anchor_requeries(qn, parsed, anchors,
                                            blat, blon)
         return [], gaz_rows, "no-probe"
-    deadline = time.monotonic() + _OP_FUSE_S
+    # fuse_s: the caller's remaining request budget (/v2/search caps the
+    # whole request at _SEARCH_BUDGET_S); never longer than the arm fuse
+    fuse = _OP_FUSE_S if fuse_s is None else max(0.1, min(_OP_FUSE_S,
+                                                          fuse_s))
+    deadline = time.monotonic() + fuse
     cache_key = (qn, round(blat, 3), round(blon, 3))
     # gazetteer requeries race alongside the mirrors under a slice of
     # the fuse — a fat-postings engine requery (many-token query)

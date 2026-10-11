@@ -1,0 +1,119 @@
+/* profile.css — the "Make Alive yours" bottom sheet (profile.js).
+   Warm paper, ink, one forest accent; no band hues (they mean air only).
+   Motion: transform + opacity only. */
+.pf { position: fixed; inset: 0; z-index: 55; }
+.pf-scrim {
+  position: absolute; inset: 0; background: rgba(22,24,29,.38);
+  opacity: 0; transition: opacity .35s var(--ease);
+}
+.pf-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  max-height: calc(100% - var(--sat, 0px) - 12px);
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  background: var(--paper); border-radius: 26px 26px 0 0; box-shadow: var(--sh-sheet);
+  padding: 10px 20px calc(var(--sab, 0px) + 14px);
+  transform: translateY(105%); transition: transform .45s var(--ease);
+  will-change: transform;
+}
+.pf.on .pf-scrim { opacity: 1; }
+.pf.on .pf-sheet { transform: none; }
+.pf.closing .pf-scrim { opacity: 0; transition-duration: .3s; }
+.pf.closing .pf-sheet { transform: translateY(105%); transition-duration: .3s; }
+.pf.closing { pointer-events: none; }
+
+.pf-grab { width: 38px; height: 4px; border-radius: 2px; background: var(--ink15); margin: 0 auto 16px; }
+.pf-title {
+  margin: 0 0 6px; color: var(--ink); font-size: 24px; font-weight: 500;
+  letter-spacing: -0.4px; line-height: 30px; outline: none;
+}
+.pf-lbl {
+  display: block; margin: 16px 2px 7px; color: var(--ink2);
+  font-size: 14px; font-weight: 500;
+}
+.pf-input {
+  display: block; width: 100%; min-width: 0; height: 48px; padding: 0 14px;
+  border: 0; border-radius: 14px; outline: none;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--ink15);
+  color: var(--ink); font-family: var(--font); font-size: 16px;   /* ≥16px: no iOS zoom */
+  transition: box-shadow .2s;
+}
+.pf-input::placeholder { color: var(--ink4); }
+.pf-input:focus { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pf-fine { margin: 6px 2px 0; color: var(--ink3); font-size: 13px; }
+
+.pf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-chip {
+  min-height: 40px; padding: 0 14px; border-radius: 999px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--ink15);
+  color: var(--ink); font-family: var(--font); font-size: 15px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: transform .2s var(--ease), background-color .2s, color .2s;
+}
+.pf-chip:active { transform: scale(.96); }
+.pf-chip.on { background: var(--accent); color: #fff; box-shadow: none; }
+
+.pf-areabox { position: relative; }
+.pf-areain { padding-right: 48px; }
+.pf-areaclr {
+  position: absolute; right: 4px; top: 4px; width: 40px; height: 40px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink3); font-size: 14px;
+}
+.pf-areasub {
+  margin: 6px 2px 0; color: var(--ink3); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pf-arearows { display: flex; flex-direction: column; margin-top: 4px; }
+.pf-arearows:empty { display: none; }
+.pf-row {
+  display: flex; flex-direction: column; align-items: stretch; gap: 1px;
+  min-height: 48px; padding: 8px 10px; border-radius: 12px; text-align: left;
+  font-family: var(--font); min-width: 0;
+}
+.pf-row + .pf-row { box-shadow: 0 -.5px 0 var(--ink10); }
+.pf-row:active { background: var(--surface2); }
+.pf-rowt, .pf-rows { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-rowt { color: var(--ink); font-size: 15px; font-weight: 500; }
+.pf-rows { color: var(--ink3); font-size: 13px; }
+.pf-areamsg { padding: 10px 4px 2px; color: var(--ink3); font-size: 14px; }
+
+.pf-switch {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  margin-top: 18px; padding: 12px 14px; min-height: 56px;
+  border-radius: 16px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--ink10);
+  font-family: var(--font); text-align: left;
+}
+.pf-switcht { flex: 1; min-width: 0; color: var(--ink); font-size: 15px; font-weight: 500; line-height: 20px; }
+.pf-sw {
+  position: relative; flex: 0 0 auto; width: 48px; height: 28px; border-radius: 14px;
+  background: #ECE9E2; transition: background-color .18s;
+}
+.pf-sw i {
+  position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 11px;
+  background: var(--surface); box-shadow: 0 1px 3px rgba(22,24,29,.25);
+  transition: transform .18s var(--ease);
+}
+.pf-sw.on { background: var(--accent); }
+.pf-sw.on i { transform: translateX(20px); }
+
+.pf-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+.pf-save {
+  width: 100%; height: 54px; border-radius: 999px;
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font); font-size: 16px; font-weight: 500;
+  transition: transform .2s var(--ease);
+}
+.pf-save:active { transform: scale(.98); }
+.pf-later, .pf-remove {
+  align-self: center; min-height: 44px; padding: 0 24px; border-radius: 999px;
+  color: var(--ink2); font-family: var(--font); font-size: 15px; font-weight: 500;
+}
+.pf-remove { color: var(--ink3); font-size: 14px; }
+
+@media (min-width: 600px) {
+  .pf-sheet { left: 50%; right: auto; width: 440px; margin-left: -220px; bottom: 24px; border-radius: 26px; }
+}
+
+/* programmatic focus lands on the title (no keyboard pops up uninvited) —
+   no ring there; inputs carry their own accent focus edge */
+.pf-title:focus, .pf-title:focus-visible, .pf-input:focus-visible { outline: none; }
