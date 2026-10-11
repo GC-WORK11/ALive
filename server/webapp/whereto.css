@@ -116,6 +116,11 @@
 .wt-asplit { width: 1px; background: #E3E0D7; margin: 12px 0; display: block }
 
 /* ── armed pin-drop hint strip ──────────────────────────────── */
+/* sheet goes transparent + inert so map taps reach the canvas;
+   only the pinbar stays interactive (same pattern as hs-picking) */
+.wt-armed .sheet { background: transparent; box-shadow: none; border-radius: 0; pointer-events: none }
+.wt-armed .sheet .sheet-grab, .wt-armed .sheet .sheet-title { display: none }
+.wt-armed .wt-pinbar { pointer-events: auto }
 .wt-armed .sheet-body > .wt { display: none }
 .wt-pinbar {
   position: absolute; left: 12px; right: 12px; bottom: calc(14px + var(--sab));
@@ -127,9 +132,10 @@
 .wt-pinbar b { font-size: 13px; font-weight: 600; color: #16181D }
 .wt-pinbar i { font-style: normal; font-size: 11px; color: #6E7278 }
 .wt-pinx {
-  width: 28px; height: 28px; border: 0; border-radius: 50%; flex: none;
+  position: relative; width: 28px; height: 28px; border: 0; border-radius: 50%; flex: none;
   background: #F3F2EC; display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
+.wt-pinx::after { content: ''; position: absolute; inset: -8px }
 
 /* ── options surface — trip row ─────────────────────────────── */
 .wt-trip {
@@ -141,7 +147,9 @@
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
   background: transparent; border: 0; border-radius: 10px;
   padding: 6px 4px; cursor: pointer; text-align: left;
+  position: relative;
 }
+.wt-th::after { content: ''; position: absolute; inset: -6px -4px }
 .wt-tdot { width: 9px; height: 9px; border-radius: 5px; background: #35614B; flex: none }
 .wt-tdot.to { background: transparent; border: 2px solid #6E7278; box-sizing: border-box }
 .wt-tt { font-size: 13px; font-weight: 500; color: #16181D; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }

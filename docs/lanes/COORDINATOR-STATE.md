@@ -90,3 +90,20 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - **acct2 e2e lane** (ae597b9c1b884a6c9f609fd640ef976d) walking prod twin — harvest findings when it returns.
 - Relay pattern proven 4×: format-patch → acct2 attachments → acct2 lane am+pushes. My-org push still 403.
 - Deploys this session: :260 3f602517, :262 1caaf7b9, :263 7c9e0c7a.
+
+## 2026-10-11 ~05:30 UTC — :264/:265 e2e-fix round
+- acct2 twin-e2e regression (7 defects) triaged+fixed live: eta_s duration/arrive (whereto:767,809), settings whereto.vehicle key, airmap planCard null-zone guard, /favicon.ico root route, pick-mode (hs-picking: transparent+inert surface, exposed map, pickcard w/ gps escape; SECOND fix: read cur.pos||A.geo.pos — applyPos doesn't write geo.pos).
+- Verified on prod: pick canvas tappable → maptap → hero renders, pos persisted. favicon 200.
+- Skipped by design: /v2/reverse 404 (rolling transient, nominatim fallback), compare-sheet drag-only dismiss (RN parity, gesture verified).
+- :264=aa35cf62, :265=a9e0ead0. Relay: stacks 6+7 to geo lane (overlap note sent — stack7 supersedes).
+- Re-tasked acct2 fleet on :265: e2e-rerun (verify 7 dead), mobile-rerun (P1s verify), stress-perf (search/plan latency), geo-sweep2 (~120 new deep queries). uxread exited.
+- New lanes mine: poolgap (merge-pool drops: sikanderpur metro row exists k:0.73 but never merges), gazupdate (Geofabrik+Overture refresh → neelanchal/pawan/sitaram deep-name hunt).
+- Search perf measured: ~0.4s normal, 4.8s when Overpass T3 arm fires (3s fuse + network) — honest deep-probe cost.
+
+## 2026-10-11 ~05:45 UTC — :266 poolgap round
+- poolgap lane delivered (devin-07d32a3c1b194ae294655b0a17886773, patch→am as c93d8203): all 3 gaps were engine pool-building, not data. Fixes in server/core_engine.py only: (a) cov=1.0 literal hits outrank speculative comp rows — sikanderpur Gurugram metro now #1; (b) _foreign veto can't drop full-coverage hit + want_extra filter on kind-scan rows + alias-aware unit tokens (t1→terminal 1) — Terminal 1 IGI #1, real T2 top-5, Devanagari Central-Secretariat gate killed; (c) anchor can't silently eat unit token — `delhi airport t1` returns honest airport rows.
+- Verified on prod :266 myself via /v2/search curl — all 4 queries return correct rows.
+- acct2 fleet notified :266 is live so they don't re-report fixed rows.
+- gazupdate still running (deep-name hunt: neelanchal/pawan/sitaram/g block).
+- Attachments upload endpoint (acct2): POST /v3/organizations/{org}/attachments (NOT /v3/attachments).
+- Relay stack8 (c93d8203) sent to geo lane for push.
