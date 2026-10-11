@@ -10,7 +10,7 @@ Built and verified on the booted iPhone sim: paper splash → 'a' settles →
 existing onboarding. Returning users (consent on disk) go straight to home —
 no wordmark, no replay.
 
-- **Repo/branch:** `<owner>/Delhi-Air-108` @ `base/v2`, rebased on
+- **Repo/branch:** `GC-WORK11/ALive` @ `base/v2`, rebased on
   `3f9245f`
 - **Device:** iOS Simulator iPhone 17, iOS 26.5, UDID
   `EDD9B083-63F1-44E6-9A7B-0A6964CC2561`, dev client `com.anonymous.app`

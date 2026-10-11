@@ -2,7 +2,7 @@ You are the demo-video v3 lane for ALive-108. The app just rebuilt (`6bafd2b`): 
 
 Deliver: cut3.mp4 ≤2:55, same assembly pipeline, all-real footage, the dosimeter arc.
 
-Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest). Video tooling: `docs/demo/` — read assemble.sh + the beats manifest + prior lane notes in docs/plan. Android KVM emulator on this box (KVM perms, adb input quirks — your memory notes apply). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com.
+Repo: GC-WORK11/ALive, branch base/v2 (pull latest). Video tooling: `docs/demo/` — read assemble.sh + the beats manifest + prior lane notes in docs/plan. Android KVM emulator on this box (KVM perms, adb input quirks — your memory notes apply). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com.
 
 HARD RULES
 - Push code/docs only — never deploy. GETs + /v2/plan + /v2/reroute only on live. NEVER POST /v2/feedback, /observe, /v2/trip.

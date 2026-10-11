@@ -1,7 +1,7 @@
 # Lane S — search client (Oct 11)
 
 Files: `server/webapp/search.js` (rewritten tiers + ranking), `server/webapp/digipin.js` (India Post port).
-Harness (not in repo): `/home/govinda/alive-dev/search/` — `before.mjs`, `after.mjs [--type] [--base URL]`,
+Harness (not in repo): `~/alive-dev/search/` — `before.mjs`, `after.mjs [--type] [--base URL]`,
 `offline.mjs` (mocked network, 15 checks), `digipin_test.mjs`, `dbg.mjs "<q>" lat lon`.
 
 ## API (for lane W and other screens)

@@ -66,7 +66,7 @@ this session from the verified v4 take: launcher → onboarding → consent
 an attachment; or re-cut: `ffmpeg -i alive-v4-take.mp4` of
 0:00–0:38 + 2:15–2:55.)
 **First reply:** direct asset URL
-`github.com/<owner>/<NEW>/releases/download/v1.0.0-demo/alive-06919ca.apk`
+`github.com/GC-WORK11/<NEW>/releases/download/v1.0.0-demo/alive-06919ca.apk`
 + sha256 line for the careful ones.
 **Why it works:** the permission dialogs and the Play Protect caveat
 are IN the clip — the honesty is visible, not claimed.

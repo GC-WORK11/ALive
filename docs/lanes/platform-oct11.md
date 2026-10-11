@@ -8,8 +8,8 @@
 | `server/main.py` | `/v2/p/flow_tile` gets its own rate-limit bucket (20 rps, burst 80). It is added through `_DEFAULT_PATH_LIMITS.setdefault`, not as an explicit kwarg, so `ALIVE_RATE_LIMIT=0` still turns the limiter off. |
 | `server/tests/test_providers.py` (NEW) | 17 offline tests. Every upstream is an `httpx.MockTransport`. The module is loaded straight from its file, so another lane's half-edited v2 module cannot break these tests. |
 | `scripts/deploy.sh` | (1) Adds `OLA_API_KEY`, `TOMTOM_API_KEY` and `MAPPLS_API_KEY` from `alive108/ola`, `alive108/tomtom` and `alive108/mappls`. Each one is added **only if** `describe-secret` shows the secret exists, is not pending deletion and has a value (`[DeletedDate == null, VersionIdsToStages != null]`). (2) Local docker builds now refuse to run on an uncommitted `server/` tree, because docker builds the working tree but tags it with HEAD's sha. Ways round it: commit first, use `BUILD_MODE=codebuild` (builds exactly HEAD), or set `ALLOW_DIRTY=1`. |
-| `/home/govinda/alive-dev/put-secrets.sh` (NEW) | Reads `~/.config/alive-ops/keys.env` without sourcing it, then creates or updates the three secrets as plain strings. Each value goes through a 0600 temp file as `file://`, so it never appears in stdout or the process list. Restores a secret that is pending deletion. |
-| `/home/govinda/alive-dev/run-8108.sh` (NEW) | Starts (or restarts), stops and reports status for the local full server. |
+| `~/alive-dev/put-secrets.sh` (NEW) | Reads `~/.config/alive-ops/keys.env` without sourcing it, then creates or updates the three secrets as plain strings. Each value goes through a 0600 temp file as `file://`, so it never appears in stdout or the process list. Restores a secret that is pending deletion. |
+| `~/alive-dev/run-8108.sh` (NEW) | Starts (or restarts), stops and reports status for the local full server. |
 | `requirements*.txt` | Unchanged. `httpx` was already a dependency. |
 
 ## Provider behaviour (THE LAW)
@@ -51,14 +51,14 @@
   - **TomTom:** developer.tomtom.com calculate-route and incident-details v5 pages.
 
 ## Local full server (:8108)
-- Start or restart: `bash /home/govinda/alive-dev/run-8108.sh`. Also `stop` and `status`. Log: `/home/govinda/alive-dev/server-8108.log`.
+- Start or restart: `bash ~/alive-dev/run-8108.sh`. Also `stop` and `status`. Log: `~/alive-dev/server-8108.log`.
 - What it runs: `server/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8108 --no-access-log --reload --reload-dir server` (excluding tests, data, webapp, static, core, .venv and tools), from `server/`.
   - Environment: `ALIVE_RATE_LIMIT=0`, because all lanes share one 127.0.0.1 rate bucket.
   - It sources `~/.config/alive-ops/keys.env` if the file exists. That file is **absent right now**, so after creating it, re-run the script; a reload does not re-read the environment.
 - Boots in about 15 s with the real `alive_core` engine (1,070,459 edges, about 903k priced), a live field from open-meteo/cams, and metro GTFS.
 - Station feeds are off locally: WAQI has no key here, and DPCC is behind a flag.
 - `--reload` means a lane's server edit goes live after about 15 s, but requests during a reload get connection-refused. There were about 50 reloads in the first 30 minutes while lanes were editing `plan.py`, `modes_engine.py` and the rest.
-- For a stable, warm server instead: `RELOAD=0 bash /home/govinda/alive-dev/run-8108.sh`. Re-run the script to pick up code changes.
+- For a stable, warm server instead: `RELOAD=0 bash ~/alive-dev/run-8108.sh`. Re-run the script to pick up code changes.
 
 ## Deploy readiness (nothing was deployed)
 - `~/.aws-venv` has aws-cli 1.46.1. Run as `PATH="$HOME/.aws-venv/bin:$PATH" bash scripts/deploy.sh`. deploy.sh already handles v1's `update-service --load-balancers` gap.

@@ -35,7 +35,7 @@ release is TODAY. Owner's X post got a "lets go" reply from WeMakeDevs. Judges,
 public scrutiny, and the owner's career ride on this shipping polished and honest.
 
 ## Repo access — READ THIS FIRST
-- Canonical: `origin` https://github.com/<owner>/Delhi-Air-108.git —
+- Canonical: `origin` https://github.com/GC-WORK11/ALive.git —
   **the owner's GitHub account is SUSPENDED locally but cloud pushes WORK**
   (bridge lane pushed 1772669 fine). Always `git fetch origin` first.
 - Mirror (fallback, always writable): https://github.com/GC-WORK11/alive-mirror.git
@@ -117,6 +117,6 @@ Leave the repo committed + pushed (origin preferred, mirror as backup). Never
 leave the tree dirty without a note in HANDBACK.md.
 
 ## Local-only knowledge base
-/home/govinda/alive-consciousness — git repo with 00-STATE, 01-PRODUCT,
+~/alive-consciousness — git repo with 00-STATE, 01-PRODUCT,
 02-WHY-HE-IS-ANGRY, 03-05 sagas, 06-THE-LAW, local-logs/{android,demos,city,apk},
 all 256 session dumps. Cloud can't read this path — this doc carries what matters.

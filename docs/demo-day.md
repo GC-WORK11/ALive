@@ -767,7 +767,7 @@ touches your worktree: it writes one commit holding the tip-most tree
 of {base/v2, main} via `git commit-tree` and pushes it as `main`.
 
 ```bash
-./scripts/public-repo.sh https://github.com/<owner>/<new-repo>.git
+./scripts/public-repo.sh https://github.com/GC-WORK11/<new-repo>.git
 # then work normally; every post-baseline push keeps history in-window
 ```
 

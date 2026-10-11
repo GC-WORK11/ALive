@@ -1,7 +1,7 @@
 # web-nits — fold web-cold-eye's flagged nits + accent canon
 
 You are the web-nits lane for ALive-108 (AWS×WeMakeDevs Air track demo Oct
-8–11). Repo: <owner>/Delhi-Air-108, branch base/v2, pull first.
+8–11). Repo: GC-WORK11/ALive, branch base/v2, pull first.
 Surfaces: server/landing.html, server/city.html, server/admin.html. Read
 docs/lanes/web-cold-eye-report.md first — you own its remaining flags.
 

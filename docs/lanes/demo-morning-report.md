@@ -1,7 +1,7 @@
 # Lane report — demo-morning: the final runbook
 
 **Date:** 2026-10-07 ~13:05 UTC · **Deliverable:** `docs/plan/demo-morning.md`
-(the single timed checklist Govinda holds tomorrow morning).
+(the single timed checklist the owner holds tomorrow morning).
 **Prod at write time:** `/health` `build_sha c86074ff`, `field_stale false`,
 `field_age_s 651`, engine `alive_core`, stations 51 (waqi+dpcc both `ok`),
 wind 5.1 km/h @ 354° N. No code touched; this lane writes two docs only.

@@ -1,6 +1,6 @@
 # Lane: apk-verify-v8 — the FINAL binary's device drive
 
-Repo `<owner>/Delhi-Air-108`, branch `base/v2`, HEAD `5fd2990`+.
+Repo `GC-WORK11/ALive`, branch `base/v2`, HEAD `5fd2990`+.
 The final demo binary was rebuilt by the lead on the macOS box and is
 uploaded at:
   https://app.devin.ai/attachments/a269e379-68ea-4f82-9817-dba52afd15ec/alive108-5fd2990.apk

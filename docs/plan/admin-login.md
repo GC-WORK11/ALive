@@ -1,6 +1,6 @@
 # Admin sign-in — the demo-morning playbook
 
-How Govinda opens the engine room at T-30, on his laptop or the phone.
+How the owner opens the engine room at T-30, on his laptop or the phone.
 Proved end-to-end on prod **2026-10-07 ~11:35 UTC (~17:05 IST)**, live
 build `43913dc0` — wire chain, gate, rate limit, and a real Chrome
 drive (screenshots in `docs/lanes/admin-login-e2e-report.md`).

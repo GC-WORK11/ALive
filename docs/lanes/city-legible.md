@@ -1,6 +1,6 @@
 You are the /city legibility lane for ALive-108. Admin and /community both got plain-language passes; /city is the public map page and still reads like an engineer wrote it. Owner's bar: a Delhiite who can't spell AQI should answer "what is this / what does it represent" on every element. KEEP THE LOOK — paper, serif, mono, hairlines, muted CPCB, honest-empty. Comprehension comes from WORDS + structure, not new chrome.
 
-Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — lanes push often). File: server/city.html (+ any /v2/city wire labels it renders). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com/city.
+Repo: GC-WORK11/ALive, branch base/v2 (pull latest — lanes push often). File: server/city.html (+ any /v2/city wire labels it renders). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com/city.
 
 HARD RULES
 - Push code only — never deploy. GETs only on live.

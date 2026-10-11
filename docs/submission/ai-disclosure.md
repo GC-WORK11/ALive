@@ -12,7 +12,7 @@ before pasting.*
 
 ## What the human did
 
-Govinda directed the project end-to-end: scope and product decisions, the
+The owner directed the project end-to-end: scope and product decisions, the
 zero-fake-data rule, architecture choices (ECS Fargate over App Runner after
 the `SubscriptionRequiredException`, self-hosted pmtiles, k≥3 privacy floor),
 review and merge of every change, all AWS credentials/deploys/cost decisions,

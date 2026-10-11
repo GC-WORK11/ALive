@@ -85,7 +85,7 @@ one baseline commit, run-date stamped, on a NEW public repo.*
       holding the tip-most tree of {base/v2, main} via `git commit-tree`
       and pushes it as `main`; uncommitted/untracked files stay out of
       the public history automatically):
-      `./scripts/public-repo.sh https://github.com/<owner>/<new-repo>.git`
+      `./scripts/public-repo.sh https://github.com/GC-WORK11/<new-repo>.git`
       → one commit "baseline: Alive…" → pushed to the new remote's
       `main`. Needs git committer identity set + push auth (SSH key or
       PAT in the credential helper) — the script preflights identity

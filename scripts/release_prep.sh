@@ -110,7 +110,7 @@ gh release create $TAG "$APK_PATH" \\
 
 ================ path B — manual github.com (works anywhere) ================
 
-1. Open https://github.com/<owner>/Delhi-Air-108/releases/new
+1. Open https://github.com/GC-WORK11/ALive/releases/new
 2. "Choose a tag" → type: $TAG → "Create new tag: $TAG on publish".
 3. $TARGET_LINE
 4. Title: Alive — demo build ($TAG)

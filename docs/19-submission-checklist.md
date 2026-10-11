@@ -1,6 +1,6 @@
 # docs/19 — Submission checklist (Oct 8–11, in order)
 
-Everything below is what ONLY govinda can do. Code, deploy, video and
+Everything below is what ONLY the owner can do. Code, deploy, video and
 writeup are already done — this is the last mile.
 
 ## 1. Register (5 min)
@@ -23,9 +23,9 @@ disqualifies the whole team." Our private commits predate Oct 8.
 On Oct 8, on any machine:
 
 ```bash
-git clone https://github.com/<owner>/Delhi-Air-108.git
+git clone https://github.com/GC-WORK11/ALive.git
 cd Delhi-Air-108
-./scripts/public-repo.sh https://github.com/<owner>/<NEW-PUBLIC-REPO>.git
+./scripts/public-repo.sh https://github.com/GC-WORK11/<NEW-PUBLIC-REPO>.git
 ```
 
 First create `<NEW-PUBLIC-REPO>` as a PUBLIC repo on GitHub (empty, no

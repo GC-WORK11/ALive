@@ -1,6 +1,6 @@
 You are the demo-proof lane for ALive-108 — the runbook rehearsal on TODAY's live build. Every beat the owner will show on demo morning must be re-verified against what's live RIGHT NOW (numbers moved, /v2/why just shipped). Deliver: every demo command re-run + demo-day.md updated to current truth + the why line added to the demo arc where it earns a slot.
 
-Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — lanes push often; rebase before push). Docs: docs/demo-day.md, docs/plan/aws-console-shotlist.md, docs/demo/ (video assets + assemble.sh). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com
+Repo: GC-WORK11/ALive, branch base/v2 (pull latest — lanes push often; rebase before push). Docs: docs/demo-day.md, docs/plan/aws-console-shotlist.md, docs/demo/ (video assets + assemble.sh). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com
 
 HARD RULES
 - Push docs only — never deploy, never touch code. GETs + /v2/plan + /v2/reroute only. NEVER POST /v2/feedback, /observe, /v2/trip.

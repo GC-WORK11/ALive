@@ -39,8 +39,8 @@ Files: `server/webapp/map.js`, `server/webapp/airmap.js`, `server/webapp/airmap.
   120 m), opens at street zoom, the picker uses `A.search.live`, no raw tags.
 
 ## Verification (390×844, DPR 3, http://localhost:8110/app/ = local files + live prod API)
-Rig: `/home/govinda/alive-dev/m/check.mjs` (heroes | segs | fallback | fallback2 | follow | traffic2) plus
-`shoot.mjs` (traffic | others | plan). Screenshots are in `/home/govinda/alive-dev/m/shots/`.
+Rig: `~/alive-dev/m/check.mjs` (heroes | segs | fallback | fallback2 | follow | traffic2) plus
+`shoot.mjs` (traffic | others | plan). Screenshots are in `~/alive-dev/m/shots/`.
 - Hero vs home, same spot. Ashok Nagar: home 173 Moderate, air map 173 moderate (`/aqi` pm25 58, pm10 209,
   CPCB 173; the US AQI 151 is no longer shown). Sonipat: 181 / 181, with "an estimate — nearest monitor ~17 km".
   MATCH true on two separate runs (earlier 167/167 and 173/173).

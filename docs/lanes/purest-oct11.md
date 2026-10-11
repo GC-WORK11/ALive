@@ -92,7 +92,7 @@ stays pick, dedupe and radius, and the spread pool.
     Delhi-only, so those places have no monitor within 6 km, and the UI says
     "no solid air reads within 15 km — try all NCR".
 - UI at 390×844 against 8110 (local webapp + prod API), CP and Ashok Nagar.
-  Screenshots are in `/home/govinda/alive-dev/u/shots/`.
+  Screenshots are in `~/alive-dev/u/shots/`.
 
 ## Open issues
 - /v2/purest and the new /v2/stays pick and spread aren't live until the coordinator deploys.

@@ -51,7 +51,7 @@ streets/parks/water) at 14:33.
 | AVD | `demo` — `system-images;android-35;google_apis;x86_64`, `pixel_7` |
 | Guest | Android 15, x86_64, kernel 6.6, `google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys` |
 | adb | 1.0.41 (platform-tools 37.0.1); `adb root` OK (userdebug image) |
-| Repo | `github.com/<owner>/Delhi-Air-108` @ `base/v2` HEAD `e4dc87a` (rebased mid-run); `git merge-base --is-ancestor 54a296e HEAD` → yes |
+| Repo | `github.com/GC-WORK11/ALive` @ `base/v2` HEAD `e4dc87a` (rebased mid-run); `git merge-base --is-ancestor 54a296e HEAD` → yes |
 | Toolchain | openjdk 17.0.19, node v20.19.0 (tarball), npm 10.8.2, sqlite3 3.37.2 |
 
 ## Build

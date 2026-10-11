@@ -1,6 +1,6 @@
 You are the self-grading lane for ALive-108 — the never-done demo artifact: **the product publishes its own accuracy.** The archive has recorded real hourly snapshots + the forecast we served since Oct 5 (`server/archive.py`, basis:recorded, model values stored alongside where they exist). By demo morning ~60+ hourly pairs exist. Build the endpoint + surface that grades the model live — judges can watch the product score itself.
 
-Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — lanes push often). Server: FastAPI `server/` (Python 3.12, tests in `server/tests`, venv `.venv312`, `PYTHONPATH=core/build312:.`). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com.
+Repo: GC-WORK11/ALive, branch base/v2 (pull latest — lanes push often). Server: FastAPI `server/` (Python 3.12, tests in `server/tests`, venv `.venv312`, `PYTHONPATH=core/build312:.`). Live: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com.
 
 HARD RULES
 - Push code only — never deploy. GETs only on live.

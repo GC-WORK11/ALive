@@ -19,7 +19,7 @@ Canonical names:
   bus+metro real feeds true.
 - **Landing:** standalone `index.html` on `main` and `landing` branches
   (identical trees, last sync `ef4cedd` v11). 4 CTAs point at
-  `github.com/<owner>/Delhi-Air-108/releases`.
+  `github.com/GC-WORK11/ALive/releases`.
 - **Tag:** `v1.0.0-demo` (release_prep default; matches versionName 1.0.0).
 
 **⚠ Two structural facts before any step:**
@@ -28,7 +28,7 @@ Canonical names:
    and it must NOT be the public launch repo. Its history predates the
    Oct-8 window; `scripts/public-repo.sh` exists because making *this*
    repo public is the disqualifier, not the fix. The public repo is a
-   NEW squashed-baseline repo (e.g. `<owner>/Alive`). Every
+   NEW squashed-baseline repo (e.g. `GC-WORK11/ALive`). Every
    landing CTA says `Delhi-Air-108/releases` — those links 404 for the
    public today and keep pointing at the wrong repo after launch unless
    repointed. This is the single link that makes "get the app" resolve.
@@ -56,7 +56,7 @@ wired — the landing's only job is a URL swap.**
 
 1. Owner creates the public repo: **empty** repo on github.com (no
    README/license), then from any authed clone:
-   `./scripts/public-repo.sh https://github.com/<owner>/<NEW>.git`
+   `./scripts/public-repo.sh https://github.com/GC-WORK11/<NEW>.git`
    — it squashes `base/v2` to one baseline commit and pushes `main`.
 2. Fill the release body — `scripts/release_prep.sh <apk> v1.0.0-demo`
    expects filename `alive108-<sha>.apk`; ours is `alive-06919ca.apk`
@@ -68,7 +68,7 @@ wired — the landing's only job is a URL swap.**
    title `Alive — demo build (v1.0.0-demo)` → paste body → attach
    `alive-06919ca.apk` → tick **pre-release** → publish.
 4. Repoint the landing: 4 `Delhi-Air-108/releases` hrefs in `index.html`
-   (on `landing` and `main`) → `https://github.com/<owner>/<NEW>/releases`.
+   (on `landing` and `main`) → `https://github.com/GC-WORK11/<NEW>/releases`.
    Same 4 lines in `server/landing.html` on `base/v2` for the prod copy.
 5. Download the release asset once from a second browser/account's
    incognito window — verify it starts downloading unauthenticated, then
@@ -276,7 +276,7 @@ clock, not during.
 
 ### Decision B — public repo name + CTA repoint (owner, 20 min)
 
-- Repo name suggestion: `<owner>/Alive` (capital-A reads clean
+- Repo name suggestion: `GC-WORK11/ALive` (capital-A reads clean
   in release URLs). Empty repo → `./scripts/public-repo.sh <url>` →
   verify `curl` 200 logged out.
 - The 4 CTA repoints in `index.html` (landing + main) and

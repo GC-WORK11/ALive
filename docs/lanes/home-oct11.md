@@ -2,7 +2,7 @@
 
 Files changed (only these): `server/webapp/home.js`, `home.css`, `settings.js`, `settings.css`.
 Not touched: `server/v2/day.py`, `server/v2/outlook.py` (no server change needed; no Python edited).
-Pre-change copies: `/home/govinda/alive-dev/h/*.orig`.
+Pre-change copies: `~/alive-dev/h/*.orig`.
 
 ## What changed
 
@@ -70,8 +70,8 @@ not a band hue.
     CP PM2.5 57 / PM10 141 → AQI 128 Moderate, from Mandir Marg 1.6 km.
 - The plain line per band is CPCB's own "possible health impacts" statement in plain words (no advice of our own).
 
-## Verification (`/home/govinda/alive-dev/h/verify.mjs`, dev URL :8110, 390×844 DPR3, headless Chrome)
-42/42 checks pass, **0 console errors**. Screenshots are in `/home/govinda/alive-dev/h/shots/`:
+## Verification (`~/alive-dev/h/verify.mjs`, dev URL :8110, 390×844 DPR3, headless Chrome)
+42/42 checks pass, **0 console errors**. Screenshots are in `~/alive-dev/h/shots/`:
 - 01 intro · 02 sheet · 03 GPS → home (Ashok Nagar) · 04 pick mode · 05 pin tapped at CP on the map → home ·
   06 Not now → home · 07 sheet reopened · 08 location blocked → note · 10 seeded homes at 320/360/390/430
   (CP + Ashok Nagar) · 11/12 intro + sheet at 320×568, 360×740, 430×932 · 13 dose row · 20/21 settings.

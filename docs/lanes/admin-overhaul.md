@@ -6,7 +6,7 @@ Owner's ask (verbatim essence): "admin website... should be easy for non-technic
 `server/admin.html` (the whole page), `server/landing.html` ONLY if a nav link needs fixing. Do NOT touch server/*.py route code — admin endpoints already serve; this is presentation + clarity.
 
 ## The bar
-A non-technical person (a judge, a journalist, govinda's mom) opens /admin,
+A non-technical person (a judge, a journalist, someone's parent) opens /admin,
 enters the token, and understands Delhi's air system in <60 seconds without
 reading a manual. Think "mission control for people, not operators".
 

@@ -55,7 +55,7 @@ probe: 401, 401, 401, 429, 401, 429.
 
 ## 4. Browser proof — real Chrome on prod
 
-Same URL, same flow Govinda runs at T-30 (screenshots in
+Same URL, same flow the owner runs at T-30 (screenshots in
 `admin-login-e2e-shots/`):
 
 1. `gate-card.png` — guest lands on the gate: **"ALIVE·108 / engine

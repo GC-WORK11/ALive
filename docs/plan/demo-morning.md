@@ -41,7 +41,7 @@ curl -s -o /dev/null -w "NLB -> %{http_code}\n" "$NLB/health"   # expect 200
 - [ ] **Public repo baseline pushed** — the Oct-8-history rule is a
   whole-team disqualifier, not a downgrade. If not already done:
   create an EMPTY GitHub repo (no README/license), then
-  `./scripts/public-repo.sh https://github.com/<owner>/<new>.git`
+  `./scripts/public-repo.sh https://github.com/GC-WORK11/<new>.git`
   — needs push auth in the credential helper. Verified: `go-nogo` #1.
 - [ ] **DEPLOY FREEZE from T-60 → demo end.** No pushes to `base/v2`,
   no deploys, no task swaps — **every `base/v2` push triggers a

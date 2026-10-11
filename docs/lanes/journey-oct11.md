@@ -61,7 +61,7 @@ same path and the record is saved as `simulated:true`.
   is the word 'Satisfactory'), so stretches draw in their band colour.
 
 ## How it was verified
-Rig: `/home/govinda/alive-dev/j/run.js`. Headless Chrome at 390×844, localhost:8110 (local
+Rig: `~/alive-dev/j/run.js`. Headless Chrome at 390×844, localhost:8110 (local
 files + prod API). It uses DevTools geolocation emulation driving the real `watchPosition`,
 on the CP → Tolstoy Marg car route (2.2 km).
 - Banner: "Head out onto Outer Circle" → "1.4 km / 1.1 km / 780 m · Turn left onto Kasturba
@@ -95,7 +95,7 @@ on the CP → Tolstoy Marg car route (2.2 km).
   own "Failed to load resource: 404" lines for `/v2/p/route_traffic`, plus `/v2/tally` while
   prod lacks lane P/A endpoints. No JS errors.
 
-Screenshots: `/home/govinda/alive-dev/j/shots/a-*.png` (real-GPS run), `b-*.png` (jam + stuck).
+Screenshots: `~/alive-dev/j/shots/a-*.png` (real-GPS run), `b-*.png` (jam + stuck).
 
 ## Patches needed in files I don't own
 **map.js (lane M)**: `paintSegments` should take string bands and use the segment's own

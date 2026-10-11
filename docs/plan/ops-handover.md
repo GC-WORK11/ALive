@@ -137,7 +137,7 @@ silence means emitter dead. `HealthyHostCount` min 1.0 throughout.
 
 **SNS delivery (verified `list-subscriptions-by-topic`):** topic
 `arn:aws:sns:ap-south-1:185708268748:alive108-ops`, one EMAIL subscriber
-`<owner-email>` — **subscription state = confirmed** (real
+`the operator's email` — **subscription state = confirmed** (real
 `…:c53694f5-…` SubscriptionArn; a pending sub shows the literal
 `PendingConfirmation`). Owner confirmed his email today.
 

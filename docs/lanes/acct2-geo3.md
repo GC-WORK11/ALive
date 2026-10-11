@@ -19,13 +19,13 @@ were wrong — aqua-line stations, GN stations, see "GT notes").
 
 | category | n | EXACT | NEAR | CLUSTER | WRONG | MISS |
 |---|---|---|---|---|---|---|
-| govinda set | 3 | 0 | 2 | 0 | 0 | 1 |
+| owner set | 3 | 0 | 2 | 0 | 0 | 1 |
 | NCR metro | 67 | 32 | 18 | 0 | 17 | 0 |
 | deep-locality worship | 28 | 2 | 4 | 0 | 22 | 0 |
 | terminals/rail/bus | 28 | 12 | 8 | 1 | 7 | 0 |
 | NCR schools/hosp/colonies | 23 | 5 | 8 | 2 | 8 | 0 |
 
-## (a) Govinda set re-verify
+## (a) the owner set re-verify
 
 | q | verdict | top-3 |
 |---|---|---|
@@ -146,9 +146,9 @@ verified monotonic).
 
 | query | cat | verdict | top | rank2 | rank3 |
 |---|---|---|---|---|---|
-| pawan bakery c block hanuman mandir ashok nagar shahdara | govinda | NEAR | Amar Bakery (bakery, 1284m) | Pandit Bakery (casual_eatery, 1293m) | Giani's di Hatti (confectionery, 6839m) |
-| iskcon east of kailash | govinda | NEAR | OYO Rooms East of Kailash ISKCON (hotel, 928m) | ISKCON East Delhi (hindu_place_of_worship, 10594m) | Iskcon Temple, Kailash Colony (hindu_place_of_worship, 5165m) |
-| neelanchal dham sant nagar | govinda | MISS | — | — | — |
+| pawan bakery c block hanuman mandir ashok nagar shahdara | owner | NEAR | Amar Bakery (bakery, 1284m) | Pandit Bakery (casual_eatery, 1293m) | Giani's di Hatti (confectionery, 6839m) |
+| iskcon east of kailash | owner | NEAR | OYO Rooms East of Kailash ISKCON (hotel, 928m) | ISKCON East Delhi (hindu_place_of_worship, 10594m) | Iskcon Temple, Kailash Colony (hindu_place_of_worship, 5165m) |
+| neelanchal dham sant nagar | owner | MISS | — | — | — |
 | sikanderpur metro | metro | EXACT | Sikanderpur metro station, Gurugram (metro, 74m) | OYO Flagship 532 Sikanderpur Metro Station (resort, 1218m) | Sikanderpur Metro Station-Gate No 2 (train_station, 197m) |
 | iffco chowk metro | metro | EXACT | Iffco chowk metro station (geonames, 77m) | IFFCO Chowk metro station Gurugram (metro, 5m) | Metro Shoes (fashion_and_apparel_store, 1246m) |
 | mg road metro gurgaon | metro | NEAR | Rodeo, MGF Metropolitan Mall, MG Road, Gurga (shopping_mall, 186m) | MG Road metro station (metro, 220m) | OYO Flagship 525 MG Road Metro Station (hotel, 7572m) |

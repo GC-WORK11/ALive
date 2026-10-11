@@ -1,6 +1,6 @@
 You are the perf lane for ALive-108 — the owner's standing complaint is "glitchy and slow, I want ms responsiveness, peak fps". The design lanes made it look right; now make it FEEL fast. Deliver: measured jank wins on the real surfaces + a release-APK before/after where measurable.
 
-Repo: <owner>/Delhi-Air-108, branch base/v2 (pull latest — apk-drive-v2 is building at HEAD but only touches generated dirs/gradle, not src). App: Mobile/ (Expo RN SDK54). iPhone-17 sim dev client for JS-thread measurement; Android KVM emulator if present on your box (memory `android-emulator-box`). Live API: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs + /v2/plan + /v2/reroute only — NEVER POST /v2/feedback, /observe, /v2/trip).
+Repo: GC-WORK11/ALive, branch base/v2 (pull latest — apk-drive-v2 is building at HEAD but only touches generated dirs/gradle, not src). App: Mobile/ (Expo RN SDK54). iPhone-17 sim dev client for JS-thread measurement; Android KVM emulator if present on your box (memory `android-emulator-box`). Live API: http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com (GETs + /v2/plan + /v2/reroute only — NEVER POST /v2/feedback, /observe, /v2/trip).
 
 HARD RULES
 - Push code only — never deploy. `npx tsc --noEmit && npx expo lint` before push. Never hand-edit android/ios/.

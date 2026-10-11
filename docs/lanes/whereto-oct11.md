@@ -2,7 +2,7 @@
 
 Files: `server/webapp/whereto.js`, `server/webapp/whereto.css` (only).
 Nothing committed / pushed / deployed. Rig + shots live outside the repo in
-`/home/govinda/alive-dev/w/` (`drive.js`, `drive2.js`, `probe*.js`, `shots/`).
+`~/alive-dev/w/` (`drive.js`, `drive2.js`, `probe*.js`, `shots/`).
 
 ## What changed
 
@@ -103,7 +103,7 @@ view is up (off on leave / journey). Cards are simple:
   "+2 min traffic", "0.4 L petrol" (highlighted in petrol mode), the `why`
   line and the jam marker render; Start mounts journey and leaves no
   whereto pins behind.
-- Shots: `/home/govinda/alive-dev/w/shots/` — `01-empty`, `02-ndls-*`,
+- Shots: `~/alive-dev/w/shots/` — `01-empty`, `02-ndls-*`,
   `03-iskcon-*`, `04-modes`, `05-vehicle`, `05b-fuel`, `05c-year`,
   `06-routes`, `07-routes-other`, `08-{search,modes,vehicle,routes}-{320,360,390,430}`,
   `09-routes-health`, `10-edit-from`, `11-typo-closest`, `12-nothing`,

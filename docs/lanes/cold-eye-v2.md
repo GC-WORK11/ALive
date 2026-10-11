@@ -1,6 +1,6 @@
 # Lane: cold-eye-v2 — hostile comprehension pass on the OVERHAULED app
 
-Repo `<owner>/Delhi-Air-108`, branch `base/v2`, HEAD `5fd2990`+.
+Repo `GC-WORK11/ALive`, branch `base/v2`, HEAD `5fd2990`+.
 The app got a full component redesign (owner mandate: minimalism,
 colorful components, individually-designed surfaces, ZERO features or
 numbers removed, no mini-words cringe) plus a palette fix (paper door

@@ -1,6 +1,6 @@
 # X thread — Day-2 follow-ups to the Day-1 announcement
 
-Three posts in Govinda's voice, each mapped to a demo beat. Numbers are
+Three posts in the owner's voice, each mapped to a demo beat. Numbers are
 the live ones from 2026-10-08 ~17:45 UTC (CP = Connaught Place reads) —
 re-read `scripts/research/freshness_probe.py` before posting; if a
 number drifted, post the new one. Plain words, no banned terms.

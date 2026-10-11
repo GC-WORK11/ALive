@@ -1,8 +1,8 @@
 # Alive — FULL HANDOFF (you are the new lead session; keep working for hours)
 
-Repo: <owner>/Delhi-Air-108. Working branch: base/v2. main is merged up to base/v2 as of this handoff. Work on base/v2: `git pull --rebase origin base/v2`, make small focused commits with `git commit -m`, `git push origin HEAD:base/v2`. Merge base/v2 → main (no-ff) at stable checkpoints after the tests pass. Never force-push. PR #4 (https://github.com/<owner>/Delhi-Air-108/pull/4) is the historical full-product PR. The owner wants direct pushes, no new PRs.
+Repo: GC-WORK11/ALive. Working branch: base/v2. main is merged up to base/v2 as of this handoff. Work on base/v2: `git pull --rebase origin base/v2`, make small focused commits with `git commit -m`, `git push origin HEAD:base/v2`. Merge base/v2 → main (no-ff) at stable checkpoints after the tests pass. Never force-push. PR #4 (https://github.com/GC-WORK11/ALive/pull/4) is the historical full-product PR. The owner wants direct pushes, no new PRs.
 
-Owner: govinda (<owner>). He is building this for the AWS×WeMakeDevs Environmental Hacks, Track 01 Air, Oct 8–11 2026. The prize and the Amazon fast-track matter a lot to him. He wants you to work continuously and not stop after 1–2 hours. Message him with concise, honest progress.
+Owner: the project owner. He is building this for the AWS×WeMakeDevs Environmental Hacks, Track 01 Air, Oct 8–11 2026. The prize and the Amazon fast-track matter a lot to him. He wants you to work continuously and not stop after 1–2 hours. Message him with concise, honest progress.
 
 ## Product (one line)
 **A personal PM2.5 dosimeter for Delhi — no hardware** (`docs/plan/alive-depth.md` is the pivot doc): your phone's timeline × our 15-min concentration field → your inhaled dose, reconstructed on-device; only consented k≥3 aggregates ever leave. Your lungs' ledger: what you breathed today, where it cost you, when tomorrow's air is worth going out in. Dose-priced routing is one feature inside it — the proof the field is real enough to decide with: a C++ engine searches Delhi/NCR's 1.07M road edges priced by the smoke on them this minute, with an honest uncertainty band.
@@ -18,7 +18,7 @@ It has two faces: (1) the personal mobile app (Android = the released product; i
 - Coverage is the NCR commute-shed, not just the NCT: Delhi + Ghaziabad/UP + Noida/Greater Noida + Gurugram/Faridabad/Sonipat (Haryana). Field bbox is 76.8–77.9°E × 28.2–28.95°N. Panipat is outside the corpus and is an honest coverage ceiling.
 - Search must reach every house and landmark, home-to-home, in milliseconds: bundled on-device gazetteer (124,311 rows post-purge; the server-side copy is 123,934, <5 ms) plus server tiers (~97k corpus, 16,949 address rows). Never fabricate a location; honest empty/ambiguous is fine.
 - $0 this month: Cost Explorer showed $0.00 for Oct 1–4 (credits). ECS runs on FARGATE_SPOT. Do not add paid APIs or infra without asking him. Self-hosted OSRM (~$10–15/mo) is HIS decision.
-- DO NOT touch the Pocket Rig project or its 2 agents (separate repo <owner>/remote).
+- DO NOT touch the Pocket Rig project or its 2 agents (a separate repo).
 - Never expose secrets. He was told to rotate the OpenAQ key and the Devin API key he once pasted in chat.
 
 ## Live system
@@ -1401,7 +1401,7 @@ Lead fixes landed + verified on sim (ios-cold-drive addenda, report @ e7db808):
 - **Lane: admin-auth.** `/admin` now fails closed behind a real login:
   unauthenticated → a gate card (ops register — warm paper, hairlines,
   mono small-caps, `/city` escape link for guests), no gated fetches
-  fire. **Govinda signs in demo morning**: open `/admin` → paste the
+  fire. **The owner signs in demo morning**: open `/admin` → paste the
   operator token → sign in; the session is an HMAC-signed HttpOnly
   SameSite=Strict cookie (~8h, `ALIVE_ADMIN_SESSION_S` tunes).
   Sign-out = masthead button → `POST /v2/admin/logout`.

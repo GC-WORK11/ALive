@@ -27,16 +27,16 @@ break-tested (rehearsal notes at the bottom).
 
 ```bash
 cd <your Delhi-Air-108 clone>
-bash scripts/public-repo.sh https://github.com/<owner>/<new-public-repo>.git
+bash scripts/public-repo.sh https://github.com/GC-WORK11/<new-public-repo>.git
 ```
 
 Expected output (abbrev.):
 
 ```
 >> baseline source: base/v2 @ <sha> <subject>
->> checking remote: https://github.com/<owner>/<new-public-repo>.git
+>> checking remote: https://github.com/GC-WORK11/<new-public-repo>.git
 >> baseline commit: <sha> — baseline: Alive — Delhi air-dose engine + apps  (tree identical to base/v2)
-To https://github.com/<owner>/<new-public-repo>.git
+To https://github.com/GC-WORK11/<new-public-repo>.git
  * [new branch]      <sha> -> main
 >> done: <url> main = <sha>
 >> verify on GitHub: exactly 1 commit, <N> files, tree identical to base/v2 (<sha>)

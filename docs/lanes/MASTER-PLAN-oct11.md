@@ -1,7 +1,7 @@
 # ALive — MASTER PLAN, Oct 11 (deadline 20:00 IST)
 
 Coordinator: local Devin session (parent). 11 lanes run in parallel on ONE
-working tree: `/home/govinda/Alive` (branch `main`, repo GC-WORK11/ALive).
+working tree: `~/Alive` (branch `main`, repo GC-WORK11/ALive).
 Every lane edits ONLY the files it owns. Lanes do NOT commit, do NOT push,
 do NOT deploy — the coordinator integrates, commits and deploys.
 
@@ -103,7 +103,7 @@ Backward compatible: no `mode` → today's behaviour.
 | M air-map | `server/webapp/airmap.js`, `airmap.css`, `map.js`, `server/tiles.py` | detailed basemap, street-level AQI colour, no caption, planning-to-go-out card |
 | U purest | `server/webapp/purest.js`, `purest.css`, `server/v2/explore.py`, `server/v2/city.py` | purest places (solid data only), any-hotel env card, Alive pick; playtime advice bug |
 | A admin | `server/admin.html`, `server/webapp/admin.css`, `server/webapp/telemetry.js`, `server/webapp/ledger.js`, `ledger.css`, `server/v2/trip.py`, `server/v2/ledger.py`, `server/admin_agg.py`, `server/agg_ddb.py`, `server/community.py` | real analytics end to end |
-| Q qa | nothing in the repo (rig in `/home/govinda/alive-dev/qa/`) | e2e + pixel rig at 390×844, continuous defect reports, final demo recordings |
+| Q qa | nothing in the repo (rig in `~/alive-dev/qa/`) | e2e + pixel rig at 390×844, continuous defect reports, final demo recordings |
 | coordinator | `server/webapp/app.js`, `index.html`, `app.css`, `motion.*`, docs | integration, commits, deploys |
 
 Need a change in a file you don't own? Put the exact patch in your report.

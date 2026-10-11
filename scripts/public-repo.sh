@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./scripts/public-repo.sh <new-public-repo-url> [--ref <branch>] [--dry-run] [--force]
-#   e.g.  ./scripts/public-repo.sh https://github.com/<owner>/Alive.git
+#   e.g.  ./scripts/public-repo.sh https://github.com/GC-WORK11/Alive.git
 #
 # Safe by construction: it never touches your working tree, index, checked-
 # out branch, or remote config. It writes ONE commit object holding the
@@ -51,9 +51,9 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
 cd "$(git rev-parse --show-toplevel)"
 
 git var GIT_AUTHOR_IDENT    >/dev/null 2>&1 \
-  || die "git identity not set — run: git config --global user.name 'govinda' && git config --global user.email '<you>'"
+  || die "git identity not set — run: git config --global user.name '<your name>' && git config --global user.email '<you>'"
 git var GIT_COMMITTER_IDENT >/dev/null 2>&1 \
-  || die "git identity not set — run: git config --global user.name 'govinda' && git config --global user.email '<you>'"
+  || die "git identity not set — run: git config --global user.name '<your name>' && git config --global user.email '<you>'"
 
 # --- pick the baseline tip -------------------------------------------------
 # Local branch first; if origin/<name> strictly contains the local tip it is

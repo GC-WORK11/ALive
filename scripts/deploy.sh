@@ -224,7 +224,7 @@ fi
 # value: a dangling valueFrom makes ECS fail the task at start
 # (ResourceInitializationError) — an outage for a key that is optional.
 # Without a key the /v2/p/* endpoints answer {"results":[],"configured":false}.
-# Create/update them with /home/govinda/alive-dev/put-secrets.sh.
+# Create/update them with ~/alive-dev/put-secrets.sh.
 # Plain-string secrets (SecretString = the key itself, no JSON field).
 PROVIDER_SECRETS=""
 for _pair in "OLA_API_KEY=alive108/ola" "TOMTOM_API_KEY=alive108/tomtom" \

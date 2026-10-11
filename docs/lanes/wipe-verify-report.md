@@ -5,7 +5,7 @@ actually deletes." The pocket-engine lane fixed the daylog `mem`-mirror
 resurrection bug (its report, finding #3) but only against a stub FS. This lane
 drove the real path on a booted iPhone sim and read the app's own container.
 
-- **Repo/branch:** `<owner>/Delhi-Air-108` @ `base/v2` (`0ac91e3` + the
+- **Repo/branch:** `GC-WORK11/ALive` @ `base/v2` (`0ac91e3` + the
   fix below)
 - **Device:** iOS Simulator iPhone 17, iOS 26.5, UDID
   `EDD9B083-63F1-44E6-9A7B-0A6964CC2561`, dev client `com.anonymous.app`

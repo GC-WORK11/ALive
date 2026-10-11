@@ -15,7 +15,7 @@ You are taking over from Devin session `39817b9ec42b4ecc91694474c4451967` — th
 - RN-twin lanes rebuilt home+consent+settings (`1a4dbe9`, `3d2e192`, `1caaf7b`), whereto+vehicle (`acbe267`, `71ea89d`), journey+receipt, delhi-today+ledger. The webapp IS the Android app now — serif hero number, gold band-ink, "Where to?" dark pill, 5-page onboarding with live number, Settings screen the web never had.
 - parity-fix `0645c3c`: all 11 measured RN mismatches killed — onboarding gates Next on sharing choice, Skip persists share-off + asks location, swipe paging, DayCard + WeekStrip from real local daylog, whereto intent rows ("the air map · near you"), "least smoky way" wire strings.
 
-### 2. Govinda's critique #1 (all dead on prod)
+### 2. The owner's critique #1 (all dead on prod)
 - **Third composer killed** (`cbf7a4d` wlive): From/To rows ARE the inputs now — tap row, type in place. First-letter typeahead: local tier paints ~instantly from seeded recents+index, server merges under the same list ~200ms. "type one bakery → ALL bakeries near you."
 - **Black card killed**: was `.am-read` — dead `app.css` rule stretched it 760px frosted across the screen (`355b571` mobile5). ALSO killed the `.hs-profseg` toggle strip on the budget card (`dea8019`) — that's the "black strip with toggle system" he meant.
 - **Provenance** (`3b6c65b` proven): hero now reads "from {station name} · {km} away · read {m} min ago" — named monitor via argmin over `/aqi field.stations[]` (server `_KY/_KX` formula reproduced exactly). Honest states for pin/stale/off/edge.
@@ -38,7 +38,7 @@ You are taking over from Devin session `39817b9ec42b4ecc91694474c4451967` — th
 - Their one remaining knowns: overpass arm ~3s (parallel race landed, still bounded by mirrors), `sector 28 faridabad`-class cases get better as index grows.
 
 ## Traps & mechanics (don't relearn these)
-- **My org (<owner>) cannot push to GC-WORK11/ALive** — every push 403s. All pushes go through acct2's geo lane (`devin-ae597b9c1b884a6c9f609fd640ef976d`): `git format-patch` → upload .patch to acct2's `/attachments` endpoint (Bearer `$DEVIN_ACCT2_SERVICE_KEY` — acct2 sessions can't read MY org's attachment URLs, re-upload there) → `POST /v3/organizations/org-5f3b8c91.../sessions/devin-ae597b9c.../messages` (my own devin tools 403 on acct2 sessions — use raw curl). Attachment upload cap ~78MB: split data commits into code patch + repo-relative tarball.
+- **My org cannot push to GC-WORK11/ALive** — every push 403s. All pushes go through acct2's geo lane (`devin-ae597b9c1b884a6c9f609fd640ef976d`): `git format-patch` → upload .patch to acct2's `/attachments` endpoint (Bearer `$DEVIN_ACCT2_SERVICE_KEY` — acct2 sessions can't read MY org's attachment URLs, re-upload there) → `POST /v3/organizations/org-5f3b8c91.../sessions/devin-ae597b9c.../messages` (my own devin tools 403 on acct2 sessions — use raw curl). Attachment upload cap ~78MB: split data commits into code patch + repo-relative tarball.
 - **Store keys are JSON-quoted**: `alive.consent`='"picked"', `alive.onboarded`='1', `alive.pos`=JSON `{lat,lon,label?,t}`. Playwright rigs must seed quoted values or onboarding gates home render.
 - **Post-wlive DOM**: `.wt-rrow` button↔`.wt-rrow.on.edit`+`input.wt-rin`; `[data-act="clear"]`; `.wt-bbtn[data-act="close"]`; `.wt-act [data-act="locate"]`/`[data-act="map"]`; `.wt-list .wt-row[data-k^="res:"]`.
 - **Prebuild destroys cleartext + landing asset 404s** — vendored data files only serve after a deploy.
@@ -49,9 +49,9 @@ You are taking over from Devin session `39817b9ec42b4ecc91694474c4451967` — th
 ## Still open (honest gaps)
 - Real-time traffic — needs a free TomTom/HERE key; routes are real but not jam-aware.
 - ~10 names not in ANY free index (e.g. `neelanchal dham` verified unmappable in OSM/Overture/GeoNames/Wikidata/Nominatim/Photon) — resolves as honest empty, not fake.
-- Vercel mirror redeploy is Govinda-side manual.
+- Vercel mirror redeploy is the owner-side manual.
 - `shiv nadar school noida` weak (honest gap).
 
 ## Demo-ready evidence
-- Prod :276 verified queries above; 8 per-feature videos reshot caption-free were delivered to Govinda (consent/home/search/whereto/journey/airmap/purest/admin on aa6836e8).
+- Prod :276 verified queries above; 8 per-feature videos reshot caption-free were delivered to the owner (consent/home/search/whereto/journey/airmap/purest/admin on aa6836e8).
 - Sweep/perf/regression reports: `docs/lanes/acct2-{geo4,e2e2,perf3,mobile5,mobile6}.md`, `docs/lanes/geo5-report.md`, `docs/lanes/COORDINATOR-STATE.md`.

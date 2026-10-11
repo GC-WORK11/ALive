@@ -32,19 +32,19 @@
   not dropping a point (`.hs-picking`), sidebar closed, no focused input, tab visible.
 - "Not now" / scrim / Esc → dismissed today. Save (even empty) → never asked again; editable from the sidebar header.
 
-## Verified (headless Chrome 390×844 DPR3, rig `/home/govinda/alive-dev/y/verify.mjs`, shots in `/home/govinda/alive-dev/y/shots`)
+## Verified (headless Chrome 390×844 DPR3, rig `~/alive-dev/y/verify.mjs`, shots in `~/alive-dev/y/shots`)
 Run on `http://localhost:8111/app/` (local files + local full server) and `:8110` (prod API):
 fresh profile → consent intro → share location → home → menu top-left (x=20, 44×44) → sidebar opens settled with focus inside,
 14×Tab / Shift+Tab stay trapped, Esc closes and focus returns to the menu, scrim closes, swipe-left closes; open animation
 rAF avg 16.7 ms / worst 17 ms (swiftshader). No sheet before engagement (9 s) or during consent; sidebar → Air around me opens
 airmap; no sheet before 45 s even after engaging; sheet appears at 47 s; "ashok nagar" type-ahead rows; Save stores name +
 18-29 + Ashok Nagar @ 28.69,77.3; `A.track('profile', {age_band:'18-29', area:'Ashok Nagar'})` once, no name, no coordinates;
-name not in `alive.tq`; header shows "Govinda Test · Ashok Nagar"; Privacy page + Esc back; reload keeps the header; header tap
+name not in `alive.tq`; header shows "Test User · Sector 62"; Privacy page + Esc back; reload keeps the header; header tap
 opens the pre-filled editor; no re-prompt. Saved Work → Where To "Your location → Work — Connaught Place" with modes, store
 untouched. 2nd visit → sheet with no engagement; Not now → not again that day. 320/360/390/430: no horizontal overflow in
 drawer or sheet; every button ≥40px. `node --check` on app.js, home.js, sidebar.js, profile.js.
 Final run on `:8111`: main 33/33, saved 4/4, second 4/4, widths 20/20 PASS, **0 console errors** (logs in
-`/home/govinda/alive-dev/y/*.log`, summary `results.txt`).
+`~/alive-dev/y/*.log`, summary `results.txt`).
 
 ## Open / for the coordinator
 - Greeting by first name on home: home exposes no hook, so not done (per brief). One-line patch for lane H if wanted —

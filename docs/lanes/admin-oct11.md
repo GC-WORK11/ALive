@@ -35,7 +35,7 @@ Never pass coordinates — they are dropped anyway.
   (fails on HEAD too — the old page had no drivers table either), `test_contract_sync::test_nested_place_and_strip_rows`
   (another lane's area)).
 - `node --check server/webapp/telemetry.js`; inline script of admin.html `node --check` + `scripts/check_inline_scripts.py` OK; `py_compile` OK.
-- Visual: dev-only harness `/home/govinda/alive-dev/a/harness.py` (real admin_agg + v2 trip routers in-process, admin.html at the mount, /grid proxied to prod), seeded only through the real `POST /v2/tally` and `POST /v2/trip`. Screenshots: `/home/govinda/alive-dev/a/shots/empty-{desk,m390}.png` (day-one honest zeros) and `seeded-{desk,m390}.png`. 390 px: scrollWidth 390 = clientWidth, no console errors.
+- Visual: dev-only harness `~/alive-dev/a/harness.py` (real admin_agg + v2 trip routers in-process, admin.html at the mount, /grid proxied to prod), seeded only through the real `POST /v2/tally` and `POST /v2/trip`. Screenshots: `~/alive-dev/a/shots/empty-{desk,m390}.png` (day-one honest zeros) and `seeded-{desk,m390}.png`. 390 px: scrollWidth 390 = clientWidth, no console errors.
 
 ## Open issues / gaps
 - Counters only move once lanes J/W call `A.track` (patches in the final report) and app.js gives `A.track` a no-op default (ad-blockers may block a file named telemetry.js).
