@@ -76,6 +76,19 @@ Rechecked 3× minutes later: e2e 1.38–2.10 s, srv_ms 509–783 — back near b
 3. grid us_aqi ~2 s edge case; grid identity payload 363 KB (gzip mandatory).
 4. **Nothing stale**: field age 287 s of 900 s TTL across /aqi, /v2/city, /health; rebuild epoch advancing on schedule.
 
+## Addendum — :266 verification (build c93d8203, ~04:40 UTC)
+
+Coordinator's four ranking fixes confirmed live (not defects, per instruction):
+
+| Query | srv_ms | #1 result | note |
+|---|---|---|---|
+| sikanderpur metro | 56 | Sikanderpur metro station, Gurugram | fixed + fast |
+| terminal 1 | 3350 | Terminal 1 IGI Airport | correct #1 |
+| terminal 2 | 3388 | Aurelia – Terminal 2 (Departure) | a T2-sited store row, not the terminal node — per coordinator, expected |
+| delhi airport t1 | 3103 | New Delhi Airport Express Terminal | airport-class row, honest |
+
+Ranking fixed; the ~3.1–3.4 s T3-arm cost on these airport/multi-token queries is unchanged — same flag as above.
+
 ## Relay status
 
 No new patch attached to the PERF+RELAY message — earlier stack (coord-stack5, parity-fix) already on main @0645c3c; other lanes landed e2e-fix/pick-mode since (main was 78c1dc8 pre-this-commit).
