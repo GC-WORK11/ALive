@@ -250,7 +250,7 @@ const fuelOf = (o) => (o ? (num(o.fuel_l) != null ? num(o.fuel_l) : num(o.fuel_k
 /* ── modes — chosen BEFORE routing (Modes contract, lane E) ───────── */
 const MODES = [
   { id: 'health_max', glyph: 'leaf', title: 'Health Maxer', sub: 'cleanest air, no compromise', badge: 'cleanest' },
-  { id: 'petrol_health', glyph: 'fuel', title: 'Petrol + Health', sub: 'least petrol, clean air', badge: 'least petrol' },
+  { id: 'petrol_health', glyph: 'fuel', title: 'Petrol + Health', sub: 'least petrol, clean air', badge: 'petrol-friendly' },
   { id: 'time_health', glyph: 'clock', title: 'Time + Health', sub: 'fastest with live traffic, still clean', badge: 'fastest' },
 ];
 const modeDef = (id) => MODES.find((m) => m.id === id) || MODES[0];

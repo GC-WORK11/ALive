@@ -697,7 +697,6 @@ function citySection(data, moves, own) {
 
   return `
     <div class="am-spot"></div>
-    ${data.why && data.why.line ? `<div class="dt-whyhero am-why">${esc(whyLine(data.why, data.wind))}</div>` : ''}
 
     <div class="dt-chips">
       ${ageMin != null && !stale ? `<span class="dt-chip">${icon('clock', '#6E7278', 14)}<span>${esc(t('updatedMinAgo', { n: Math.max(1, Math.round(ageMin)) }))}</span></span>` : ''}

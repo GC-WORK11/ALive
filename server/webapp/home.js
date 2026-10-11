@@ -351,7 +351,36 @@ function heroHtml(d) {
     <div class="hs-plain">${esc(t('plain' + idx))}</div>
     ${noteHtml}
     ${prov ? `<div class="hs-prov">${esc(prov)}</div>` : ''}
+    ${spotHtml(d)}
     ${dose}`;
+}
+
+/* ══ YOUR SPOT — the live fix made checkable: the real address under the
+   GPS point (Ola reverse geocode via /v2/p/reverse), the fix's own
+   accuracy, and the spot's official DIGIPIN. Nothing here is inferred. */
+function spotHtml(d) {
+  const ps = posState();
+  if (!ps.pos || (d.state !== 'live' && d.state !== 'stale' && d.state !== 'pin')) return '';
+  const p = ps.pos;
+  const near = cur.addr && Math.abs(cur.addr.lat - p.lat) < 0.0015 && Math.abs(cur.addr.lon - p.lon) < 0.0015;
+  const dp = A.digipin && A.digipin.encode ? A.digipin.encode(p.lat, p.lon) : null;
+  const acc = d.state !== 'pin' && isNum(p.acc) ? `±${Math.max(1, Math.round(p.acc))} m` : null;
+  const parts = [near ? cur.addr.text : null, acc, dp ? `DIGIPIN ${dp}` : null].filter(Boolean);
+  if (!parts.length) return '';
+  return `<div class="hs-spot">${ic('pin', 14, 'hs-spotic')}<span>${esc(parts.join(' · '))}</span></div>`;
+}
+let addrSeq = 0;
+async function refreshAddr(p) {
+  if (!p || !isNum(p.lat) || !isNum(p.lon)) return;
+  if (cur.addr && Math.abs(cur.addr.lat - p.lat) < 0.0015 && Math.abs(cur.addr.lon - p.lon) < 0.0015) return;
+  const my = ++addrSeq;
+  const j = await A.api.get(`/v2/p/reverse?lat=${p.lat.toFixed(5)}&lon=${p.lon.toFixed(5)}`, 6000);
+  if (my !== addrSeq || !j) return;
+  const raw = String(j.address || j.name || '').replace(/,?\s*India$/i, '');
+  const text = raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 3).join(', ');
+  if (!text) return;
+  cur.addr = { lat: p.lat, lon: p.lon, text };
+  paint();
 }
 
 /* ══ DOORS — one grouped list card ══ */
@@ -463,6 +492,7 @@ function applyPos(pos) {
   cur.aqi = null; cur.err = null; lastCount = null;
   paint();
   refresh();
+  refreshAddr(pos);
 }
 
 /* ══ CONSENT — one short intro (the live number), then one sheet ══ */
@@ -704,7 +734,7 @@ A.screen('home', {
     });
 
     /* returning users: a granted consent with no fix re-locks silently */
-    if (A.geo.pos) cur.pos = A.geo.pos;
+    if (A.geo.pos) { cur.pos = A.geo.pos; refreshAddr(cur.pos); }
     if (!A.geo.consent) {
       const el = document.getElementById('consent');
       if (!el || el.hidden || !el.dataset.cs) openConsent({ intro: !A.store.get('onboarded') });

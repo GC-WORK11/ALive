@@ -482,9 +482,16 @@ function rank(rows, ctx) {
 /* lodging / agents / travel desks named after the landmark the user typed */
 const NOISY_KIND = /hotel|lodg|guest|hostel|\boyo\b|travel|\btours?\b|tour_|real.?estate|estate_agent|property|rental|courier|transport_service|packers|movers/i;
 const STAY_Q = /\b(hotel|hotels|stay|lodge|oyo|hostel|guest|pg|rooms?|travel|tours?|agent|office|property|rent|rental)\b/i;
+/* a lodging row is noise only when its NAME reads like a stay ("OYO Rooms …
+   ISKCON") — an ashram/academy the providers file under lodging ("Nilanchal
+   Dhaam Bace") is the place itself, not a hotel piggybacking on it */
+const STAY_NAME = /\b(oyo|hotel|rooms?|stays?|guest\s*house|hostel|inn|residency|lodge|homestay|pg|apartments?|suites?)\b/i;
+const AGENT_KIND = /travel|\btours?\b|tour_|real.?estate|estate_agent|property|rental|courier|transport_service|packers|movers/i;
 function noisy(r, qa) {
   if (STAY_Q.test(qa.raw)) return false;
-  return NOISY_KIND.test(`${r.rawKind || ''} ${r.kind || ''}`) || /^oyo\b/i.test(r.name);
+  const kind = `${r.rawKind || ''} ${r.kind || ''}`;
+  if (/^oyo\b/i.test(r.name) || AGENT_KIND.test(kind)) return true;
+  return NOISY_KIND.test(kind) && STAY_NAME.test(r.name || '');
 }
 
 /* is the current top good enough to stop (no deep tier)? */
