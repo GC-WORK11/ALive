@@ -257,6 +257,28 @@ def load_aliases(path: Optional[str] = None) -> dict[str, list[list[str]]]:
     return table
 
 
+# cooked kinds that are accessories of a parent landmark: an 'AIIMS'
+# metro platform must not inherit a literal 'aiims' alias from a
+# same-cell loser, or the accessory outranks its own landmark.
+_ACCESSORY_CATS = frozenset({
+    "platform", "stop", "stop_position", "bus_stop", "tram_stop",
+    "entrance", "subway_entrance", "depot", "ticket_validator",
+})
+
+
+def _union_alias_lists(a: Optional[list], b: Optional[list]) -> list:
+    """Case-insensitive union of two alias lists (first-seen casing kept)."""
+    out = []
+    seen = set()
+    for lst in (a or [], b or []):
+        for s in lst:
+            k = s.lower()
+            if k not in seen:
+                seen.add(k)
+                out.append(s)
+    return out
+
+
 def entries_from_gazetteer(path: Optional[str] = None,
                            corpus_paths: Optional[list] = None) -> list[dict]:
     """The T1 entry universe — the same sources the gazetteer engine
@@ -317,7 +339,11 @@ def entries_from_gazetteer(path: Optional[str] = None,
                     "id": 0,
                     "pid": f"cor:{e.get('id')}",
                     "display": e["display"],
-                    "aliases": list(e.get("aliases") or []),
+                    # attested aliases + the generated usage layer
+                    # (gen_aliases: honorific/romanization/locality
+                    # context forms, labeled at build time)
+                    "aliases": list(e.get("aliases") or []) +
+                    list(e.get("gen_aliases") or []),
                     # overture rows cook to their basic category — the
                     # same prefix-strip the mobile gazetteer ships with,
                     # so kinds/kind-phrases cover them
@@ -338,7 +364,21 @@ def entries_from_gazetteer(path: Optional[str] = None,
                round(en["lat"], 3), round(en["lon"], 3))
         prev = best.get(key)
         if prev is None or en["popularity"] > prev["popularity"]:
+            # winner inherits the loser's match aliases so coverage
+            # never drops on a dedupe coin-flip (same normalized name,
+            # same ~110 m cell -> same place, different name bank) —
+            # except onto accessory rows: a platform/stop literally
+            # named after its landmark may not inherit the landmark's
+            # short-form alias and outrank it.
+            if prev is not None and (
+                    en.get("category") or "") not in _ACCESSORY_CATS:
+                en["aliases"] = _union_alias_lists(
+                    en.get("aliases"), prev.get("aliases"))
             best[key] = en
+        else:
+            if (prev.get("category") or "") not in _ACCESSORY_CATS:
+                prev["aliases"] = _union_alias_lists(
+                    prev.get("aliases"), en.get("aliases"))
     entries = list(best.values())
     # `id` = the entry's position (C++ Entry.id is uint32 — corpus string
     # ids can't cross the binding); `pid` keeps the resolvable wire id

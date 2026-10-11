@@ -1387,6 +1387,321 @@ def merge_synthetic(entries: dict, stats: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Step 2e -- GENERATED usage-alias layer + locality-context attach
+#
+# Two systematic, fully-derived layers over attested rows -- zero invented
+# names.  Generated forms land on `gen_aliases` (kept as a separate field
+# so the layer stays labeled in the committed corpus and can be stripped
+# deterministically on --remerge-aux) and are also folded into `aliases`
+# so every existing reader indexes them unchanged.
+# ---------------------------------------------------------------------------
+
+def _cooked_c(cat: str) -> str:
+    """Corpus category -> the clean `c` a shipped row would carry
+    ('place:suburb' -> 'suburb', 'overture:hindu_place_of_worship' ->
+    'hindu_place_of_worship', 'addr:interpolation' -> 'addr')."""
+    top, _, sub = cat.partition(":")
+    clean_sub = bool(re.fullmatch(r"[a-z][a-z0-9_]*", sub)) \
+        and sub not in {"yes", "no", "fixme", "unknown"}
+    return sub if clean_sub else top
+
+
+# locality-ish kinds: names users treat as areas, not honorific persons
+# ("Sant Nagar" is a place, not a man -- never honorific-strip these).
+# cooked categories that are accessories of a parent landmark and
+# therefore must not inherit a locality's name as an alias (else the
+# 'AIIMS' metro platform wins the 'aiims' query over the institute).
+_ACCESSORY_CATS = frozenset({
+    "platform", "stop", "stop_position", "bus_stop", "tram_stop",
+    "entrance", "subway_entrance", "depot", "ticket_validator",
+})
+
+_LOC_CATS = frozenset({
+    "locality", "neighbourhood", "neighborhood", "suburb", "macrohood",
+    "district", "village", "town", "city", "quarter", "hamlet", "place",
+    "boundary", "administrative", "sector", "colony", "enclave", "block",
+    "extension", "ward", "panchayat", "residential", "named",
+})
+
+# honorifics people drop when talking about worship / institution names.
+_HONORIFIC_LEAD = {
+    "sri", "shri", "shree", "smt", "shrimati", "maharaja", "maharaj",
+    "mahatma", "late", "pandit", "pt", "baba", "sant", "swami", "guru",
+    "dr", "prof", "hazrat", "haji", "maulana", "chaudhary", "chaudhry",
+    "rao", "seth", "shahid", "shaheed",
+}
+_HONORIFIC_MID = {"mata", "ma", "ji", "sahib"}
+_WORSHIP_CATS = {"temple", "mosque", "church", "gurudwara", "shrine",
+                 "dargah", "synagogue", "monument"}
+
+# token-level romanization alternates -- common Hindi-Urdu
+# transliteration variance in everyday typing, applied per token.
+_ROMAN_TOK = {
+    "gokul": ["gokal"], "gokal": ["gokul"],
+    "kailas": ["kailash"], "kalash": ["kailash"],
+    "jeevan": ["jivan", "jiwan"], "jivan": ["jeevan"], "jiwan": ["jeevan"],
+    "deep": ["dip"], "dip": ["deep"],
+    "preet": ["prit"], "prit": ["preet"],
+    "neel": ["nil"], "nil": ["neel"],
+    "sita": ["seeta"], "seeta": ["sita"],
+    "gita": ["geeta"], "geeta": ["gita"],
+    "krishna": ["krishan", "krisna"], "krishan": ["krishna"],
+    "krisna": ["krishna"], "kishan": ["krishan"],
+    "vishnu": ["bishnu"], "bishnu": ["vishnu"],
+    "shiv": ["siv"], "siv": ["shiv"],
+    "shyam": ["syam"], "syam": ["shyam"],
+    "chandra": ["chander"], "chander": ["chandra"],
+    "mohan": ["mohn"],
+    "pur": ["poor"], "poor": ["pur"], "pura": ["poora"],
+    "ganj": ["gunj"], "gunj": ["ganj"],
+    "sarai": ["saray", "serai"], "saray": ["sarai"], "serai": ["sarai"],
+    "ahmad": ["ahmed"], "ahmed": ["ahmad"],
+    "mohammed": ["muhammad", "mohd"], "muhammad": ["mohammed"],
+    "mohd": ["mohammed"], "md": ["mohd"],
+    "hussain": ["husain"], "husain": ["hussain"],
+    "yamuna": ["jamuna"], "jamuna": ["yamuna"],
+    "wazir": ["wajir"], "wajir": ["wazir"],
+    "sheikh": ["shaikh"], "shaikh": ["sheikh"],
+    "lajpat": ["lajpath"], "rajendra": ["rajinder"],
+    "rajinder": ["rajendra"],
+    "govind": ["gobind"], "gobind": ["govind"],
+    "sardar": ["sadar"], "sadar": ["sardar"],
+    "peer": ["pir"], "pir": ["peer"],
+    "kali": ["kaali"], "kaali": ["kali"],
+    "devi": ["debi"], "debi": ["devi"],
+    "laxmi": ["lakshmi"], "lakshmi": ["laxmi"],
+    "mahavir": ["mahaveer"], "mahaveer": ["mahavir"],
+    "veer": ["vir"], "vir": ["veer"],
+    "bhagwan": ["bhagvan"], "swami": ["swamy"],
+    "mata": ["maata"], "bharti": ["bharati"], "bharati": ["bharti"],
+    "sheetla": ["shitala", "shitla"], "shitala": ["sheetla"],
+    "shitla": ["sheetla"],
+    "sarvodaya": ["sarwodaya", "sarvodya"], "sarwodaya": ["sarvodaya"],
+    "yatharth": ["yathartha"],
+    "ranjit": ["ranjeet"], "ranjeet": ["ranjit"],
+    "manjit": ["manjeet"], "anand": ["aanand"],
+    "nager": ["nagar"],
+    "uddin": ["udin"], "udin": ["uddin"], "deen": ["din"],
+    "din": ["deen"],
+}
+
+# kind-word alternates: what users say vs what the source wrote.
+_KIND_WORD = {
+    "mandir": ["temple"], "temple": ["mandir"],
+    "masjid": ["mosque"], "mosque": ["masjid"],
+    "gurudwara": ["gurdwara"], "gurdwara": ["gurudwara"],
+    "dargah": ["mazar"], "mazar": ["dargah"],
+    "adda": ["stand"],
+    "vidyalaya": ["school"],
+    "chowk": ["chok"], "chok": ["chowk"],
+    "institute": ["inst"], "inst": ["institute"],
+    "college": ["coll"],
+}
+
+# rows carrying abbreviations -> expand to what users type.
+_ABBREV = {
+    "st": ["saint", "street"], "rd": ["road"], "mkt": ["market"],
+    "ngr": ["nagar"], "sec": ["sector"], "ext": ["extension"],
+    "encl": ["enclave"], "clny": ["colony"], "ph": ["phase"],
+    "blk": ["block"], "bldg": ["building"], "hosp": ["hospital"],
+    "sch": ["school"], "sta": ["station"], "stn": ["station"],
+    "marg": ["road"], "av": ["avenue"], "ave": ["avenue"],
+}
+
+# multi-token locality names -> fused form users type ("santnagar");
+# fused single tokens ending in a suffix word -> split form.
+_SUFFIX_WORDS = sorted({
+    "nagar", "nagri", "vihar", "pur", "pura", "puri", "bagh", "sarai",
+    "ganj", "colony", "enclave", "abad", "park", "kunj", "khand",
+    "place", "garden", "lok", "basti", "mandi", "chowk", "market",
+    "wali", "khera", "garh", "garhi", "nangla", "wala", "mafi",
+    "khurd", "kalan", "uraf", "estate", "extn", "town",
+}, key=len, reverse=True)
+
+# institution-ish kinds: display initials are a real usage form
+# ("Delhi Public School" -> dps).
+_INST_CATS = frozenset({
+    "school", "college", "university", "college_university",
+    "place_of_learning", "educational_institution", "kindergarten",
+    "education", "educational", "hospital", "clinic", "institute",
+    "office", "company", "research_institute", "government",
+    "government_office",
+})
+_ACRO_STOP = {"is", "it", "at", "as", "in", "on", "no", "of", "or",
+              "to", "up", "us", "we", "go", "ps", "st", "sh", "an",
+              "the", "and", "for", "by", "de", "di", "ke", "ki", "ka",
+              "la", "el", "al", "a"}
+_MAX_GEN_PER_ROW = 12
+
+
+def gen_usage_aliases(entries: dict) -> dict:
+    """Derive common-usage name forms per row and store them on
+    `gen_aliases` (labeled generated layer) + fold into `aliases`."""
+    stats = {"rows": 0, "added": 0}
+    for e in entries.values():
+        if e.get("synthetic"):
+            continue  # synthetic rows already carry derived forms
+        cooked = _cooked_c(e["category"])
+        out: list[str] = []
+        for s in [e["display"], *e.get("aliases", [])]:
+            toks = normalize(s).split()
+            if not toks:
+                continue
+            if cooked not in _LOC_CATS and len(toks) > 1 \
+                    and toks[0] in _HONORIFIC_LEAD:
+                out.append(" ".join(toks[1:]))
+            if ("worship" in cooked or cooked in _WORSHIP_CATS) \
+                    and len(toks) > 2:
+                mid = [t for t in toks if t not in _HONORIFIC_MID]
+                if 0 < len(mid) < len(toks):
+                    out.append(" ".join(mid))
+            if toks[0] in {"new", "naya", "old", "purana"} \
+                    and len(toks) > 2:
+                out.append(" ".join(toks[1:]))
+            if toks[0] in {"delhi", "dilli"} and len(toks) > 3:
+                out.append(" ".join(toks[1:]))
+            for i, t in enumerate(toks):
+                for table in (_ROMAN_TOK, _KIND_WORD, _ABBREV):
+                    for alt in table.get(t, ()):
+                        out.append(" ".join(
+                            toks[:i] + [alt] + toks[i + 1:]))
+            if cooked in _LOC_CATS:
+                if len(toks) == 2 and toks[1] in _SUFFIX_WORDS \
+                        and len(toks[0]) >= 3:
+                    out.append(toks[0] + toks[1])
+                elif len(toks) == 1:
+                    for suf in _SUFFIX_WORDS:
+                        if toks[0].endswith(suf) \
+                                and len(toks[0]) - len(suf) >= 3:
+                            out.append(toks[0][:-len(suf)] + " " + suf)
+                            break
+        disp = normalize(e["display"]).split()
+        if cooked in _INST_CATS and len(disp) >= 2:
+            # skip connector tokens — 'All India Institute OF Medical
+            # Sciences' is AIIMS, not AIIOMS.
+            acro = "".join(t[0] for t in disp
+                           if t[0].isalnum() and t not in _ACRO_STOP)
+            if len(acro) >= 2 and acro not in _ACRO_STOP:
+                out.append(acro)
+        seen = {normalize(e["display"])}
+        seen.update(normalize(a) for a in e.get("aliases", []))
+        seen.update(normalize(a) for a in e.get("gen_aliases", []))
+        seen.discard("")
+        gen = e.setdefault("gen_aliases", [])
+        for a in out:
+            n = normalize(a)
+            if len(n) >= 2 and n not in seen:
+                seen.add(n)
+                gen.append(a)
+                e.setdefault("aliases", []).append(a)
+                stats["added"] += 1
+                if len(gen) >= _MAX_GEN_PER_ROW:
+                    break
+        if gen:
+            stats["rows"] += 1
+    return stats
+
+
+def _name_covered(ln: str, e) -> bool:
+    """True when the locality's normalized name already appears as a
+    whole-token span in any of the row's name forms."""
+    for s in [e["display"], *e.get("aliases", [])]:
+        n = normalize(s)
+        if n and f" {ln} " in f" {n} ":
+            return True
+    return False
+
+
+def attach_locality_context(entries: dict, cell_deg: float = 0.0016,
+                            radius_km: float = 1.5,
+                            city_km: float = 9.0) -> dict:
+    """Attach the nearest containing locality's display name as a
+    generated alias, so 'sheetla mata mandir burari' resolves to the
+    row inside Burari instead of a same-named row across the city.
+    Also attaches the nearest town/city row (noida/gurgaon/...) so
+    satellite-city queries land in the right municipality."""
+    stats = {"attached": 0, "city": 0}
+    locs = []  # (entry, cooked, norm)
+    for e in entries.values():
+        cooked = _cooked_c(e["category"])
+        if cooked in _LOC_CATS:
+            n = normalize(e["display"])
+            if len(n) >= 3:
+                locs.append((e, cooked, n))
+    grid: dict[tuple, list] = {}
+    for i, (le, _, _n) in enumerate(locs):
+        grid.setdefault((int(le["lat"] / cell_deg),
+                         int(le["lon"] / cell_deg)), []).append(i)
+    city_locs = [(le, n) for le, ck, n in locs
+                 if ck in {"city", "town"}
+                 and n not in {"delhi", "new delhi", "ncr", "delhi ncr"}]
+    r = int(radius_km / (cell_deg * 111.0)) + 1
+    for e in entries.values():
+        if e.get("synthetic"):
+            continue
+        cooked = _cooked_c(e["category"])
+        # accessory rows take their landmark's name by definition
+        # (the 'A.I.I.M.S.' platform, the 'Lodhi Garden' entrance) —
+        # attaching the locality's name there makes an accessory
+        # outrank its own landmark; and a sub-4-char display ('N+')
+        # is too generic to deserve context tokens at all.
+        if cooked in _ACCESSORY_CATS \
+                or len(normalize(e["display"])) < 4:
+            continue
+        ck = (int(e["lat"] / cell_deg), int(e["lon"] / cell_deg))
+        best = None
+        best_d = radius_km
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                for i in grid.get((ck[0] + dx, ck[1] + dy), ()):
+                    le, _ck, ln = locs[i]
+                    if le is e:
+                        continue
+                    d = _hav_m(e["lat"], e["lon"],
+                               le["lat"], le["lon"]) / 1000.0
+                    if d < best_d:
+                        best_d, best = d, i
+        if best is not None:
+            le, _ck, ln = locs[best]
+            if ln != normalize(e["display"]) \
+                    and not _name_covered(ln, e):
+                e.setdefault("gen_aliases", []).append(le["display"])
+                e.setdefault("aliases", []).append(le["display"])
+                stats["attached"] += 1
+        cbest = None
+        cbest_d = city_km
+        for le, n in city_locs:
+            if le is e:
+                continue
+            d = _hav_m(e["lat"], e["lon"],
+                       le["lat"], le["lon"]) / 1000.0
+            if d < cbest_d:
+                cbest_d, cbest = d, le
+        if cbest is not None:
+            cn = normalize(cbest["display"])
+            if cn != normalize(e["display"]) \
+                    and not _name_covered(cn, e):
+                e.setdefault("gen_aliases", []).append(cbest["display"])
+                e.setdefault("aliases", []).append(cbest["display"])
+                stats["city"] += 1
+    return stats
+
+
+def strip_gen_aliases(entries: dict) -> int:
+    """--remerge-aux: remove the previous generated layer so it can be
+    re-derived (aliases keeps only attested strings)."""
+    stripped = 0
+    for e in entries.values():
+        gen = {a.lower() for a in e.get("gen_aliases") or ()}
+        if gen:
+            e["aliases"] = [a for a in e.get("aliases", [])
+                            if a.lower() not in gen]
+            stripped += len(gen)
+        e.pop("gen_aliases", None)
+    return stripped
+
+
+# ---------------------------------------------------------------------------
 # Step 3 -- outputs
 # ---------------------------------------------------------------------------
 
@@ -1459,9 +1774,52 @@ def write_outputs(entries, stats, source_desc: str, extra_stats: dict):
 # Step 4 -- mobile gazetteer emit
 # ---------------------------------------------------------------------------
 
+# navigable classes that ALWAYS emit before generic POIs -- locality
+# anchors, health/education/worship, transit, civic, landmarks.  The cap
+# must never cut one of these for a boutique shop row.
+_EMIT_PRIORITY = frozenset({
+    # anchors -- every locality-ish kind the engine can anchor on
+    *("locality neighbourhood neighborhood suburb macrohood district "
+      "village town city quarter hamlet place boundary administrative "
+      "sector colony enclave block extension ward panchayat "
+      "residential named estate".split()),
+    # health
+    *("hospital clinic medical nursing_home doctors pharmacy dentist "
+      "veterinary emergency ambulance_station".split()),
+    # education
+    *("school college university college_university place_of_learning "
+      "educational_institution kindergarten library".split()),
+    # worship + civic
+    *("place_of_worship hindu_place_of_worship muslim_place_of_worship "
+      "christian_place_of_worship sikh_place_of_worship "
+      "buddhist_place_of_worship jain_place_of_worship temple mosque "
+      "church gurudwara shrine dargah synagogue monastery "
+      "police fire_station post_office courthouse townhall "
+      "community_centre government government_office civic "
+      "embassy prison crematorium cemetery grave_yard".split()),
+    # transit + mobility
+    *("station train_station metro bus_station airport halt "
+      "subway_entrance rail tram_stop bus_stop public_transport "
+      "taxi parking fuel charging_station taxi_stand ferry_terminal "
+      "aerodrome heliport".split()),
+    # destinations users actually name
+    *("market mall shopping_mall bazaar marketplace attraction "
+      "monument museum park garden stadium zoo cinema theatre "
+      "arts_centre swimming_pool sports_centre memorial "
+      "archaeological_site fort castle ruins viewpoint theme_park "
+      "water_park hotel guest_house hostel motel restaurant cafe "
+      "fast_food food_court bank atm".split()),
+})
+
+
 def emit_mobile(entries, target: int, gaz_path: str = GAZETTEER_PATH,
-                out_path: str = OUT_MOBILE):
-    """Write a Mobile-ready gazetteer [{n,c,lat,lon,w,k}] deduped vs bundled."""
+                out_path: str = OUT_MOBILE, carry_fx_from: str = None):
+    """Write a Mobile-ready gazetteer [{n,c,lat,lon,w,k}] deduped vs bundled.
+
+    carry_fx_from: optional previous gazetteer JSON whose `fx`-flagged
+    hygiene rows (planted demote sinks, fx:'dem', k=0) are carried
+    forward verbatim -- a regen must never silently resurrect a row the
+    indexfix lane deliberately demoted."""
     aliases = load_aliases()
 
     def grid_key(name, lat, lon):
@@ -1514,15 +1872,35 @@ def emit_mobile(entries, target: int, gaz_path: str = GAZETTEER_PATH,
         taken.add(key)
         added += 1
 
-    # keep richest: sort new rows by weight desc, cap total at target
-    new_rows.sort(key=lambda r: (-r["w"], r["n"]))
+    # keep richest: navigable classes always emit before generic POIs so
+    # the cap can never cut a locality anchor / hospital / school for a
+    # boutique shop; remaining room fills by weight.
+    prio = [r for r in new_rows if r["c"] in _EMIT_PRIORITY]
+    rest = [r for r in new_rows if r["c"] not in _EMIT_PRIORITY]
+    prio.sort(key=lambda r: (-r["w"], r["n"]))
+    rest.sort(key=lambda r: (-r["w"], r["n"]))
     room = max(0, target - len(merged))
-    out = merged + new_rows[:room]
+    out = merged + (prio + rest)[:room]
+    carried_fx = 0
+    if carry_fx_from and os.path.exists(carry_fx_from):
+        with open(carry_fx_from, encoding="utf-8") as f:
+            prev = json.load(f)
+        # demoted sinks share name+coords with live rows on purpose;
+        # only an identical fx-flagged row counts as already present.
+        have = {(g.get("n"), g.get("lat"), g.get("lon"), g.get("fx"))
+                for g in out}
+        for g in prev:
+            if g.get("fx") and (g.get("n"), g.get("lat"),
+                                g.get("lon"), g.get("fx")) not in have:
+                out.append(dict(g))
+                carried_fx += 1
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     return {
         "existing": len(gaz), "added": min(added, room),
         "skipped_dupes": skipped, "total": len(out),
+        "priority_emitted": len(prio), "tail_emitted": min(len(rest),
+        max(0, room - len(prio))), "carried_fx": carried_fx,
         "size_mb": os.path.getsize(out_path) / 1e6, "path": out_path,
     }
 
@@ -1950,6 +2328,10 @@ def remerge_aux(args) -> int:
             for s in srcs:
                 src_counts[s] = src_counts.get(s, 0) + 1
     n_osm = src_counts.get("osm", 0)
+    n_stripped = strip_gen_aliases(entries_map)
+    if n_stripped:
+        print(f"  stripped {n_stripped:,} previously generated "
+              "aliases (re-derived below)", flush=True)
     print(f"remerge base: {len(entries_map):,} committed rows "
           f"(dropped {dropped_ov:,} overture-only + {dropped_syn:,} "
           f"synthetic — both regenerate)", flush=True)
@@ -1959,6 +2341,12 @@ def remerge_aux(args) -> int:
     print("  regenerating attested sector/block rows ...", flush=True)
     sstats = merge_synthetic(entries_map, stats)
     print(f"    {sstats}", flush=True)
+    print("  regenerating usage-alias layer ...", flush=True)
+    ustats = gen_usage_aliases(entries_map)
+    print(f"    {ustats}", flush=True)
+    print("  attaching containing-locality context ...", flush=True)
+    lstats = attach_locality_context(entries_map)
+    print(f"    {lstats}", flush=True)
 
     entries = list(entries_map.values())
     prev_total = len(entries_map) + dropped_ov + dropped_syn
@@ -1973,6 +2361,11 @@ def remerge_aux(args) -> int:
         "synthetic": (f"{sstats['attested']:,} attested -> "
                       f"+{sstats['added']:,} rows "
                       f"({sstats['merged_nearby']:,} folded)"),
+        "gen usage aliases": (
+            f"{ustats['added']:,} forms on {ustats['rows']:,} rows"),
+        "locality-context attach": (
+            f"{lstats['attached']:,} rows <- containing locality, "
+            f"{lstats['city']:,} rows <- nearest town/city"),
     }
     lines = write_outputs(entries, stats, src, extra)
 
@@ -2096,7 +2489,7 @@ def main():
     n_osm = len(entries_map)
     print(f"  OSM pass: {n_osm:,} entries", flush=True)
 
-    gstats = astats = sstats = None
+    gstats = astats = sstats = ustats = lstats = None
     if not args.osm_only:
         print("  merging GeoNames IN.txt slice ...", flush=True)
         gstats = merge_geonames(entries_map, stats)
@@ -2108,6 +2501,13 @@ def main():
               flush=True)
         sstats = merge_synthetic(entries_map, stats)
         print(f"    {sstats}", flush=True)
+        print("  generating usage-alias layer (honorific/romanization/"
+              "abbrev/prefix/fused) ...", flush=True)
+        ustats = gen_usage_aliases(entries_map)
+        print(f"    {ustats}", flush=True)
+        print("  attaching containing-locality context ...", flush=True)
+        lstats = attach_locality_context(entries_map)
+        print(f"    {lstats}", flush=True)
 
     entries = list(entries_map.values())
     # honest before/after delta: count the previous committed corpus
@@ -2145,6 +2545,14 @@ def main():
         extra["synthetic"] = (f"{sstats['attested']:,} attested -> "
                               f"+{sstats['added']:,} rows "
                               f"({sstats['merged_nearby']:,} folded)")
+    if ustats:
+        extra["gen usage aliases"] = (
+            f"{ustats['added']:,} forms on {ustats['rows']:,} rows "
+            "(honorific strip + romanization + abbrev + prefix/fused)")
+    if lstats:
+        extra["locality-context attach"] = (
+            f"{lstats['attached']:,} rows <- containing locality, "
+            f"{lstats['city']:,} rows <- nearest town/city")
     lines = write_outputs(entries, stats, src, extra)
 
     # --- score ---

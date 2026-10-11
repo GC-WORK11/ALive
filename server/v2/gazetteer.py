@@ -151,6 +151,28 @@ def normalize(s: str) -> str:
     return " ".join(toks)
 
 
+# cooked kinds that are accessories of a parent landmark — an 'AIIMS'
+# metro platform must not inherit the landmark's alias from a same-cell
+# loser, or the accessory outranks its own landmark.
+_ACCESSORY_CATS = frozenset({
+    "platform", "stop", "stop_position", "bus_stop", "tram_stop",
+    "entrance", "subway_entrance", "depot", "ticket_validator",
+})
+
+
+def _union_aliases(a: list, b: list) -> list:
+    """Case-insensitive union of two alias lists (first-seen casing kept)."""
+    out = []
+    seen = set()
+    for lst in (a or [], b or []):
+        for s in lst:
+            k = s.lower()
+            if k not in seen:
+                seen.add(k)
+                out.append(s)
+    return out
+
+
 _ALIAS_TABLE: Optional[dict] = None
 
 # Cities outside Delhi NCR whose names leak onto Delhi rows — upstream
@@ -536,7 +558,8 @@ class Gazetteer:
                                   e.get("category") or "place",
                                   e.get("lat"), e.get("lon"),
                                   e.get("popularity") or 0.0,
-                                  e.get("aliases") or [])
+                                  (e.get("aliases") or []) +
+                                  (e.get("gen_aliases") or []))
             break  # first readable corpus file wins
 
         # dedupe: same normalized name inside a ~110 m cell keeps the
@@ -546,7 +569,14 @@ class Gazetteer:
             key = (r["norm"], round(r["lat"], 3), round(r["lon"], 3))
             prev = best.get(key)
             if prev is None or r["pop"] > prev["pop"]:
+                if prev is not None and r.get("c") not in _ACCESSORY_CATS:
+                    r["_raw_aliases"] = _union_aliases(
+                        r.get("_raw_aliases"), prev.get("_raw_aliases"))
                 best[key] = r
+            else:
+                if prev.get("c") not in _ACCESSORY_CATS:
+                    prev["_raw_aliases"] = _union_aliases(
+                        prev.get("_raw_aliases"), r.get("_raw_aliases"))
         rows = list(best.values())
 
         self._rows = rows
