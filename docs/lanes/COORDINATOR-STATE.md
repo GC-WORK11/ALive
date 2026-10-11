@@ -107,3 +107,11 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - gazupdate still running (deep-name hunt: neelanchal/pawan/sitaram/g block).
 - Attachments upload endpoint (acct2): POST /v3/organizations/{org}/attachments (NOT /v3/attachments).
 - Relay stack8 (c93d8203) sent to geo lane for push.
+
+## 2026-10-11 ~06:15 UTC — :267 armed-fix round
+- acct2 harvest: e2e2 (d9d5b8c) all 7 fixes DEAD; mobile2 (1353ba9) all 5 P1s verified + 3 new; perf2 (8e07453) ranking verified, T3 3.1-3.4s honest cost.
+- Fixed mobile2's P0 live on :267 (c4c7daa): `.wt-armed .sheet` → transparent+pointer-events:none (sheet-grab/title hidden, pinbar keeps pointer-events:auto) — map taps now reach canvas. Verified: elementFromPoint=CANVAS, real tap→armedGone+slot filled.
+- Also fixed: wt-th/wt-pinx ::after pads ≥40px; shop icon malformed `q-33-23.5-56.5` → completed symmetric handle arc `q-33 0-56.5 23.5T400-560` (path parses clean).
+- Relay: armed.patch (single commit) sent to geo lane. NOTE: /v3/attachments is wrong path; correct = /v3/organizations/{org}/attachments.
+- gazupdate still running (deep-name hunt).
+- Deploys: :266=c93d8203, :267=c4c7daa2.
