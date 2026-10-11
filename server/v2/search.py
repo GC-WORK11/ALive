@@ -241,11 +241,86 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
                     dq = min(dq, d)
             r["_qual_flag"] = 0 if dq <= 2500 else \
                 (1 if dc <= 3000 else 2)
+        # anchor coverage: the resolved locality vouches the tokens it
+        # claimed, so a row covering every remaining token AND sitting
+        # at the anchor IS the literal answer — 'Noor Masjid' beside
+        # the Shahdara anchor is a token-prefix hit for 'noor masjid
+        # shahdara', while the same-named Jama Masjid 6 km out stays a
+        # partial. Convicted rows stay convicted.
+        covered = set()
+        for a in anchors:
+            s, e = a.get("span") or (None, None)
+            if s is not None:
+                covered.update(range(s, e))
+        non_anchor = [t for i, t in enumerate(qn.split())
+                      if i not in covered]
+        qset = set(qn.split())
+        # anchor coverage: the resolved locality vouches the tokens it
+        # claimed, so a row covering every remaining token AND sitting
+        # at the anchor IS the literal answer — 'Noor Masjid' beside
+        # the Shahdara anchor is a token-prefix hit for 'noor masjid
+        # shahdara', while the same-named Jama Masjid 6 km out stays a
+        # partial. When anchors claim the whole query the literal
+        # answer is a row named after one of them — 'Raja Nahar Singh
+        # metro station' IS the 'Raja Nahar Singh' anchor.
+        # Convicted rows stay convicted.
+        for r in merged:
+            if r.get("suspect"):
+                continue
+            rt = normalize(r.get("name") or "").split()
+            if not rt or (non_anchor and
+                          not _phrase_eq(non_anchor, rt)):
+                continue
+            near = namesake = False
+            for a in anchors:
+                if _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) > 2500.0:
+                    continue
+                near = True
+                atoks = normalize(a.get("name") or "").split()
+                acore = [t for t in atoks
+                         if t not in _NEUTRAL_TOKS and not t.isdigit()]
+                if _phrase_eq(acore or atoks, rt):
+                    namesake = True
+            if not near or (not non_anchor and not namesake):
+                continue
+            # a row that claims a different place isn't this query's
+            # literal answer — 'OYO … Kaushambi Metro Ghaziabad' beside
+            # the Anand Vihar anchor claims Kaushambi, so the station
+            # itself keeps the vouch. The metro's own name ('delhi')
+            # and the anchor's own tokens are not foreign claims.
+            atok_all = set()
+            for a in anchors:
+                atok_all.update(normalize(a.get("name") or "").split())
+            leftover = [t for t in rt
+                        if t not in qset and t not in _NEUTRAL_TOKS
+                        and not t.isdigit() and t not in atok_all
+                        and t not in _METRO_TOKS]
+            if any(_geo_claim([t]) for t in leftover):
+                continue
+            # a rank-1 row the anchor also vouches leads its class —
+            # 'Iffco chowk metro station' beside the Iffco Chowk
+            # anchor beats a nearer unnamed bay; the anchor's own
+            # namesake leads the vouched — 'Neelam Chowk Ajronda
+            # metro station' IS what the anchor named, a 'Metro
+            # Tyres' only sits near it
+            if r.get("match_rank", 3) >= 3:
+                r["match_rank"], r["match"] = 1, _MATCH_NAMES[1]
+            r["_anchor_hit"] = 1
+            if namesake:
+                r["_namesake"] = 1
     merged.sort(key=lambda r: (r.get("match_rank", 3),
                                # honesty-penalized rows sit at the
                                # bottom of their match class
                                r.get("_pen", 0),
-                               r.get("_qual_flag", 1),
+                               # a literal-name row the anchor vouches
+                               # leads its class — kind-scan rows that
+                               # only inferred the kind follow it
+                               0 if r.get("_anchor_hit") else 1,
+                               # among vouched rows the anchor's own
+                               # namesake leads; among the rest,
+                               # near-anchor rows lead
+                               0 if r.get("_namesake")
+                               else r.get("_qual_flag", 1),
                                # inside a match class the engine's own
                                # order is the ranking — it already
                                # applied alias knowledge, landmark
@@ -266,6 +341,8 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
         r.pop("_t1_pos", None)
         r.pop("_qual_flag", None)
         r.pop("_pen", None)
+        r.pop("_anchor_hit", None)
+        r.pop("_namesake", None)
     return merged
 
 
@@ -325,7 +402,7 @@ async def search(q: str = Query(min_length=1, max_length=200),
         presolved = await loop.run_in_executor(
             _T1_EXEC, _locality_anchors, qn, blat, blon)
         anchors = [a for a in presolved[0]
-                   if _hav_m(blat, blon, a["lat"], a["lon"]) <= 30000]
+                   if _hav_m(blat, blon, a["lat"], a["lon"]) <= 40000]
         presolved = (anchors, presolved[1])
     if limit > 0 and _overpass_enabled():
         local_rows = t1_rows + t2_rows
@@ -673,6 +750,10 @@ _CITY_TOKS = frozenset(("delhi", "ncr", "india"))
 # transit/shop types, connectors, direction words. Load-bearing name
 # fragments (nagar, puri, ganj, badli, garh...) are NEVER neutral:
 # 'Govind Puri' must not vouch for a bare 'govind' claim.
+# the metro's own designators — a row trailing 'delhi'/'new delhi'
+# claims this urban area, never a different ward
+_METRO_TOKS = frozenset(("delhi", "dilli", "nct", "ncr"))
+
 _NEUTRAL_TOKS = frozenset(set("""
 metro station train_station bus_station bus_stop stop platform
 stop_position subway_entrance halt entrance exit gate no number

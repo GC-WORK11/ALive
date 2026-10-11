@@ -163,7 +163,8 @@ _ALIAS_TABLE: Optional[dict] = None
 # asked for it, the name just contains the token).
 ELSEWHERE_TOKENS = frozenset("""
 srinagar jammu howrah kolkata calcutta mumbai bombay chennai madras
-bengaluru bangalore hyderabad secunderabad jaipur udaipur jodhpur
+bengaluru bangalore banglore hyderabad secunderabad jaipur udaipur
+jodhpur
 lucknow kanpur patna amritsar ludhiana jalandhar nagpur pune surat
 indore bhopal ahmedabad vadodara rajkot nashik aurangabad varanasi
 allahabad prayagraj guwahati kochi thiruvananthapuram trivandrum
