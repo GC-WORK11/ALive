@@ -455,14 +455,15 @@ function paint() {
 }
 
 let relocating = false, stopRefine = null;
-/* after a fix lands, keep listening ~90 s so a coarse Wi-Fi/IP first
-   answer sharpens into the real spot on its own */
+/* after a fix lands, keep listening: a coarse Wi-Fi/IP first answer
+   sharpens into the real spot, and when you actually move (beyond the
+   fix's own accuracy) the reading, the address and the DIGIPIN follow you */
 function startRefine() {
   if (stopRefine) stopRefine();
   if (!A.geo.refine || A.geo.consent !== 'granted') return;
   stopRefine = A.geo.refine((p) => {
     if (A.geo.consent === 'granted' && A.current && A.current() === 'home') applyPos(p);
-  }, 90000);
+  }, 30 * 60000);
 }
 function relocate() {
   if (relocating || !navigator.geolocation) return;
