@@ -153,7 +153,9 @@ _ADMIN_KINDS = ("district", "administrative")
 _ADMIN_DEDUPE_RADIUS_M = 400.0
 
 
-def _merge(t1: list, t2: list, qn: str, blat: float, blon: float) -> list:
+def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
+           anchors: Optional[list] = None, pool: Optional[list] = None
+           ) -> list:
     """Dedupe on normalized name within 75 m (400 m when either row is an
     admin-area kind); rank by match class then distance. Sources merge
     honestly: a place found by both tiers says so."""
@@ -205,10 +207,45 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float) -> list:
     for r in merged:
         if name_says_elsewhere(r.get("name") or "", qn,
                                r.get("kind") or "") and \
-                (r.get("match_rank") or 3) < 3:
+                r.get("match_rank", 3) < 3:
             r["match_rank"] = 3
             r["match"] = _MATCH_NAMES[3]
+            r["_pen"] = 1
+    _coord_consistency(merged, pool if pool is not None else t1 + t2, qn)
+    _merge_honesty_rules(merged, qn)
+    if anchors:
+        # drop anchors the evidence pass just convicted: a planted or
+        # far-duplicated pick is the corruption's own beacon — 'devli'
+        # resolving to the 45km fake, or 'rajiv chowk' picking a 28km
+        # duplicate while every same-named pool row sits at CP
+        anchors = [a for a in anchors
+                   if not _anchor_corrupt(a, merged)]
+        # qualifier ordering — a second resolvable locality in the
+        # query ('ashok nagar shahdara', 'gulati pandara road') is the
+        # user's ward; rows sitting near it win their match class, and
+        # rows sitting near an anchor their own name claims outrank
+        # rows near nothing. The claim test uses the anchor's CORE
+        # tokens only — 'Kashmere Gate' station claims 'ISBT Kashmiri
+        # Gate' as much as the ISBT row does.
+        for r in merged:
+            dq = dc = float("inf")
+            rt = normalize(r.get("name") or "").split()
+            for a in anchors:
+                atoks = normalize(a.get("name") or "").split()
+                acore = [t for t in atoks
+                         if t not in _NEUTRAL_TOKS and not t.isdigit()]
+                d = _hav_m(r["lat"], r["lon"], a["lat"], a["lon"])
+                if _phrase_eq(acore or atoks, rt):
+                    dc = min(dc, d)
+                else:
+                    dq = min(dq, d)
+            r["_qual_flag"] = 0 if dq <= 2500 else \
+                (1 if dc <= 3000 else 2)
     merged.sort(key=lambda r: (r.get("match_rank", 3),
+                               # honesty-penalized rows sit at the
+                               # bottom of their match class
+                               r.get("_pen", 0),
+                               r.get("_qual_flag", 1),
                                # inside a match class the engine's own
                                # order is the ranking — it already
                                # applied alias knowledge, landmark
@@ -219,13 +256,16 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float) -> list:
                                 else 1_000_000_000),
                                r.get("distance_m") or 9e9,
                                0 if "t1" in r.get("sources", []) else 1))
-    # _t1_pos is merge-time scratch — strip it from BOTH source lists,
-    # not just merged: a row that loses the dedupe stays in t1_rows and
-    # the endpoint returns that array raw (contract: no _t1_pos on the
-    # wire). The 400 m admin rule collapses intra-t1 dupes the 75 m
-    # rule never reached, so this leaks now where it couldn't before.
+    # _t1_pos/_qual_flag are merge-time scratch — strip them from BOTH
+    # source lists, not just merged: a row that loses the dedupe stays
+    # in t1_rows and the endpoint returns that array raw (contract: no
+    # _t1_pos on the wire). The 400 m admin rule collapses intra-t1
+    # dupes the 75 m rule never reached, so this leaks now where it
+    # couldn't before.
     for r in t1 + t2:
         r.pop("_t1_pos", None)
+        r.pop("_qual_flag", None)
+        r.pop("_pen", None)
     return merged
 
 
@@ -274,6 +314,19 @@ async def search(q: str = Query(min_length=1, max_length=200),
     # join the t1 list before the merge; the live rows merge as their
     # own tier so 'live osm' provenance survives on the wire.
     t3_rows, t3_status, t3_ms = [], None, None
+    anchors = []
+    if limit > 0:
+        # resolved once per query — the merge's qualifier ordering
+        # needs it whether or not the T3 arm fires, and the
+        # thin/uncovered checks below consume it exactly as before.
+        # An anchor pointing >30km out is a corrupt pick (the planted
+        # 'Devli'/'Ghitorni' rows resolve as their own claims).
+        loop = asyncio.get_running_loop()
+        presolved = await loop.run_in_executor(
+            _T1_EXEC, _locality_anchors, qn, blat, blon)
+        anchors = [a for a in presolved[0]
+                   if _hav_m(blat, blon, a["lat"], a["lon"]) <= 30000]
+        presolved = (anchors, presolved[1])
     if limit > 0 and _overpass_enabled():
         local_rows = t1_rows + t2_rows
         for r in local_rows:   # distance_m is merged in later; the thin
@@ -281,14 +334,10 @@ async def search(q: str = Query(min_length=1, max_length=200),
                 r["distance_m"] = round(
                     _hav_m(blat, blon, r["lat"], r["lon"]))
         fire = _local_thin(local_rows)
-        presolved = None
         if not fire:
             # a resolvable locality the top rows never mention means the
             # engine answered a different ward — that is thin too.
             # Judge the top rows the user would see, not raw engine order.
-            loop = asyncio.get_running_loop()
-            presolved = await loop.run_in_executor(
-                _T1_EXEC, _locality_anchors, qn, blat, blon)
             visible = sorted(
                 local_rows,
                 key=lambda r: (r.get("match_rank")
@@ -296,7 +345,7 @@ async def search(q: str = Query(min_length=1, max_length=200),
                                r.get("distance_m")
                                if r.get("distance_m") is not None
                                else 9e9))
-            fire = _locality_uncovered(qn, visible, presolved[0])
+            fire = _locality_uncovered(qn, visible, anchors)
         if fire:
             t3_start = time.perf_counter()
             t3_rows, gaz_rows, t3_status = await _overpass_arm(
@@ -308,7 +357,9 @@ async def search(q: str = Query(min_length=1, max_length=200),
     for i, r in enumerate(t3_rows):
         r["_t1_pos"] = len(t1_rows) + i
 
-    merged = _merge(t1_rows, t2_rows + t3_rows, qn, blat, blon)
+    merged = _merge(t1_rows, t2_rows + t3_rows, qn, blat, blon,
+                    anchors=anchors,
+                    pool=t1_rows + t2_rows + t3_rows)
     tiers = ["t1"] + (["t2"] if t2_task is not None else []) \
         + (["t3"] if t3_status is not None and t3_status != "off" else [])
     return {
@@ -528,8 +579,14 @@ def _locality_anchors(qn: str, blat: float, blon: float,
             # anchor, not a place name (every colony has a C block)
             if all(t == "block" or len(t) == 1 for t in ptoks):
                 continue
+            # pure type-word spans are never a locality either —
+            # 'terminal 1', 'isbt', 'gate 2' describe the place, they
+            # don't name it
+            if all(t in _NEUTRAL_TOKS or t.isdigit() for t in ptoks):
+                continue
             if ln == 1 and (len(ptoks[0]) < 4 or ptoks[0] in _DEEP_STOP
-                            or ptoks[0] in _POI_TYPES):
+                            or ptoks[0] in _POI_TYPES
+                            or ptoks[0] in _NEUTRAL_TOKS):
                 continue
             pnorm = " ".join(ptoks)
             cands = [r for r in rows
@@ -591,6 +648,393 @@ def _locality_anchors(qn: str, blat: float, blon: float,
     for a in anchors:
         covered.update(range(a["span"][0], a["span"][1]))
     return anchors, covered
+
+
+# ===========================================================================
+# Merge-floor honesty — coord-consistency, degenerate names, class
+# mismatches. The classes these fix come straight out of the acct2 probe
+# (docs/lanes/acct2-geocode-report.md): planted-centroid joins
+# (28.6143,77.2087 holds 170 unrelated names), mis-geocoded same-name
+# duplicates, token-prefix junk, wrong-religion worship rows.
+#
+# The primitive is the CLAIM: a row's name asserts a place
+# ('Ghitorni' claims Ghitorni, 'Vegas Mall Dwarka' claims Dwarka,
+# 'Himachal volvo majnu ka tilla' claims Majnu ka Tila). A claim is
+# contradicted when honest evidence says the place lives elsewhere —
+# either anchor-kind rows (P1) or same-claim peers in the result pool
+# (P2) — and this row sits kilometres away from ALL of it. Contradicted
+# rows demote to 'other', never delete: the pin may still be what the
+# user asked for by name, and corpus honesty keeps the row findable.
+# ===========================================================================
+
+_CITY_TOKS = frozenset(("delhi", "ncr", "india"))
+
+# tokens a name sheds freely when a claim is tested — place-kinds,
+# transit/shop types, connectors, direction words. Load-bearing name
+# fragments (nagar, puri, ganj, badli, garh...) are NEVER neutral:
+# 'Govind Puri' must not vouch for a bare 'govind' claim.
+_NEUTRAL_TOKS = frozenset(set("""
+metro station train_station bus_station bus_stop stop platform
+stop_position subway_entrance halt entrance exit gate no number
+isbt airport stand flyover interchange underpass station_road
+road marg street lane gali chowk crossing bypass express expressway
+line railway bus depot terminal terminus park market bazaar
+school college university institute campus ground stadium bank atm
+hotel restaurant office complex tower building plaza mall shop
+locality neighbourhood neighborhood suburb macrohood district town
+city quarter hamlet place boundary administrative panchayat sector
+ward block pocket village colony enclave extension phase point
+north south east west upper lower new old central
+i ii iii iv v vi
+""".split()) | _DEEP_STOP | _CITY_TOKS | set(_POI_TYPES))
+
+# name token -> religion a worship kind must agree with. 'temple' is
+# mapped hindu-ish but only convicts against a kind that explicitly
+# says a different religion (a Bahai temple row tagged christian is
+# exactly the probe's Lotus Temple bug).
+_REL_NAME_TOKS = {
+    "mandir": "hindu", "temple": "hindu", "masjid": "muslim",
+    "mosque": "muslim", "dargah": "muslim", "church": "christian",
+    "chapel": "christian", "gurudwara": "sikh", "gurdwara": "sikh",
+    "bahai": "bahai",
+}
+_REL_KIND_MAP = {
+    "christian_place_of_worship": "christian", "church": "christian",
+    "muslim_place_of_worship": "muslim", "mosque": "muslim",
+    "hindu_place_of_worship": "hindu", "mandir": "hindu",
+    "sikh_place_of_worship": "sikh", "gurudwara": "sikh",
+    "bahai": "bahai",
+}
+
+_CONSIST_RADIUS_M = 3200.0     # further than this = 'elsewhere'
+_SAME_PIN_M = 150.0            # rows this close can't vouch each other
+
+
+def _dl_le1(a: str, b: str) -> bool:
+    """edit distance <= 1 — roman spelling fold the index's normalize
+    doesn't do ('tilla'/'tila', 'chattarpur'/'chhatarpur')."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(1 for x, y in zip(a, b) if x != y) <= 1
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    return any(a == b[:i] + b[i + 1:] for i in range(lb))
+
+
+def _tok_eq(a: str, b: str) -> bool:
+    """same token: equal, len>=3 prefix either way, DL<=1 at len>=4,
+    or <=2 letter diffs at len>=8 ('chattarpur'/'chhatarpur')."""
+    if a == b:
+        return True
+    if (len(a) >= 3 and b.startswith(a)) or \
+            (len(b) >= 3 and a.startswith(b)):
+        return True
+    if len(a) == len(b) and len(a) >= 8 and \
+            sum(1 for x, y in zip(a, b) if x != y) <= 2:
+        return True
+    return min(len(a), len(b)) >= 4 and _dl_le1(a, b)
+
+
+def _phrase_eq(claim: list, toks) -> bool:
+    return all(any(_tok_eq(c, t) for t in toks) for c in claim)
+
+
+_loc_post_state: Optional[dict] = None
+
+
+def _loc_postings() -> dict:
+    """token -> [anchor-kind rows] over _loc_rows() — claim evidence,
+    built once beside the anchor index."""
+    global _loc_post_state
+    if _loc_post_state is None:
+        post = {}
+        for r in _loc_rows():
+            for t in set((r.get("norm") or "").split()):
+                post.setdefault(t, []).append(r)
+        _loc_post_state = post
+    return _loc_post_state
+
+
+_all_post_state: Optional[dict] = None
+
+
+def _all_postings() -> dict:
+    """token -> [every row] over the full index — index-wide peer
+    evidence. A row's same-name cluster can vouch/contradict even
+    when this query's pool happens to hold only one side of it."""
+    global _all_post_state
+    if _all_post_state is None:
+        post = {}
+        for r in GAZ._load():
+            for t in set((r.get("norm") or "").split()):
+                post.setdefault(t, []).append(r)
+        _all_post_state = post
+    return _all_post_state
+
+
+_claim_peer_cap = 3000
+
+
+_GEO_KINDS = frozenset(
+    "locality village place neighborhood neighbourhood macrohood "
+    "district town city quarter hamlet boundary administrative "
+    "panchayat sector ward block colony enclave platform station "
+    "metro bus_station train_station stop_position stop tertiary "
+    "secondary primary motorway trunk road street constituency "
+    "postcode historic_site square intersection junction chowk "
+    "unclassified".split())
+
+
+def _geo_claim(claim: list) -> bool:
+    """Is this claim a verifiable PLACE reference? True when some
+    geo-kind anchor row carries it — 'ashok nagar' (localities),
+    'vaishali' (metro), 'hauz khas' (village). A name that only
+    resolves to POIs ('radhey krishan' -> temples, 'lotus temple' ->
+    worship rows) is an identity, not a place claim — two temples
+    with the same name in different wards is normal, not evidence
+    of a bad pin."""
+    for a in _claim_anchors(claim):
+        k = (a.get("kind") or "").lower()
+        for p in _LOC_KIND_STRIP:
+            if k.startswith(p):
+                k = k[len(p):]
+        if k in _GEO_KINDS:
+            return True
+    return False
+
+
+def _index_peers(claim: list, head: bool) -> list:
+    """index rows the claim could mean, via postings on the claim's
+    rarest token — the same literal-name rule as pool peers."""
+    post = _all_postings()
+    rare = min((len(post.get(t, ())), t) for t in claim)[1]
+    cands = post.get(rare, ())
+    if len(cands) > _claim_peer_cap:
+        return []
+    return [r for r in cands
+            if _peer_hit(claim, head, (r.get("norm") or "").split())]
+
+
+def _claim_anchors(claim: list) -> list:
+    """anchor-kind rows carrying the claim — where the claim honestly
+    lives. A one-token claim must BE the anchor's whole name (+ kind
+    words): 'dwarka' anchors 'Dwarka'/'Dwarka Village', never a row
+    that merely contains it."""
+    post = _loc_postings()
+    rare = min((len(post.get(t, ())), t) for t in claim)[1]
+    out = []
+    for r in post.get(rare, ()):
+        rtoks = (r.get("norm") or "").split()
+        if len(claim) == 1:
+            c = claim[0]
+            if not all(t.isdigit() or len(t) == 1 or t in _NEUTRAL_TOKS
+                       or _tok_eq(t, c) for t in rtoks):
+                continue
+            out.append(r)
+        elif _phrase_eq(claim, rtoks):
+            out.append(r)
+    return out
+
+
+def _row_claims(toks: list) -> list:
+    """[(span, head?)] — place-claims a row's name makes. A span is
+    claim material only when it holds a non-neutral, non-digit,
+    len>1 token; single-token claims need len>=4. Head claims start
+    the name; anything later is an embedded claim."""
+    out, seen, n = [], set(), len(toks)
+    for i in range(n):
+        for ln in (4, 3, 2, 1):
+            if i + ln > n:
+                continue
+            span = toks[i:i + ln]
+            key = tuple(span)
+            if key in seen:
+                continue
+            seen.add(key)
+            if not any(t not in _NEUTRAL_TOKS and not t.isdigit()
+                       and len(t) > 1 for t in span):
+                continue
+            if ln == 1 and len(span[0]) < 4:
+                continue
+            out.append((span, i == 0))
+    return out
+
+
+def _peer_hit(claim: list, head: bool, otoks) -> bool:
+    if head and len(claim) == 1:
+        # a bare name can only be vouched or contradicted by rows
+        # literally named it (+ kind words) — 'Govind Puri' is NOT
+        # evidence about 'Govind Motors'
+        c = claim[0]
+        return all(t.isdigit() or len(t) == 1 or t in _NEUTRAL_TOKS
+                   or _tok_eq(t, c) for t in otoks)
+    return _phrase_eq(claim, otoks)
+
+
+def _anchor_kind(kind: str, ntoks: int) -> bool:
+    for p in _LOC_KIND_STRIP:
+        if kind.startswith(p):
+            kind = kind[len(p):]
+    return kind in _LOC_KIND_EXACT or (
+        (kind in _LOC_KIND_BARE or kind.endswith(_LOC_KIND_BARE_SUFFIX))
+        and ntoks <= 3)
+
+
+def _coord_consistency(merged: list, pool: list, qn: str) -> None:
+    """Demote rows whose name-claims contradict index evidence:
+    - P1 (non-anchor rows only): >=2 anchor-kind rows carry the claim
+      and ALL sit >3.2km away — 'Himachal volvo majnu ka tilla' at the
+      planted point vs the real Majnu ka Tila cluster.
+    - P2: same-claim peers in this result pool, >=2 (>=3 for a bare
+      embedded token) all >3.2km away — 'AIIMS, delhi' 9km off vs the
+      AIIMS cluster; 'Devli' 32km off vs every Devli road.
+    Head claims (the row's own name) use strict evidence: multi-token
+    spans match phrase-wise, a single head token only matches rows
+    literally named it. Embedded single tokens are the weakest claim —
+    they need 3 contradicting peers, and are skipped entirely when the
+    query itself names this row ('sultans dine' -> 'Sultan's Dine -
+    Gazipur' keeps its lineage suffix)."""
+    if not merged or not qn:
+        return
+    qtoks = qn.split()
+    pool_toks = {}
+    for r in pool:
+        pool_toks[id(r)] = normalize(r.get("name") or "").split()
+    for r in merged:
+        if r.get("match_rank", 3) >= 3:
+            continue
+        rtoks = pool_toks.get(id(r)) or \
+            normalize(r.get("name") or "").split()
+        if not rtoks:
+            continue
+        # the query literally naming this row exempts its embedded
+        # claims — 'Sultan's Dine - Gazipur' is what 'sultans dine'
+        # asked for
+        named_target = _phrase_eq(qtoks, rtoks)
+        suspect = None
+        for claim, head in _row_claims(rtoks):
+            if not head and named_target:
+                continue
+            if not _geo_claim(claim):
+                continue  # identity name, not a place reference
+            need = 3 if (not head and len(claim) == 1) else 2
+            # evidence = anchor-kind rows carrying the claim + same-claim
+            # peers in this pool, counted together: one strong anchor
+            # plus one far peer ('AIIMS Metro Station' + 'AIIMS, New
+            # Delhi' vs the 'AIIMS, delhi' 16km off) is as damning as
+            # two of either
+            evidence = []
+            seen_ids = set()
+            # anchor-kind index rows are evidence for EVERY row —
+            # pool-only peers convict wrongly when this query's pool
+            # happens to hold only the far cluster ('Hauz Khas metro
+            # station' vs its corrupted Gate dupes at CP). The row's
+            # own pin is excluded by _SAME_PIN_M below.
+            for a in _claim_anchors(claim):
+                d = _hav_m(r["lat"], r["lon"], a["lat"], a["lon"])
+                if d > _SAME_PIN_M:
+                    evidence.append(d)
+                    seen_ids.add(id(a))
+            for o in pool:
+                if o is r or id(o) in seen_ids:
+                    continue
+                ot = pool_toks.get(id(o))
+                if not ot or not _peer_hit(claim, head, ot):
+                    continue
+                seen_ids.add(id(o))
+                d = _hav_m(r["lat"], r["lon"], o["lat"], o["lon"])
+                if d <= _SAME_PIN_M:
+                    continue  # same-pin siblings can't vouch
+                evidence.append(d)
+            for o in _index_peers(claim, head):
+                if o is r or id(o) in seen_ids:
+                    continue
+                seen_ids.add(id(o))
+                d = _hav_m(r["lat"], r["lon"], o["lat"], o["lon"])
+                if d <= _SAME_PIN_M:
+                    continue
+                evidence.append(d)
+                if d <= _CONSIST_RADIUS_M:
+                    break  # near evidence settles it — bail early
+            if len(evidence) >= need and \
+                    min(evidence) > _CONSIST_RADIUS_M:
+                suspect = "claim-evidence:" + " ".join(claim)
+                break
+        if suspect:
+            r["match_rank"] = 3
+            r["match"] = _MATCH_NAMES[3]
+            r["suspect"] = suspect
+            r["_pen"] = 1
+
+
+def _merge_honesty_rules(merged: list, qn: str) -> None:
+    """Demote rules that need no location evidence:
+    - digit contradiction: 'igi terminal 1' can't be 'Terminal 3'
+    - degenerate names: a row whose name is only type words + digits
+      ('1', 'Gate 2', 'Terminal 1') carries no identity for a query
+      with real name tokens
+    - religion mismatch: 'Lotus Temple' tagged christian — the name
+      says hindu-ish, the kind says another faith"""
+    qtoks = qn.split()
+    qdig = {t for t in qtoks if t.isdigit()}
+    qreal = [t for t in qtoks
+             if t not in _NEUTRAL_TOKS and not t.isdigit()]
+    for r in merged:
+        if r.get("match_rank", 3) >= 3:
+            continue
+        rtoks = normalize(r.get("name") or "").split()
+        rdig = {t for t in rtoks if t.isdigit()}
+        if qdig and rdig and not qdig & rdig:
+            r["match_rank"], r["match"], r["suspect"] = \
+                3, _MATCH_NAMES[3], "digit-mismatch"
+            r["_pen"] = 1
+            continue
+        core = [t for t in rtoks
+                if t not in _NEUTRAL_TOKS and not t.isdigit()]
+        if (not core or all(len(t) == 1 for t in core)) and \
+                any(t not in rtoks for t in qreal):
+            r["match_rank"], r["match"], r["suspect"] = \
+                3, _MATCH_NAMES[3], "degenerate-name"
+            r["_pen"] = 1
+            continue
+        kind = (r.get("kind") or "").lower()
+        for p in _LOC_KIND_STRIP:
+            if kind.startswith(p):
+                kind = kind[len(p):]
+        name_rel = next((_REL_NAME_TOKS[t] for t in rtoks
+                         if t in _REL_NAME_TOKS), None)
+        kind_rel = _REL_KIND_MAP.get(kind)
+        if name_rel and kind_rel and name_rel != kind_rel:
+            r["match_rank"], r["match"], r["suspect"] = \
+                3, _MATCH_NAMES[3], "class-mismatch"
+            r["_pen"] = 1
+
+
+def _anchor_corrupt(a: dict, pool: list) -> bool:
+    """Is this resolved anchor itself corruption evidence? Drop it when:
+    - a row convicted this merge pins at its spot (the fake 'Devli' at
+      45km resolving 'devli'), or
+    - every pool row carrying its phrase sits >4km away — a far
+      duplicate ('Rajiv Chowk' at 28km) can never be the user's ward.
+    An anchor with no same-phrase pool row at all keeps the benefit of
+    the doubt ('burari' beside 'sant nagar burari')."""
+    atoks = normalize(a.get("name") or "").split()
+    acore = [t for t in atoks
+             if t not in _NEUTRAL_TOKS and not t.isdigit()]
+    hits = []
+    for r in pool:
+        rt = normalize(r.get("name") or "").split()
+        if _phrase_eq(acore or atoks, rt):
+            hits.append(r)
+    if any(r.get("suspect") and
+           _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) <= 4000
+           for r in hits):
+        return True
+    return bool(hits) and not any(
+        _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) <= 4000
+        for r in hits)
 
 
 _BLOCK_RE = re.compile(
