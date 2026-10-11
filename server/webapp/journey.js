@@ -1095,7 +1095,7 @@ A.screen('journey', {
       if (no && no.offsetParent) { no.click(); return; }
       const done = el.querySelector('.jr-done');
       if (done) { done.click(); return; }
-      const end = el.querySelector('.jn-end');
+      const end = el.querySelector('.jn-close');
       if (end) end.click();
     };
     document.addEventListener('keydown', onKey);
