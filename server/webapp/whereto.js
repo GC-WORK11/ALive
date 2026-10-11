@@ -684,7 +684,7 @@ function armPinDrop() {
   const strip = el(`<div class="wt-pinbar">
       ${icon('pin', 16, INK2)}
       <span><b>${t('mapPickHint')}</b><i>${S.armedPin === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder')}</i></span>
-      <button class="wt-pinx" type="button" aria-label="cancel">${icon('close', 14, INK3)}</button>
+      <button class="wt-pinx" type="button" data-unarm aria-label="cancel">${icon('close', 14, INK3)}</button>
     </div>`);
   strip.querySelector('.wt-pinx').addEventListener('click', disarmPin);
   S.el.querySelector('.sheet').appendChild(strip);
