@@ -295,16 +295,20 @@ def _apply_traffic(o: dict, res: dict, source) -> None:
     matched = res.get("matched") is True or (
         isinstance(rl, (int, float)) and dist_m > 0
         and abs(float(rl) - dist_m) <= max(300.0, 0.05 * dist_m))
-    # one basis for every row: our own eta (freeflow) + the provider's
-    # live delay on that road. The provider's absolute live time is used
-    # only when it sends no delay (a live-time-only source) and its road
-    # matched ours — mixing a provider's absolute time on some rows with
-    # eta+delay on others made a bus "faster" than the car (live check)
-    if isinstance(delay, (int, float)) and math.isfinite(delay):
+    # When the provider timed OUR road (its length matches ours), its
+    # absolute live time IS the honest ETA for every motor vehicle on it:
+    # our engine's free-flow eta assumes empty roads (ISKCON→DTU: engine
+    # 42 min vs TomTom 88 min on the same 33 km; TomTom/Ola best roads
+    # 65–68 min). A bus is never faster than the car on the same road.
+    # Off-road rows (walk/cycle/metro) never reach here. Unmatched roads
+    # keep the old basis: our eta + the provider's live delay.
+    fam = str(o.get("mode") or "").lower()
+    road_motor = fam in ("car", "car_open", "cab", "taxi", "bus")
+    if (matched and road_motor and isinstance(live_s, (int, float))
+            and math.isfinite(live_s) and live_s > 0):
+        live = max(float(live_s), base) if fam == "bus" else float(live_s)
+    elif isinstance(delay, (int, float)) and math.isfinite(delay):
         live = base + max(0.0, float(delay))
-    elif (matched and o.get("mode") in ("car", "car_open")
-            and isinstance(live_s, (int, float)) and live_s > 0):
-        live = float(live_s)
     else:
         _no_traffic(o)
         return
