@@ -1,130 +1,236 @@
-/* journey lane — nav HUD + arrival receipt. Scoped additions on the
-   shared vocabulary: warm paper cards, ink, one small forest accent;
-   band hues only appear where they mean air quality. */
+/* journey lane — nav HUD + arrival receipt. PIXEL TWIN of
+   Mobile NavChrome.tsx + ReceiptSheet.tsx: same card shapes, same
+   px paddings/radii, same type steps, same order. Web-only additions
+   (preview flag, ×8 sim pace, gps/preview switch) stay in the shared
+   vocabulary: warm paper, ink, band hues only where they mean air. */
+
+/* glass — RN's V2T glass tokens (not in :root) */
+:root {
+  --jn-glass: rgba(255, 255, 255, .95);
+  --jn-glass-soft: rgba(255, 255, 255, .76);
+  --jn-sh-float: 0 8px 22px rgba(22, 24, 29, .12);
+  --jn-sh-pop: 0 -6px 30px rgba(22, 24, 29, .22);
+}
 
 /* ── nav view ────────────────────────────────────────────────────── */
+/* RN nav has no brand chrome — the banner IS the top card. The
+   app-shell #chrome hides on this screen (scoped: journey.css only). */
+body[data-top="journey"] #chrome { display: none }
+
 .jn { position: absolute; inset: 0; pointer-events: none; }
 .jn > * { pointer-events: auto; }
 
-.jn-top { position: absolute; top: calc(52px + var(--sat)); left: 12px; right: 12px;
-  display: flex; align-items: center; gap: 10px; pointer-events: none }
-.jn-exit { width: 36px; height: 36px; border-radius: 50%; background: var(--surface);
-  box-shadow: var(--sh-card); display: flex; align-items: center; justify-content: center;
-  font-size: 14px; color: var(--ink2); flex: none; pointer-events: auto }
-.jn-exit:active { transform: scale(.92) }
-.jn-dest { flex: 1; min-width: 0; text-align: center; background: var(--surface);
-  border-radius: 999px; box-shadow: var(--sh-card); padding: 9px 16px;
-  font-size: 13.5px; color: var(--ink3); overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; pointer-events: auto }
-.jn-dest b { font-weight: 500; color: var(--ink) }
-.jn-top::after { content: ""; width: 36px; flex: none }   /* balance the exit dot */
+/* banner — NavChrome s.banner: glassDeep card, r20, pad 12 */
+.jn-banner { position: absolute; top: calc(12px + var(--sat)); left: 12px; right: 12px;
+  display: flex; align-items: center; background: var(--jn-glass);
+  border-radius: 20px; box-shadow: var(--jn-sh-float); padding: 12px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  animation: jn-drop .4s var(--ease) }
+@keyframes jn-drop { from { transform: translateY(-14px); opacity: 0 } }
 
-.jn-offroute, .jn-nofix { position: absolute; top: calc(102px + var(--sat));
-  left: 50%; transform: translateX(-50%); background: rgba(22,24,29,.92);
-  color: #fff; font-size: 12px; font-weight: 500; padding: 8px 14px;
-  border-radius: 999px; white-space: nowrap; max-width: 92vw;
-  overflow: hidden; text-overflow: ellipsis; z-index: 5 }
-.jn-nofix { background: var(--surface); color: var(--ink2); box-shadow: var(--sh-float) }
+.jn-tile { width: 54px; height: 54px; border-radius: 17px; flex: none;
+  background: var(--ink); display: flex; align-items: center; justify-content: center }
+.jn-btxt { flex: 1; min-width: 0; margin-left: 12px; margin-right: 4px }
+.jn-dist { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 22px; font-weight: 600; line-height: 1.15; letter-spacing: -.02em }
+.jn-dist:empty { display: none }
+.jn-instr { font-size: 15px; font-weight: 500; color: var(--ink2); margin-top: 1px;
+  line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden }
+.jn-instr.big { font-size: 17px; font-weight: 600; color: var(--ink) }
+.jn-act { width: 44px; height: 44px; flex: none; display: flex;
+  align-items: center; justify-content: center; opacity: .55;
+  transition: transform .2s var(--ease), opacity .2s var(--ease) }
+.jn-act:active { transform: scale(.86); opacity: 1 }
+.jn-tile.swap { animation: jn-swap .28s var(--ease) }
+.jn-instr.swap { animation: jn-fade .28s var(--ease) }
+@keyframes jn-swap { 0% { transform: scale(.82) } 60% { transform: scale(1.05) } }
+@keyframes jn-fade { from { opacity: .2 } }
 
-.jn-fabs { position: absolute; right: 12px; bottom: 218px; display: flex;
-  flex-direction: column; gap: 9px; align-items: center }
-.jn-fab { width: 42px; height: 42px; border-radius: 50%; background: var(--surface);
-  box-shadow: var(--sh-float); display: flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 500; color: var(--ink2); transition: transform .25s var(--ease) }
+/* flag + state pill — NavChrome s.pill slot (top inset+92, centered) */
+.jn-flags { position: absolute; top: calc(92px + var(--sat)); left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none }
+.jn-flag, .jn-pill { background: var(--jn-glass); border-radius: 999px;
+  box-shadow: var(--jn-sh-float); padding: 9px 16px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-size: 13px; font-weight: 500; color: var(--ink2);
+  max-width: 92vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; animation: jn-fade .3s var(--ease) }
+.jn-pdot { width: 7px; height: 7px; border-radius: 4px; flex: none;
+  background: var(--b2); margin-right: 8px; animation: jn-breath 1.6s ease-in-out infinite }
+@keyframes jn-breath { 50% { opacity: .35 } }
+
+/* sim pace fab — web-only; floats just above the cluster */
+.jn-fab { min-width: 42px; height: 42px; border-radius: 999px; padding: 0 12px;
+  background: var(--jn-glass); box-shadow: var(--jn-sh-float);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink2);
+  transition: transform .2s var(--ease) }
 .jn-fab:active { transform: scale(.9) }
-.jn-fab.on { background: var(--accent-ink); color: #fff }
-.jn-speed { font-size: 12.5px; letter-spacing: -.02em }
+.jn-fab.on { background: var(--ink); color: var(--jn-glass) }
 
-.jn-hud { position: absolute; left: 0; right: 0; bottom: 0;
-  background: var(--paper); border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-  box-shadow: var(--sh-sheet); padding: 10px 18px calc(12px + var(--sab));
-  animation: rise .5s var(--ease) }
-.jn-flag { display: inline-block; font-size: 11px; font-weight: 500;
-  letter-spacing: .02em; color: var(--ink2); background: var(--surface2);
-  border-radius: 999px; padding: 4px 10px; margin-bottom: 8px }
-.jn-main { display: flex; align-items: baseline; gap: 12px }
-.jn-eta { display: flex; align-items: baseline; gap: 3px; min-width: 86px }
-.jn-eta-v { font-size: 34px; font-weight: 300; letter-spacing: -.03em; line-height: 1.05 }
-.jn-eta-u { font-size: 13px; color: var(--ink3) }
-.jn-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px }
-.jn-dist { font-size: 14.5px; font-weight: 500 }
-.jn-road { font-size: 12px; color: var(--ink3); overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap }
-.jn-sub { display: flex; align-items: baseline; gap: 10px; margin-top: 5px }
-.jn-dose { font-size: 12.5px; color: var(--ink3) }
-.jn-dose b { font-weight: 500; font-family: var(--mono); font-size: 13px; color: var(--ink) }
-.jn-dose i { font-style: normal }
-.jn-speedlive { margin-left: auto; font-family: var(--mono); font-size: 11.5px;
-  color: var(--ink2); background: var(--surface2); border-radius: 7px; padding: 3px 8px }
+/* bottom anchor — fabs sit above the cluster without height math */
+.jn-bottom { position: absolute; left: 14px; right: 14px;
+  bottom: calc(12px + var(--sab)) }
+.jn-fabs { position: absolute; right: 12px; bottom: calc(100% + 12px) }
 
-.jn-ctl { display: flex; gap: 8px; margin-top: 11px }
-.jn-ctl > button { flex: 1; border-radius: 13px; padding: 12px 8px;
-  font-size: 13.5px; font-weight: 500; box-shadow: var(--sh-card);
-  transition: transform .25s var(--ease) }
-.jn-ctl > button:active { transform: scale(.97) }
-.jn-end { background: var(--surface); color: var(--ink2) }
-.jn-gps { background: var(--accent); color: #fff }
+/* cluster — NavChrome s.cluster: glassDeep, r20, overflow hidden */
+.jn-cluster { background: var(--jn-glass);
+  border-radius: 20px; box-shadow: var(--jn-sh-float); overflow: hidden;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  animation: jn-rise .45s var(--ease) }
+@keyframes jn-rise { from { transform: translateY(18px); opacity: 0 } }
 
-.jn-confirm { margin-top: 11px; background: var(--surface); border-radius: 13px;
-  box-shadow: var(--sh-card); padding: 12px 13px; display: flex; align-items: center;
-  gap: 8px; font-size: 12.5px; color: var(--ink2) }
+.jn-prog { height: 3px; background: var(--jn-glass-soft) }
+.jn-prog i { display: block; height: 3px; background: var(--accent);
+  border-radius: 0 2px 2px 0; transition: width .5s linear }
+
+.jn-cells { display: flex; align-items: stretch }
+.jn-cell { flex: 1; padding: 10px 14px; min-width: 0 }
+.jn-cdiv { width: 1px; background: var(--ink10); margin: 10px 0; flex: none }
+.jn-cellh { display: flex; align-items: center }
+.jn-celll { font-size: 11px; color: var(--ink3); margin-left: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.jn-cellv { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 17px; font-weight: 500; margin-top: 4px; white-space: nowrap }
+.jn-btrack { position: relative; height: 3px; border-radius: 2px;
+  background: var(--surface2); margin-top: 7px }
+.jn-bseg { position: absolute; top: 0; height: 3px; border-radius: 2px; opacity: .5 }
+.jn-bmid { position: absolute; top: -1px; width: 3px; height: 5px;
+  border-radius: 1.5px; background: var(--ink) }
+.jn-cellb { font-family: var(--mono); font-size: 11px; color: var(--ink3);
+  margin-top: 5px; white-space: nowrap }
+.jn-cellb:empty { display: none }
+
+.jn-meta { border-top: 1px solid var(--ink10); padding: 8px 14px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--ink3); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+
+/* web-only ctl row — preview/gps switch sits inside the cluster */
+.jn-ctl { display: flex; justify-content: center; gap: 18px;
+  border-top: 1px solid var(--ink10); padding: 9px 14px }
+.jn-ctl > button { font-size: 13px; font-weight: 500; color: var(--accent-ink);
+  padding: 6px 10px; border-radius: 999px }
+.jn-ctl > button:active { background: var(--surface2) }
+
+.jn-confirm { border-top: 1px solid var(--ink10); padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--ink2) }
 .jn-confirm span { flex: 1; line-height: 1.35 }
-.jn-confirm button { flex: none; border-radius: 9px; padding: 8px 13px;
+.jn-confirm button { flex: none; border-radius: 999px; padding: 8px 14px;
   font-size: 13px; font-weight: 500 }
-.jn-yes { background: var(--accent); color: #fff }
+.jn-yes { background: var(--ink); color: var(--jn-glass) }
 .jn-no { background: var(--surface2); color: var(--ink2) }
 
-/* ── receipt ─────────────────────────────────────────────────────── */
-.jr { position: absolute; inset: 0; display: flex; flex-direction: column;
-  justify-content: flex-end; pointer-events: none }
+/* ── receipt — ReceiptSheet.tsx mirrored ─────────────────────────── */
+.jr { position: absolute; inset: 0; pointer-events: none }
 .jr > * { pointer-events: auto }
-.jr-sheet { background: var(--paper); border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-  box-shadow: var(--sh-sheet); max-height: 78%; display: flex; flex-direction: column;
-  transform: translateY(104%); transition: transform .5s var(--ease) }
-.jr-sheet.on { transform: none }
-.jr-grab { width: 38px; height: 4px; border-radius: 2px; background: var(--ink15);
-  margin: 9px auto 4px; flex: none }
-.jr-head { display: flex; align-items: center; gap: 10px; padding: 4px 18px 10px }
-.jr-title { flex: 1; font-size: 19px; font-weight: 500; letter-spacing: -.01em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.jr-x { width: 36px; height: 36px; border-radius: 50%; background: var(--surface);
-  box-shadow: var(--sh-card); display: flex; align-items: center; justify-content: center;
-  font-size: 15px; color: var(--ink2); flex: none }
-.jr-body { overflow-y: auto; padding: 2px 18px calc(18px + var(--sab)) }
-.jr-sim { font-size: 11px; font-weight: 500; color: var(--ink2); background: var(--surface2);
-  border-radius: 999px; padding: 4px 10px; display: inline-block; margin-bottom: 10px }
+.jr-sheet { position: absolute; left: 12px; right: 12px;
+  bottom: calc(14px + var(--sab)); background: var(--paper);
+  border-radius: 24px; box-shadow: var(--jn-sh-pop);
+  padding: 18px 18px 14px; max-height: calc(100% - 96px);
+  overflow-y: auto; transform: translateY(24px); opacity: 0;
+  transition: transform .28s var(--ease), opacity .28s var(--ease) }
+.jr-sheet.on { transform: none; opacity: 1 }
 
-.jr-stats { display: flex; gap: 8px; margin: 4px 0 14px }
-.jr-stats > div { flex: 1; background: var(--surface); border-radius: var(--r-row);
-  box-shadow: var(--sh-card); padding: 11px 12px }
-.jr-sv { font-size: 19px; font-weight: 300; letter-spacing: -.02em }
-.jr-sk { font-size: 10.5px; color: var(--ink3); margin-top: 2px; line-height: 1.3 }
+.jr-head { display: flex; align-items: flex-start; gap: 10px }
+.jr-title { flex: 1; min-width: 0; font-size: 22px; font-weight: 700;
+  letter-spacing: -.02em; line-height: 1.2 }
+.jr-chip { display: flex; align-items: center; gap: 5px; flex: none;
+  max-width: 55%; background: var(--surface2); border-radius: 999px;
+  padding: 6px 11px; font-size: 13px; font-weight: 500; color: var(--ink2) }
+.jr-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.jr-sub { font-size: 13px; color: var(--ink2); margin-top: 8px; line-height: 1.4 }
+.jr-simflag { display: inline-block; margin-top: 10px; font-size: 11px;
+  font-weight: 500; color: var(--ink2); background: var(--surface2);
+  border-radius: 999px; padding: 5px 11px }
 
-.jr-glabel { font-size: 11px; font-weight: 500; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--ink4); margin: 2px 0 6px }
+.jr-ebrow { display: flex; align-items: center; gap: 7px; margin-top: 16px;
+  font-size: 13px; font-weight: 500; color: var(--ink2); letter-spacing: .03em }
+.jr-hero { font-family: var(--font); font-variant-numeric: tabular-nums;
+  font-size: 44px; font-weight: 700; letter-spacing: -.03em;
+  line-height: 1.05; margin-top: 6px }
+.jr-est { font-size: 13px; font-weight: 500; color: var(--ink3);
+  letter-spacing: 0; margin-right: 6px }
+.jr-heronone { font-size: 14px; color: var(--ink2); margin-top: 8px;
+  line-height: 1.45 }
+.jr-bandtxt { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--ink3); margin-top: 2px }
+
+/* dose ruler — RN DoseScale: mid fill, lo/hi whiskers, worst ring */
+.jr-scale { display: flex; align-items: center; gap: 8px; margin-top: 10px }
+.jr-strack { position: relative; flex: 1; height: 6px; border-radius: 3px;
+  background: var(--ink10) }
+.jr-sfill { position: absolute; left: 0; top: 0; height: 6px; min-width: 2px;
+  border-radius: 2.5px; background: var(--b2);
+  transition: width .48s var(--ease) .18s }
+.jr-swhisk { position: absolute; top: -2px; width: 2.5px; height: 9px;
+  border-radius: 1px; background: var(--b3); transform: translateX(-1px) }
+.jr-sworst { position: absolute; top: -2.5px; width: 10px; height: 10px;
+  border-radius: 5px; border: 2px solid var(--ink2);
+  background: var(--paper); transform: translateX(-5px) }
+
+/* stat tiles — RN StatTile row */
+.jr-grid { display: flex; gap: 8px; margin-top: 18px }
+.jr-cell { flex: 1; min-width: 0; background: var(--surface2);
+  border-radius: 13px; padding: 11px 10px; text-align: center }
+.jr-cv { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 17px; font-weight: 500; white-space: nowrap }
+.jr-ck { font-size: 11px; color: var(--ink3); margin-top: 3px }
+
+/* detail footnotes — RN detailTxt lines */
+.jr-detail { display: flex; flex-direction: column; gap: 3px;
+  margin-top: 10px; padding: 0 2px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink3);
+  line-height: 1.5 }
+
+/* dose-over-ride card — DepartGraph bars */
+.jr-glabel { margin-top: 16px; font-size: 11px; font-weight: 500;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--ink4) }
 .jr-glabel span { text-transform: none; letter-spacing: 0; font-weight: 400 }
-.jr-graph { width: 100%; height: auto; display: block; background: var(--surface);
-  border-radius: var(--r-row); box-shadow: var(--sh-card); padding: 8px 6px 2px }
-.jr-ax { font-family: var(--mono); font-size: 8.5px; fill: var(--ink4) }
+.jr-g { margin-top: 8px }
+.jr-gbars { display: flex; align-items: flex-end }
+.jr-gcell { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end }
+.jr-gdot { width: 4px; height: 4px; border-radius: 2px;
+  background: var(--accent); margin-bottom: 1px }
+.jr-gbar { width: 58%; max-width: 11px; min-width: 4px; border-radius: 2px }
+.jr-gax { display: flex; justify-content: space-between; margin-top: 6px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink3) }
+.jr-gcap { display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 6px; font-size: 13px; color: var(--ink3) }
+.jr-gcapv { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; color: var(--ink2) }
 
-.jr-heavy { font-size: 13px; color: var(--ink2); margin: 12px 2px 0; line-height: 1.4 }
-.jr-verdict { margin: 10px 2px 0; display: flex; flex-direction: column; gap: 5px;
-  font-size: 13.5px; color: var(--ink); line-height: 1.45 }
-.jr-city { font-size: 12.5px; color: var(--ink2); margin: 9px 2px 0; line-height: 1.45 }
-.jr-city b { font-weight: 500; font-family: var(--mono) }
+.jr-heavy { margin-top: 12px; padding: 0 2px; font-size: 11px;
+  font-family: var(--mono); color: var(--ink3); line-height: 1.5 }
+.jr-ctx { display: flex; flex-direction: column; gap: 3px; margin-top: 8px;
+  padding: 0 2px; font-size: 11px; font-family: var(--mono);
+  color: var(--ink3); line-height: 1.5 }
+.jr-ctx b { font-weight: 600; color: var(--ink2) }
 
-.jr-cta { margin-top: 16px; padding-bottom: 2px }
-.jr-cta .btn-ghost { margin-top: 2px }
+.jr-foot { margin-top: 14px; border-top: 1px solid var(--ink10);
+  padding-top: 10px; font-size: 11px; color: var(--ink3); line-height: 1.5 }
 
-/* ── desktop ─────────────────────────────────────────────────────── */
+.jr-btns { display: flex; gap: 10px; margin-top: 14px }
+.jr-btns > button { border-radius: 999px; min-height: 48px;
+  font-size: 15px; font-weight: 600; transition: transform .2s var(--ease) }
+.jr-btns > button:active { transform: scale(.97) }
+.jr-done { flex: 1; background: var(--ink); color: var(--paper) }
+.jr-back { background: var(--surface2); color: var(--accent-ink); padding: 0 18px }
+
+/* ── desktop — same as app.css's floating-card convention ────────── */
 @media (min-width: 720px) {
-  .jn-dest { max-width: 340px; margin: 0 auto }
-  .jn-hud { left: auto; right: 18px; bottom: 18px; width: 400px;
-    border-radius: var(--r-card); padding: 14px 18px 16px }
-  .jn-fabs { right: 436px; bottom: 24px }
-  .jr-sheet { max-height: none; margin: 0 18px 18px auto; width: 430px;
-    border-radius: var(--r-card) }
+  .jn-banner { left: 18px; right: auto; width: 430px }
+  .jn-flags { left: 18px; right: auto; width: 430px }
+  .jn-bottom { left: auto; right: 18px; bottom: 18px; width: 400px }
+  .jr-sheet { left: auto; right: 18px; bottom: 18px; width: 430px;
+    max-height: calc(100% - 36px) }
 }
 @media (prefers-reduced-motion: reduce) {
-  .jn-hud { animation: none }
+  .jn-banner, .jn-cluster { animation: none }
+  .jr-sheet { transition: none; transform: none; opacity: 1 }
 }

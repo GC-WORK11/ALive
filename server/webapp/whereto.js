@@ -198,6 +198,8 @@ function renderOptions() {
       const o = state.sel || opts[0];
       A.show('journey', {
         option: o,
+        options: state.plan && state.plan.options,   // journey lane: worst/alt comparisons
+        field_age_s: state.plan && state.plan.field && state.plan.field.age_s,
         from: state.from, to: state.to,
         vehicle: state.vehicle,
       });
