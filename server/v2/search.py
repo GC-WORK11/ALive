@@ -211,7 +211,8 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
             r["match_rank"] = 3
             r["match"] = _MATCH_NAMES[3]
             r["_pen"] = 1
-    _coord_consistency(merged, pool if pool is not None else t1 + t2, qn)
+    _coord_consistency(merged, pool if pool is not None else t1 + t2,
+                       qn, anchors=anchors)
     _merge_honesty_rules(merged, qn)
     if anchors:
         # drop anchors the evidence pass just convicted: a planted or
@@ -255,6 +256,40 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
         non_anchor = [t for i, t in enumerate(qn.split())
                       if i not in covered]
         qset = set(qn.split())
+        # the anchor vouches the query's remaining tokens — but its
+        # CORE ones only: place-type words ('station', 'mandir') and
+        # bare digits are what the row IS, not a coverage claim. A
+        # digit/neutral-only leftover ('sector 50 gurgaon' -> '50')
+        # still counts as covered by literal sector rows.
+        cov_toks = [t for t in non_anchor if t not in _METRO_TOKS]
+        cov_core = [t for t in cov_toks
+                    if t not in _NEUTRAL_TOKS and not t.isdigit()
+                    and len(t) > 1]
+        # the query's type-intent — 'masjid'/'station'/'hospital' asks
+        # a kind of row as much as a name; when the named entity isn't
+        # at the anchor, same-kind rows there fill the answer honestly
+        intents = set()
+        # intent words an anchor consumed still carry the ask —
+        # 'madni masjid gokalpur' asks a masjid even after 'madni
+        # masjid' anchors: a 'Madni Clinic' can't fill it. Ward-kind
+        # anchors (gokalpur, noida) contribute nothing.
+        intent_toks = list(non_anchor) + [
+            t for a in anchors
+            if _a_kind(a) not in _LOC_KIND_EXACT
+            and _a_kind(a) not in _LOC_KIND_BARE
+            for t in normalize(a.get("name") or "").split()]
+        for t in intent_toks:
+            f = _INTENT_OF_TOK.get(t)
+            if f:
+                intents.add(f)
+        allowed = set()
+        for f in intents:
+            allowed.update(_INTENT_KINDS[f])
+        qrel = next((_REL_NAME_TOKS[t] for t in intent_toks
+                     if t in _REL_NAME_TOKS), None)
+        # a 'sector N <ward>' query vouches rows across the ward's
+        # whole numbered grid, not just the anchor's immediate walk
+        sector_q = _sector_claim(qn.split())
         # anchor coverage: the resolved locality vouches the tokens it
         # claimed, so a row covering every remaining token AND sitting
         # at the anchor IS the literal answer — 'Noor Masjid' beside
@@ -262,26 +297,92 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
         # shahdara', while the same-named Jama Masjid 6 km out stays a
         # partial. When anchors claim the whole query the literal
         # answer is a row named after one of them — 'Raja Nahar Singh
-        # metro station' IS the 'Raja Nahar Singh' anchor.
+        # metro station' IS the 'Raja Nahar Singh' anchor. When the
+        # named thing isn't there, same-kind rows at the anchor fill
+        # honestly (burari's temples for 'sheetla mata mandir burari').
         # Convicted rows stay convicted.
+        # a ward anchor's echo only leads when the query is really
+        # asking for the ward — when it also names a content entity
+        # ('madni masjid', 'sheetla mata mandir'), that entity's own
+        # namesake answers, and the ward's echo defers. An anchor
+        # resolved to a named thing (masjid/mandir/station/school —
+        # not a locality/bare kind) is the content anchor.
+        _LOC_ANCHOR_KINDS = _LOC_KIND_EXACT | frozenset(_LOC_KIND_BARE)
+        has_content_anchor = any(
+            _a_kind(a) not in _LOC_ANCHOR_KINDS for a in anchors)
         for r in merged:
             if r.get("suspect"):
                 continue
             rt = normalize(r.get("name") or "").split()
-            if not rt or (non_anchor and
-                          not _phrase_eq(non_anchor, rt)):
+            if not rt:
                 continue
             near = namesake = False
+            ns_ward = ns_content = False
+            aw = 0
+            litset = cov_core or cov_toks
             for a in anchors:
-                if _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) > 2500.0:
+                rad = _vouch_radius(a)
+                if sector_q:
+                    rad = max(rad, _SECTOR_WARD_MAX_M)
+                if _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) \
+                        > rad:
                     continue
                 near = True
+                aw = max(aw, _anchor_w(a))
                 atoks = normalize(a.get("name") or "").split()
                 acore = [t for t in atoks
                          if t not in _NEUTRAL_TOKS and not t.isdigit()]
-                if _phrase_eq(acore or atoks, rt):
+                # the anchor's namesake also answers the query's own
+                # leftover — 'Gurgaon Sector 44' is a namesake of the
+                # 'Gurgaon Sector' anchor but not of 'sector 50
+                # gurgaon'
+                if _phrase_eq(acore or atoks, rt) and (
+                        not cov_toks or _phrase_eq(cov_toks, rt)):
+                    if _a_kind(a) in _LOC_ANCHOR_KINDS:
+                        ns_ward = True
+                    else:
+                        ns_content = True
                     namesake = True
-            if not near or (not non_anchor and not namesake):
+            if not near:
+                # the named thing itself still answers from anywhere —
+                # 'Sheetla Mata Mandir, Gurgaon' stays honest for a
+                # gokalpur ask; a row that merely shares the kind
+                # ('Mata Sundari' 26 m from CP) was crowding out the
+                # ward's own rows
+                if litset and _phrase_eq(litset, rt):
+                    r["_far_literal"] = 1
+                    r["_far_lit_w"] = max(
+                        (_anchor_w(a) for a in anchors), default=1)
+                    # under a real ward anchor the far namesake is a
+                    # different place, not the exact answer — a r0
+                    # exact-prefix rank must not keep it above the
+                    # ward's own kind-consistent rows
+                    if r["_far_lit_w"] >= 2 \
+                            and r.get("match_rank", 3) < 1:
+                        r["match_rank"], r["match"] = 1, _MATCH_NAMES[1]
+                continue
+            covers = _phrase_eq(litset, rt) if litset else False
+            # the row whose name IS the leftover phrase ('Ecotech 2'
+            # for 'ecotech 2 greater noida') outranks rows that merely
+            # cover its tokens ('Ecotech Machineries')
+            literal = covers and all(
+                t in litset or t in _NEUTRAL_TOKS for t in rt)
+            ktier = _kind_tier(r.get("kind"), allowed, qrel) \
+                if allowed else -1
+            if cov_core:
+                # literal coverage at the anchor wins; same-kind rows
+                # fill when the named thing isn't there
+                if not covers and ktier < 0:
+                    continue
+            elif litset:
+                # leftover is digits/type-words only ('50' in 'sector
+                # 50 gurgaon', 'station' in 'patel nagar station
+                # delhi') — a row naming them at the anchor, the
+                # anchor's namesake, or the asked kind all vouch
+                if not (_phrase_eq(litset, rt) or namesake
+                        or ktier >= 0):
+                    continue
+            elif not (namesake or ktier >= 0):
                 continue
             # a row that claims a different place isn't this query's
             # literal answer — 'OYO … Kaushambi Metro Ghaziabad' beside
@@ -297,6 +398,12 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
                         and t not in _METRO_TOKS]
             if any(_geo_claim([t]) for t in leftover):
                 continue
+            # a kind-inconsistent row is the ward's echo, not the
+            # answer — 'Gokalpur (locality)' can't fill a masjid ask,
+            # the detailing shop named 'Infront Of Yatharth Hospital'
+            # isn't the hospital
+            if allowed and ktier < 0:
+                continue
             # a rank-1 row the anchor also vouches leads its class —
             # 'Iffco chowk metro station' beside the Iffco Chowk
             # anchor beats a nearer unnamed bay; the anchor's own
@@ -306,8 +413,66 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
             if r.get("match_rank", 3) >= 3:
                 r["match_rank"], r["match"] = 1, _MATCH_NAMES[1]
             r["_anchor_hit"] = 1
+            r["_anchor_w"] = aw
             if namesake:
                 r["_namesake"] = 1
+                # the ward's echo only answers a generic ward ask —
+                # when the query still names something the row
+                # doesn't ('ecotech 2', 'madni'), or when the query
+                # also named a content entity the ward's echo can't
+                # be ('madni masjid gokalpur' -> the masjid, not the
+                # 'Gokalpur' locality row), defer it below the
+                # literal and coverage hits
+                if (cov_core and not covers) or (
+                        ns_ward and not ns_content
+                        and has_content_anchor):
+                    r["_ns_defer"] = 1
+            elif literal:
+                r["_literal"] = 1
+            elif covers:
+                r["_covers"] = 1
+            if ktier >= 0:
+                r["_kind_hit"] = 1
+                r["_kind_tier"] = ktier
+    # a row covering more of the query's own content tokens is the
+    # better literal answer even when the engine ranked a one-token
+    # match first — 'Swami Vivekanand Inter State Bus Terminus'
+    # covers {swami,vivekanand} where 'ISBT Kashmiri Gate' covers
+    # nothing distinctive. The promo only breaks rank ties; the
+    # anchor-vouch order still decides between covered rows.
+    qcore = [t for t in qn.split()
+             if t not in _NEUTRAL_TOKS and not t.isdigit()
+             and len(t) > 1]
+    if len(qcore) >= 2 and merged:
+        covspans = set()
+        for a in anchors:
+            s, e = a.get("span") or (None, None)
+            if s is not None:
+                covspans.update(range(s, e))
+        # content tokens the anchor didn't claim are the actual ask —
+        # 'madni' in 'madni masjid sant nagar', 'ecotech' in 'ecotech
+        # 2 greater noida'. A ward echo covering only the anchor's own
+        # tokens ('sant nagar', 'greater noida') must not outrank the
+        # row answering them
+        qneed = [t for i, t in enumerate(qn.split())
+                 if i not in covspans and t in set(qcore)] or qcore
+        for r in merged:
+            rt = normalize(r.get("name") or "").split()
+            r["_core_cov"] = sum(
+                1 for t in qcore
+                if any(_tok_eq(t, x) for x in rt))
+            r["_need_cov"] = sum(
+                1 for t in qneed
+                if any(_tok_eq(t, x) for x in rt))
+        bestc = max(r.get("_core_cov", 0) for r in merged)
+        if bestc >= 2:
+            top_rank = min(r.get("match_rank", 3) for r in merged)
+            for r in merged:
+                if not r.get("suspect") \
+                        and r.get("_core_cov", 0) == bestc \
+                        and r.get("match_rank", 3) > top_rank:
+                    r["match_rank"] = top_rank
+                    r["match"] = _MATCH_NAMES[top_rank]
     merged.sort(key=lambda r: (r.get("match_rank", 3),
                                # honesty-penalized rows sit at the
                                # bottom of their match class
@@ -316,11 +481,45 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
                                # leads its class — kind-scan rows that
                                # only inferred the kind follow it
                                0 if r.get("_anchor_hit") else 1,
-                               # among vouched rows the anchor's own
-                               # namesake leads; among the rest,
-                               # near-anchor rows lead
+                               # coverage of the unanchored ask beats
+                               # wider-but-anchor-only coverage —
+                               # 'Madni Masjid' answers 'madni' while
+                               # the sant-nagar shops only echo the
+                               # ward
+                               -min(r.get("_need_cov", 0), 3),
+                               # wider coverage of the query's content
+                               # tokens breaks the remaining tie
+                               -min(r.get("_core_cov", 0), 3),
+                               # the query's own ward outranks a named
+                               # entity it also mentioned — gokalpur's
+                               # masjids beat the 'Madni Masjid' row
+                               # 5km out in Karawal. A ward echo the
+                               # query didn't ask for loses the
+                               # privilege — 'Gokalpur (locality)'
+                               # can't out-tier the 'Ram Mandir'
+                               0 if r.get("_anchor_w", 0) >= 2
+                               and not r.get("_ns_defer") else 1,
+                               # among vouched rows the literal answers
+                               # lead (anchor namesake or covering row),
+                               # kind-fill follows, then near rows
                                0 if r.get("_namesake")
-                               else r.get("_qual_flag", 1),
+                               and not r.get("_ns_defer")
+                               else (1 if r.get("_literal")
+                                     else (2 if r.get("_far_literal")
+                                           and r.get("_far_lit_w", 2)
+                                           < 2
+                                           else (2 + max(0, r.get("_kind_tier", 0))
+                                                 if r.get("_covers")
+                                                 else (4 + r.get("_kind_tier", 1)
+                                                       if r.get("_kind_hit")
+                                                       else (5 if r.get(
+                                                               "_far_literal")
+                                                             else (7 if r.get(
+                                                                     "_ns_defer")
+                                                                   else r.get(
+                                                                       "_qual_flag",
+                                                                       1)
+                                                                   + 8)))))),
                                # inside a match class the engine's own
                                # order is the ranking — it already
                                # applied alias knowledge, landmark
@@ -343,6 +542,9 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
         r.pop("_pen", None)
         r.pop("_anchor_hit", None)
         r.pop("_namesake", None)
+        r.pop("_ns_defer", None)
+        r.pop("_far_literal", None)
+        r.pop("_far_lit_w", None)
     return merged
 
 
@@ -404,26 +606,38 @@ async def search(q: str = Query(min_length=1, max_length=200),
         anchors = [a for a in presolved[0]
                    if _hav_m(blat, blon, a["lat"], a["lon"]) <= 40000]
         presolved = (anchors, presolved[1])
+        # the ward's own namesakes always join — 'Patel Nagar metro
+        # station' and 'Sarai Rohilla Railway Station' exist inside
+        # the anchor's radius but lose the engine's user-bias cut to
+        # noisier city rows
+        t1_rows.extend(await _anchor_namesakes(anchors, blat, blon, qn))
+    def _fire_query(local_rows, anchors):
+        """shared trigger for the deep path — local tiers thin, the
+        resolved locality unmentioned, or an anchor the top rows never
+        came near (the engine answered a different ward)."""
+        fire = _local_thin(local_rows)
+        visible = sorted(
+            local_rows,
+            key=lambda r: (r.get("match_rank")
+                           if r.get("match_rank") is not None else 9,
+                           r.get("distance_m")
+                           if r.get("distance_m") is not None else 9e9))
+        if not fire:
+            # a resolvable locality the top rows never mention means the
+            # engine answered a different ward — that is thin too.
+            # Judge the top rows the user would see, not raw engine order.
+            fire = _locality_uncovered(qn, visible, anchors)
+        if not fire and anchors:
+            fire = _anchor_gap(qn, visible[:5], anchors)
+        return fire
+
     if limit > 0 and _overpass_enabled():
         local_rows = t1_rows + t2_rows
         for r in local_rows:   # distance_m is merged in later; the thin
             if r.get("distance_m") is None:  # check needs it now
                 r["distance_m"] = round(
                     _hav_m(blat, blon, r["lat"], r["lon"]))
-        fire = _local_thin(local_rows)
-        if not fire:
-            # a resolvable locality the top rows never mention means the
-            # engine answered a different ward — that is thin too.
-            # Judge the top rows the user would see, not raw engine order.
-            visible = sorted(
-                local_rows,
-                key=lambda r: (r.get("match_rank")
-                               if r.get("match_rank") is not None else 9,
-                               r.get("distance_m")
-                               if r.get("distance_m") is not None
-                               else 9e9))
-            fire = _locality_uncovered(qn, visible, anchors)
-        if fire:
+        if _fire_query(local_rows, anchors):
             t3_start = time.perf_counter()
             t3_rows, gaz_rows, t3_status = await _overpass_arm(
                 q, qn, blat, blon, limit, presolved)
@@ -431,6 +645,17 @@ async def search(q: str = Query(min_length=1, max_length=200),
             t3_ms = (time.perf_counter() - t3_start) * 1000.0
     elif limit > 0:
         t3_status = "off"
+        # the live arm is off — the anchor-bias engine requeries still
+        # run when the local tiers leave a resolved ward unanswered
+        local_rows = t1_rows + t2_rows
+        for r in local_rows:
+            if r.get("distance_m") is None:
+                r["distance_m"] = round(
+                    _hav_m(blat, blon, r["lat"], r["lon"]))
+        if _fire_query(local_rows, anchors):
+            parsed = _deep_parse(qn, presolved[0], presolved[1])
+            t1_rows.extend(await _anchor_requeries(
+                qn, parsed, presolved[0], blat, blon))
     for i, r in enumerate(t3_rows):
         r["_t1_pos"] = len(t1_rows) + i
 
@@ -580,12 +805,12 @@ _POI_TYPES = {
 # ward name, not 'Delhi Shahdara Junction railway station')
 _LOC_KIND_EXACT = frozenset((
     "locality", "neighbourhood", "neighborhood", "suburb", "macrohood",
-    "district", "village", "town", "city", "quarter", "hamlet", "place",
+    "district", "village", "town", "city", "quarter", "hamlet",
     "boundary", "administrative", "sector", "colony", "enclave",
     "block", "extension", "ward", "panchayat"))
 _LOC_KIND_BARE = frozenset((
     "station", "train_station", "metro", "public_transport",
-    "bus_station", "substation", "marketplace"))
+    "bus_station", "substation", "marketplace", "place"))
 _LOC_KIND_STRIP = ("overture:", "osm:")
 _LOC_KIND_BARE_SUFFIX = ("place_of_worship",)
 
@@ -627,6 +852,48 @@ def _span_phrase_hit(phrase_toks: list, row_toks: set) -> bool:
     return True
 
 
+def _phrase_index_hits(ptoks: list) -> list:
+    """Every index row whose name covers this span's phrase — the
+    same-name evidence pool for cluster anchoring. Capped via the
+    rarest-token posting list so common spans stay cheap."""
+    post = _all_postings()
+    lists = [post.get(t) for t in ptoks]
+    lists = [l for l in lists if l]
+    if not lists:
+        return []
+    rare = min(lists, key=len)
+    if len(rare) > 3000:
+        return []
+    return [r for r in rare
+            if _span_phrase_hit(ptoks, set((r.get("norm") or "").split()))]
+
+
+def _cluster_cand(ptoks: list, hits: list, cands: list):
+    """Synthesize a locality anchor from the densest same-name cluster —
+    'Sant Nagar' rows cluster ~15-deep at Burari with no loc-kind row;
+    the cluster centroid anchors better than a lone literal row in
+    another ward. Returns None when a real candidate already sits
+    inside the densest cluster."""
+    if len(hits) < 3:
+        return None
+    buckets = {}
+    for h in hits:
+        key = (round(h["lat"] * 50), round(h["lon"] * 50))
+        buckets.setdefault(key, []).append(h)
+    nb = max(buckets.values(), key=len)
+    if len(nb) < 3:
+        return None
+    clat = sum(o["lat"] for o in nb) / len(nb)
+    clon = sum(o["lon"] for o in nb) / len(nb)
+    if any(_hav_m(clat, clon, c["lat"], c["lon"]) <= 1500
+           for c in cands):
+        return None   # an existing candidate already claims the cluster
+    name = " ".join(ptoks).title()
+    return {"name": name, "lat": clat, "lon": clon,
+            "kind": "locality", "pop": 0.85,
+            "norm": " ".join(ptoks), "_support": len(nb)}
+
+
 def _locality_anchors(qn: str, blat: float, blon: float,
                       max_anchors: int = 3) -> tuple:
     """Resolve the query's trailing locality phrases to index rows.
@@ -665,9 +932,38 @@ def _locality_anchors(qn: str, blat: float, blon: float,
                             or ptoks[0] in _POI_TYPES
                             or ptoks[0] in _NEUTRAL_TOKS):
                 continue
+            # numbered spans are entity ids, not place names — 'sector
+            # 16', '2 greater noida', 'ecotech 2' claim a plot, never
+            # the ward
+            if any(t.isdigit() for t in ptoks):
+                continue
+            # a 1-token span that is a strict PREFIX of the query's
+            # content phrase is a name fragment, not a ward —
+            # 'swami' inside 'swami vivekanand isbt' is a person's
+            # name; the 'Swami' locality would hijack the entity's
+            # own answer. A longer span ('madni masjid' before 'sant
+            # nagar') is a named entity of its own — let it anchor.
+            if ln == 1 and j < n and toks[j] not in _NEUTRAL_TOKS \
+                    and not toks[j].isdigit() and len(toks[j]) > 1 \
+                    and toks[j] not in _DEEP_STOP \
+                    and toks[j] not in _POI_TYPES:
+                continue
             pnorm = " ".join(ptoks)
             cands = [r for r in rows
-                     if _span_phrase_hit(ptoks, set(r["norm"].split()))]
+                     if _span_phrase_hit(ptoks, set(r["norm"].split()))
+                     # a row carrying a digit the span never said is a
+                     # different place — 'Sector 62, Noida' must not
+                     # claim the 'noida sector' span
+                     and not any(t.isdigit() and t not in ptoks
+                                 for t in r["norm"].split())
+                     # and every load-bearing token in the row's own
+                     # name must be one the span said — 'Swami
+                     # Shraddhanand Colony' is not 'swami', 'Setu
+                     # School Noida' is not 'noida'
+                     and all(any(_tok_eq(t, p) for p in ptoks)
+                             for t in r["norm"].split()
+                             if t not in _NEUTRAL_TOKS
+                             and not t.isdigit())]
             if cands:
                 # rows literally named the phrase beat rows that only
                 # carry it in their area ('Shahdara' > 'X ... Shahdara')
@@ -676,7 +972,23 @@ def _locality_anchors(qn: str, blat: float, blon: float,
                                    -r["pop"],
                                    _hav_m(blat, blon, r["lat"],
                                           r["lon"])))
-                spans.append((i, j, cands[:6]))
+                cands = cands[:6]
+                # same-name clusters across the whole index are
+                # locality evidence too — 'Sant Nagar' has no loc-kind
+                # row in Burari but ~15 same-named rows cluster there;
+                # a lone literal row elsewhere must not outrank the
+                # densest real cluster. Each candidate's _support =
+                # same-phrase index rows within 1.5km of it.
+                hits = _phrase_index_hits(ptoks)
+                for c in cands:
+                    c["_support"] = sum(
+                        1 for h in hits
+                        if _hav_m(c["lat"], c["lon"],
+                                  h["lat"], h["lon"]) <= 1500)
+                cl = _cluster_cand(ptoks, hits, cands)
+                if cl is not None:
+                    cands.append(cl)
+                spans.append((i, j, cands))
     # pick non-overlapping spans, longest first then best-pop
     spans.sort(key=lambda s: (-(s[1] - s[0]),
                               -s[2][0]["pop"],
@@ -698,25 +1010,43 @@ def _locality_anchors(qn: str, blat: float, blon: float,
     # stays unresolved when nothing is close — its tokens then fall
     # through to name probes around the real anchors instead of
     # confidently answering a different ward.
-    def supports(row, cands):
-        return sum(1 for o in cands
-                   if _hav_m(row["lat"], row["lon"],
-                             o["lat"], o["lon"]) <= 2500)
-
     order = sorted(
         chosen,
-        key=lambda s: (-supports(s[2][0], s[2]), -s[2][0]["pop"],
-                       _hav_m(blat, blon, s[2][0]["lat"], s[2][0]["lon"])))
+        key=lambda s: (-max(r.get("_support", 0) for r in s[2]),
+                       -s[2][0]["pop"],
+                       _hav_m(blat, blon, s[2][0]["lat"],
+                              s[2][0]["lon"])))
     anchors = []
     for i, j, cands in order:
         if not anchors:
-            pick = cands[0]
+            # the densest same-name evidence anchors first — a lone
+            # literal row ('Sant Nagar' at Malviya Nagar) loses to the
+            # real Burari cluster; a literal row inside its own dense
+            # cluster keeps the win over the synthetic centroid
+            pick = max(
+                cands,
+                key=lambda r: (r.get("_support", 0),
+                               1 if r["norm"] == " ".join(toks[i:j])
+                               else 0,
+                               r["pop"],
+                               -_hav_m(blat, blon,
+                                       r["lat"], r["lon"])))
         else:
             cx = sum(a["lat"] for a in anchors) / len(anchors)
             cy = sum(a["lon"] for a in anchors) / len(anchors)
             pick = min(cands, key=lambda r: _hav_m(
                 r["lat"], r["lon"], cx, cy))
-            if _hav_m(pick["lat"], pick["lon"], cx, cy) > 7500:
+            # wards sit far apart by nature — a locality-family pick
+            # the cluster missed must not be dropped for being 20km
+            # out ('sheetla mata mandir gokalpur': the Sheetla CP
+            # anchor resolves first, Gokalpur's own ward is 9km east
+            # and must still join). POI-kind anchors stay tight.
+            pk = (pick.get("kind") or "").lower()
+            for p in _LOC_KIND_STRIP:
+                if pk.startswith(p):
+                    pk = pk[len(p):]
+            gate = 40000.0 if pk in _LOC_KIND_EXACT else 7500.0
+            if _hav_m(pick["lat"], pick["lon"], cx, cy) > gate:
                 continue  # plausible name, wrong ward — let it probe
         anchors.append({"name": pick["name"], "lat": pick["lat"],
                         "lon": pick["lon"], "kind": pick.get("kind"),
@@ -789,6 +1119,207 @@ _REL_KIND_MAP = {
 
 _CONSIST_RADIUS_M = 3200.0     # further than this = 'elsewhere'
 _SAME_PIN_M = 150.0            # rows this close can't vouch each other
+
+# an anchor's ward radius scales with the kind of place it is — a
+# locality covers its own ~3km, a city anchor sweeps its whole ward
+# ('qrg hospital faridabad' reaches QRG 8km from the Faridabad
+# centroid; 'shiv nadar school noida' reaches 12km across Noida)
+_VOUCH_LOCAL_M = 4500.0
+_VOUCH_DIST_M = 10000.0
+_VOUCH_CITY_M = 18000.0
+# sector-sprawl radius: a 'sector N <city>' ward reaches the city's
+# numbered grid end to end — Noida's Sec-150 sits ~21km from the Sec-62
+# centroid; the same bound convicts a same-ward sector row pinned
+# outside it (the Mayur-Vihar 'gurgaon sector' batch ~31km)
+_SECTOR_WARD_MAX_M = 24000.0
+_CITY_ANCHOR_KINDS = ("city", "town")
+_DIST_ANCHOR_KINDS = ("district", "administrative", "suburb", "borough")
+
+
+def _a_kind(a: dict) -> str:
+    k = (a.get("kind") or "").lower()
+    for p in _LOC_KIND_STRIP:
+        if k.startswith(p):
+            k = k[len(p):]
+    return k
+
+
+def _vouch_radius(a: dict) -> float:
+    k = _a_kind(a)
+    if k in _CITY_ANCHOR_KINDS:
+        return _VOUCH_CITY_M
+    if k in _DIST_ANCHOR_KINDS:
+        return _VOUCH_DIST_M
+    return _VOUCH_LOCAL_M
+
+
+def _anchor_w(a: dict) -> int:
+    """2 for a locality-family anchor (the query's ward), 1 for a
+    POI-kind anchor (a named entity the query also mentioned — a
+    'Madni Masjid' anchor must not outrank rows beside the 'gokalpur'
+    it was asked inside of)."""
+    return 2 if _a_kind(a) in _LOC_KIND_EXACT else 1
+
+
+# query type-token -> the row-kind family it asks for. When the named
+# entity doesn't exist at the anchor, same-kind rows there are the
+# honest answer ('sheetla mata mandir burari' -> burari's temples,
+# not the CP sheetla-name cluster 14km off)
+_INTENT_KINDS = {
+    "worship": ("worship", "religious", "mandir", "masjid", "mosque",
+                "gurudwara", "gurdwara", "church", "chapel", "temple",
+                "dargah", "shrine", "spiritual"),
+    "edu": ("school", "learning", "education", "preschool",
+            "kindergarten", "university", "college", "campus",
+            "academ", "institute", "vidyalaya", "coaching"),
+    "med": ("hospital", "clinic", "medical", "health", "doctors",
+            "outpatient", "dispensary", "diagnostics", "nursing"),
+    "transit": ("station", "metro", "rail", "halt", "platform",
+                "stop", "bus", "terminal", "transit", "subway",
+                "depot", "junction", "airport", "ferry"),
+    "stay": ("hotel", "lodging", "resort", "hostel", "guest",
+             "accommodation"),
+    "park": ("park", "garden", "playground"),
+    "shop": ("mall", "market", "shopping", "bazaar", "store", "mart"),
+}
+_INTENT_OF_TOK = {
+    "mandir": "worship", "temple": "worship", "masjid": "worship",
+    "mosque": "worship", "dargah": "worship", "gurudwara": "worship",
+    "gurdwara": "worship", "church": "worship", "chapel": "worship",
+    "school": "edu", "college": "edu", "university": "edu",
+    "institute": "edu", "vidyalaya": "edu", "academy": "edu",
+    "hospital": "med", "clinic": "med", "dispensary": "med",
+    "nursing": "med",
+    "station": "transit", "isbt": "transit", "metro": "transit",
+    "railway": "transit", "train": "transit", "bus": "transit",
+    "stop": "transit", "stand": "transit", "terminal": "transit",
+    "terminus": "transit", "halt": "transit", "junction": "transit",
+    "depot": "transit", "adda": "transit", "airport": "transit",
+    "hotel": "stay", "lodge": "stay", "resort": "stay",
+    "guest": "stay",
+    "park": "park", "garden": "park",
+    "mall": "shop", "market": "shop", "bazaar": "shop",
+    "bazar": "shop", "mandi": "shop",
+}
+
+
+def _kind_tier(kind: str, allowed: set, qrel) -> int:
+    """Row-kind vs query intent: -1 not of the asked family; 0 matching
+    (or religion-agnostic); 1 right family but a different religion —
+    'Brahamdev Mandir' is still a fair NEAR for 'gurudwara gokalpur',
+    just after any gurudwara itself."""
+    k = (kind or "").lower()
+    for p in _LOC_KIND_STRIP:
+        if k.startswith(p):
+            k = k[len(p):]
+    if not any(s in k for s in allowed):
+        return -1
+    if qrel:
+        krel = _REL_KIND_MAP.get(k)
+        if krel and krel != qrel:
+            return 1
+    return 0
+
+
+# 'station'/'isbt' ask transit; a fuel-sense 'station' never answers —
+# 'M/S Gee Dee Filling Station' isn't the sarai rohilla stop. A name
+# carrying real transit words is spared; a fuel-intent query
+# ('petrol pump noida') demotes nothing.
+_TRANSIT_Q_TOKS = frozenset(("station", "isbt", "metro", "railway",
+                           "train", "halt", "junction", "terminus",
+                           "terminal"))
+_FUEL_Q_TOKS = frozenset(("petrol", "fuel", "gas", "filling", "cng",
+                         "diesel", "pump", "charging"))
+_FUEL_NAME_TOKS = frozenset(("filling", "petrol", "petroleum",
+                            "diesel", "cng", "fuel", "gasoline",
+                            "pump", "charging", "refuel"))
+_FUEL_KINDS = ("gas_station", "fuel", "petrol")
+_TRANSIT_NAME_TOKS = frozenset(("railway", "rail", "metro", "train",
+                               "isbt", "bus", "junction", "terminus"))
+
+# a digit carried by the query can only anchor a row when it sits in
+# numbering context — beside a numbering word or a token the query
+# also named. '150 Shanti Lane' is a house number, not 'sector 150
+# noida'; '3 Idiots Chinese Adda' isn't 'chi 3'; 'Bistro 37' isn't
+# 'greater noida sector 37'
+_NUM_CTX_TOKS = frozenset("""
+sector sec block phase pocket part stage zone gate no number plot
+flat shop unit apt pkt ward type storey floor bay pier level metro
+station terminal isbt halt platform coach room locker stall
+""".split())
+
+# 'sector N' names assert membership in a ward's numbered-sector grid:
+# a row far from every same-ward sibling is mis-pinned ('Hilton
+# Gurgaon Sector 50' 24km from the gurgaon grid) or foreign to the
+# queried ward (bare 'Sector 17' Rohini rows for 'sector 17
+# faridabad')
+_SECTOR_GRID_MAX_M = 14000.0
+_GRID_SIB_M = 12000.0
+_SECTOR_WARD_TOKS = frozenset((
+    "noida", "gurgaon", "gurugram", "faridabad", "ghaziabad", "delhi",
+    "rohini", "dwarka", "vasundhara", "indirapuram", "vaishali",
+    "kaushambi", "greater", "extension", "bahadurgarh", "sonipat",
+    "meerut", "rohtak", "ballabgarh", "palwal", "rewari", "panipat"))
+
+
+def _sector_claim(rtoks: list) -> bool:
+    for i, t in enumerate(rtoks):
+        if t in ("sector", "sec") and i + 1 < len(rtoks) \
+                and rtoks[i + 1].isdigit():
+            return True
+        if t.isdigit() and i + 1 < len(rtoks) \
+                and rtoks[i + 1] in ("sector", "sec"):
+            return True
+    return False
+
+
+_sec_state: Optional[list] = None
+
+
+def _sector_rows() -> list:
+    global _sec_state
+    if _sec_state is None:
+        _sec_state = [r for r in GAZ._load()
+                      if _sector_claim((r.get("norm") or "").split())]
+    return _sec_state
+
+
+def _sector_grid_off(r: dict, rtoks: list, anchors: list) -> bool:
+    """Convict a 'sector N' row that sits >14km from every sibling
+    sector row of its own ward (or, for wardless names, of the ward
+    this query anchored)."""
+    ward = frozenset(t for t in rtoks if t in _SECTOR_WARD_TOKS)
+    # the mis-pinned batches travel together — Mayur Vihar holds a
+    # whole cluster of 'gurgaon sector' rows, so siblings vouch for
+    # each other and the grid check passes. The anchor is the ward's
+    # own authority instead: a same-ward sector row past the ward's
+    # numbered-grid extent from it is off-grid.
+    if ward:
+        for a in anchors or []:
+            if _anchor_w(a) < 2:
+                continue
+            acore = frozenset(
+                t for t in normalize(a.get("name") or "").split()
+                if t not in _NEUTRAL_TOKS and not t.isdigit())
+            if ward & acore and _hav_m(
+                    r["lat"], r["lon"], a["lat"], a["lon"]) \
+                    > _SECTOR_WARD_MAX_M:
+                return True
+    srows = _sector_rows()
+    if ward:
+        sib = [s for s in srows if s is not r and frozenset(
+            t for t in s["norm"].split() if t in _SECTOR_WARD_TOKS)
+            == ward]
+    elif anchors:
+        sib = [s for s in srows
+               if any(_hav_m(s["lat"], s["lon"], a["lat"], a["lon"])
+                      <= _GRID_SIB_M for a in anchors)]
+    else:
+        return False
+    if len(sib) < 3:
+        return False
+    return min(_hav_m(r["lat"], r["lon"], s["lat"], s["lon"])
+               for s in sib) > _SECTOR_GRID_MAX_M
 
 
 def _dl_le1(a: str, b: str) -> bool:
@@ -963,7 +1494,8 @@ def _anchor_kind(kind: str, ntoks: int) -> bool:
         and ntoks <= 3)
 
 
-def _coord_consistency(merged: list, pool: list, qn: str) -> None:
+def _coord_consistency(merged: list, pool: list, qn: str,
+                       anchors: Optional[list] = None) -> None:
     """Demote rows whose name-claims contradict index evidence:
     - P1 (non-anchor rows only): >=2 anchor-kind rows carry the claim
       and ALL sit >3.2km away — 'Himachal volvo majnu ka tilla' at the
@@ -997,6 +1529,12 @@ def _coord_consistency(merged: list, pool: list, qn: str) -> None:
         suspect = None
         for claim, head in _row_claims(rtoks):
             if not head and named_target:
+                continue
+            # a claim the query itself makes can't be contradicted —
+            # 'yatharth hospital noida' asks for Yatharth rows; the
+            # brand's sites legitimately sit spread across NCR and
+            # their scatter is not a bad-pin signal
+            if all(t in qtoks for t in claim):
                 continue
             if not _geo_claim(claim):
                 continue  # identity name, not a place reference
@@ -1048,6 +1586,16 @@ def _coord_consistency(merged: list, pool: list, qn: str) -> None:
             r["match"] = _MATCH_NAMES[3]
             r["suspect"] = suspect
             r["_pen"] = 1
+        # 'sector N' names assert membership in a ward's numbered grid —
+        # 'Hilton Gurgaon Sector 50' pinned 24km from every gurgaon
+        # sector row is mis-coord evidence; a bare 'Sector 17' Rohini
+        # row is just the wrong ward for 'sector 17 faridabad'
+        if not suspect and _sector_claim(rtoks) \
+                and _sector_grid_off(r, rtoks, anchors or []):
+            r["match_rank"] = 3
+            r["match"] = _MATCH_NAMES[3]
+            r["suspect"] = "sector-grid-off"
+            r["_pen"] = 1
 
 
 def _merge_honesty_rules(merged: list, qn: str) -> None:
@@ -1091,6 +1639,45 @@ def _merge_honesty_rules(merged: list, qn: str) -> None:
             r["match_rank"], r["match"], r["suspect"] = \
                 3, _MATCH_NAMES[3], "class-mismatch"
             r["_pen"] = 1
+    # a fuel-sense 'station' never answers a transit query — 'M/S Gee
+    # Dee Filling Station' isn't the sarai rohilla stop
+    if qtoks and any(t in _TRANSIT_Q_TOKS for t in qtoks) \
+            and not any(t in _FUEL_Q_TOKS for t in qtoks):
+        for r in merged:
+            if r.get("match_rank", 3) >= 3:
+                continue
+            rt = normalize(r.get("name") or "").split()
+            k = (r.get("kind") or "").lower()
+            fuelish = bool(set(rt) & _FUEL_NAME_TOKS) \
+                or any(f in k for f in _FUEL_KINDS)
+            if fuelish and not set(rt) & _TRANSIT_NAME_TOKS:
+                r["match_rank"], r["match"], r["suspect"] = \
+                    3, _MATCH_NAMES[3], "fuel-not-transit"
+                r["_pen"] = 1
+    # a bare digit anchors a row only in numbering context — beside a
+    # numbering word ('sector', 'no', 'gate') or a token the query
+    # also named. '150 Shanti Lane' is a house number, not 'sector
+    # 150'; '3 Idiots Chinese Adda' isn't 'chi 3'
+    if qdig and qreal:
+        for r in merged:
+            if r.get("match_rank", 3) >= 3 or r.get("suspect"):
+                continue
+            rt = normalize(r.get("name") or "").split()
+            bad = False
+            for i, t in enumerate(rt):
+                if not t.isdigit() or t not in qdig:
+                    continue
+                ctx = ([rt[i - 1]] if i else []) + \
+                    ([rt[i + 1]] if i + 1 < len(rt) else [])
+                if not any(c in _NUM_CTX_TOKS
+                           or any(_tok_eq(c, q) for q in qreal)
+                           for c in ctx):
+                    bad = True
+                    break
+            if bad:
+                r["match_rank"], r["match"], r["suspect"] = \
+                    3, _MATCH_NAMES[3], "bare-number"
+                r["_pen"] = 1
 
 
 def _anchor_corrupt(a: dict, pool: list) -> bool:
@@ -1109,12 +1696,23 @@ def _anchor_corrupt(a: dict, pool: list) -> bool:
         rt = normalize(r.get("name") or "").split()
         if _phrase_eq(acore or atoks, rt):
             hits.append(r)
-    if any(r.get("suspect") and
-           _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) <= 4000
-           for r in hits):
+    # a convicted row pinning AT the anchor only damns the pick when
+    # the row IS the anchor's own name — the planted 'Devli' is its
+    # anchor. Any other convicted namesake nearby (a mis-coord 'noida'
+    # shop) doesn't make the city a fake pick.
+    if any(r.get("suspect")
+           and _phrase_eq(rt, acore or atoks)
+           and _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) <= 4000
+           for r in hits
+           for rt in [normalize(r.get("name") or "").split()]):
         return True
+    # a real ward's namesakes legitimately span its whole grid —
+    # 'Noida' rows sit 5-15km across the city anchor's own vouch
+    # radius; only a pick with zero same-phrase rows in its reach is
+    # the far-duplicate the check was built for
     return bool(hits) and not any(
-        _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) <= 4000
+        _hav_m(r["lat"], r["lon"], a["lat"], a["lon"])
+        <= _vouch_radius(a)
         for r in hits)
 
 
@@ -1413,6 +2011,157 @@ def _live_rows(elements: list, parsed: dict, blat: float, blon: float,
     return rows
 
 
+async def _anchor_namesakes(anchors: list, blat: float, blon: float,
+                      qn: str) -> list:
+    """rows that literally carry a locality anchor's own name inside
+    its radius — the resolved ward's namesakes ('Patel Nagar metro
+    station', 'Sarai Rohilla Railway Station') that the engine's
+    distance-biased cut never surfaced. Skipped for city/district
+    anchors: their name rides on every row in the ward."""
+    if not anchors:
+        return []
+    out = []
+    for a in anchors:
+        if _a_kind(a) in _CITY_ANCHOR_KINDS + _DIST_ANCHOR_KINDS:
+            continue
+        atoks = normalize(a.get("name") or "").split()
+        acore = [t for t in atoks
+                 if t not in _NEUTRAL_TOKS and not t.isdigit()]
+        if not acore:
+            continue
+        rad = _vouch_radius(a)
+        near = [h for h in _phrase_index_hits(acore)
+                if _hav_m(h["lat"], h["lon"], a["lat"], a["lon"]) <= rad]
+        near.sort(key=lambda h: _hav_m(
+            h["lat"], h["lon"], a["lat"], a["lon"]))
+        for h in near[:12]:
+            if any(o["norm"] == h["norm"] and _hav_m(
+                    h["lat"], h["lon"], o["lat"], o["lon"]) < 1
+                   for o in out):
+                continue
+            h = dict(h)
+            h["distance_m"] = round(
+                _hav_m(blat, blon, h["lat"], h["lon"]))
+            out.append(h)
+    for i, h in enumerate(out):
+        h["_t1_pos"] = 10_000 + i
+    _tag_match(out, qn)
+    return out
+
+
+async def _anchor_requeries(qn: str, parsed: dict, anchors: list,
+                            blat: float, blon: float,
+                            deadline: float = None) -> list:
+    """Gazetteer requery at the ANCHOR bias — the same engine the
+    cascade uses, asked about the locality rather than the user:
+    'hanuman mandir' near ashok nagar -> place_of_worship rows the
+    user-bias query ranked out; 'qrg' near faridabad -> the QRG rows
+    that never made the CP-bias top-8."""
+    loop = asyncio.get_running_loop()
+    gaz_rows = []
+    requeries = []
+    # the query itself at the anchor's bias — the engine's user-bias
+    # cut is what starved 'Patel Nagar metro station' and the sarai
+    # rohilla rows; re-asked about the ward, they surface
+    for a in anchors or []:
+        requeries.append((qn, a["lat"], a["lon"]))
+    for p in parsed["pois"]:
+        phrase = " ".join(p["ctx"] + [p["token"]])
+        for a in anchors or [{"lat": blat, "lon": blon}]:
+            requeries.append((phrase, a["lat"], a["lon"]))
+    if parsed["name_tokens"] and anchors:
+        for a in anchors:
+            requeries.append((" ".join(parsed["name_tokens"]),
+                              a["lat"], a["lon"]))
+    for phrase, alat, alon in requeries[:6]:
+        try:
+            fut = loop.run_in_executor(
+                _T1_EXEC, _t1, phrase, alat, alon, 4)
+            if deadline is None:
+                out = await fut
+            else:
+                # the arm races mirrors against a fuse — a slow
+                # engine requery (long query, fat postings) must not
+                # eat the window; the underlying thread finishes
+                # unattended and its rows are simply dropped
+                out = await asyncio.wait_for(
+                    fut, max(0.05, deadline - time.monotonic()))
+        except Exception:
+            continue
+        for r in out or []:
+            r["distance_m"] = round(
+                _hav_m(blat, blon, r["lat"], r["lon"]))
+            r["_t1_pos"] = 10_000 + len(gaz_rows)
+            gaz_rows.append(r)
+    _tag_match(gaz_rows, qn)
+    return gaz_rows
+
+
+def _anchor_gap(qn: str, top_rows: list, anchors: list) -> bool:
+    """Anchors resolved but the engine never answered them: some
+    uncovered token has no kind-consistent row near the anchor
+    ('felix hospital noida' — the 'Felix Hospital Polyclinic' in Delhi
+    covers 'felix' but isn't the ward's hospital), or an anchor has
+    no answering row at all ('patel nagar station delhi' -> Kamla
+    Nagar rows 5km off the Patel Nagar anchor)."""
+    covered = set()
+    for a in anchors:
+        s, e = a.get("span") or (None, None)
+        if s is not None:
+            covered.update(range(s, e))
+    non_anchor = [t for i, t in enumerate(qn.split())
+                  if i not in covered]
+    need = [t for t in non_anchor
+            if (t not in _NEUTRAL_TOKS and len(t) > 1) or t.isdigit()]
+    intents = set()
+    for t in non_anchor:
+        f = _INTENT_OF_TOK.get(t)
+        if f:
+            intents.add(f)
+    allowed = set()
+    for f in intents:
+        allowed.update(_INTENT_KINDS[f])
+    qrel = next((_REL_NAME_TOKS[t] for t in non_anchor
+                 if t in _REL_NAME_TOKS), None)
+    anames = {normalize(a.get("name") or "") for a in anchors}
+    sector_q = _sector_claim(qn.split())
+    for a in anchors:
+        atoks = normalize(a.get("name") or "").split()
+        acore = [t for t in atoks
+                 if t not in _NEUTRAL_TOKS and not t.isdigit()]
+        rad = _vouch_radius(a)
+        if sector_q:
+            rad = max(rad, _SECTOR_WARD_MAX_M)
+        ok = False
+        for r in top_rows:
+            if _hav_m(r["lat"], r["lon"], a["lat"], a["lon"]) > rad:
+                continue
+            rt = normalize(r.get("name") or "").split()
+            # the ward's own echo ('Faridabad' beside the Faridabad
+            # anchor) is not an answer to the query
+            if " ".join(rt) in anames:
+                continue
+            if not need and acore and _phrase_eq(acore, rt):
+                ok = True
+                break
+            kt = _kind_tier(r.get("kind"), allowed, qrel) \
+                if allowed else -1
+            if need and _phrase_eq(need, rt) \
+                    and (not allowed or kt >= 0):
+                ok = True
+                break
+            if not need and allowed and kt >= 0:
+                ok = True
+                break
+            if not need and not allowed \
+                    and _phrase_eq(non_anchor, rt):
+                ok = True
+                break
+        if not ok:
+            return True
+    return False
+
+
 async def _overpass_arm(q: str, qn: str, blat: float, blon: float,
                         limit: int, presolved: tuple = None) -> tuple:
     """The live arm: anchors -> engine requery -> overpass probes ->
@@ -1424,42 +2173,24 @@ async def _overpass_arm(q: str, qn: str, blat: float, blon: float,
         anchors, covered = await loop.run_in_executor(
             _T1_EXEC, _locality_anchors, qn, blat, blon)
     parsed = _deep_parse(qn, anchors, covered)
-
-    # gazetteer POI-type requery at the ANCHOR bias — the same engine
-    # the cascade uses, asked about the locality rather than the user:
-    # 'hanuman mandir' near ashok nagar -> place_of_worship rows the
-    # user-bias query ranked out
-    gaz_rows = []
-    requeries = []
-    for p in parsed["pois"]:
-        phrase = " ".join(p["ctx"] + [p["token"]])
-        for a in anchors or [{"lat": blat, "lon": blon}]:
-            requeries.append((phrase, a["lat"], a["lon"]))
-    if parsed["name_tokens"] and anchors:
-        for a in anchors:
-            requeries.append((" ".join(parsed["name_tokens"]),
-                              a["lat"], a["lon"]))
-    for phrase, alat, alon in requeries[:6]:
-        try:
-            out = await loop.run_in_executor(
-                _T1_EXEC, _t1, phrase, alat, alon, 4)
-        except Exception:
-            continue
-        for r in out or []:
-            r["distance_m"] = round(
-                _hav_m(blat, blon, r["lat"], r["lon"]))
-            r["_t1_pos"] = 10_000 + len(gaz_rows)
-            gaz_rows.append(r)
-    _tag_match(gaz_rows, qn)
-
     anchored_ql, wide_ql = _op_statements(parsed)
     if not anchored_ql and not wide_ql:
+        gaz_rows = await _anchor_requeries(qn, parsed, anchors,
+                                           blat, blon)
         return [], gaz_rows, "no-probe"
     deadline = time.monotonic() + _OP_FUSE_S
     cache_key = (qn, round(blat, 3), round(blon, 3))
+    # gazetteer requeries race alongside the mirrors under a slice of
+    # the fuse — a fat-postings engine requery (many-token query)
+    # must not push the arm past the fast mirror's latency
+    req_task = asyncio.ensure_future(
+        _anchor_requeries(qn, parsed, anchors, blat, blon,
+                          deadline=min(deadline,
+                                       time.monotonic() + 0.45)))
     hit = _OP_CACHE.get(cache_key)
     if hit and time.time() - hit[0] < _OP_CACHE_TTL_S \
             and hit[2] in ("ok", "empty"):
+        gaz_rows = await req_task
         return hit[1], gaz_rows, hit[2]
     # hedged fan-out inside one fuse window: each distinct probe races
     # every mirror at once and keeps only the first definitive answer —
@@ -1469,6 +2200,7 @@ async def _overpass_arm(q: str, qn: str, blat: float, blon: float,
         *(_op_race(ql, deadline)
           for ql in (anchored_ql, wide_ql) if ql),
         return_exceptions=True)
+    gaz_rows = await req_task
     elements, statuses = [], []
     for out in races:
         els, st = out if isinstance(out, tuple) else ([], "error")
