@@ -301,10 +301,10 @@ function heroData() {
   };
 }
 function provLine(d) {
-  const away = d.state === 'live' || d.state === 'stale' || d.state === 'pin';
-  const src = d.edge ? t('provEdge')
-    : d.station ? (away && d.km != null ? t('provFromAway', { s: d.station, k: d.km }) : t('provFrom', { s: d.station }))
-    : (away && d.km != null ? t('provKmAway', { k: d.km }) : null);
+  /* the monitor's name + distance would place the user to within a km
+     on a shared screen — only the reading's age (and the honest
+     outside-the-map note) is shown */
+  const src = d.edge ? t('provEdge') : null;
   return [src, d.readMin != null ? t('provAge', { m: d.readMin }) : null].filter(Boolean).join(' · ');
 }
 function heroHtml(d) {
