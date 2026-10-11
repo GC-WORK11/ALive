@@ -10,6 +10,7 @@ tests/test_parity_field.py) bit-checks C++ vs Python on the same inputs.
 
 import itertools
 import math
+import re
 from typing import Optional
 
 if not hasattr(itertools, "pairwise"):  # py<3.10 — same sliding pairs
@@ -156,6 +157,70 @@ _AREA_KINDS = frozenset((
     "gated_community", "housing",
 ))
 _COMPOUND_AREA_MAX_M = 2600.0
+# the reverse grid's own reach — a metro-scale container ('faridabad',
+# 'gurgaon') sweeps this far, a colony anchor never does
+_COMPOUND_GRID_MAX_M = 8600.0
+# city-unique infrastructure an urban-area anchor can legitimately
+# reach across the metro — 'delhi airport t1' means T1, 16 km out
+_COMPOUND_INFRA_MAX_M = 30000.0
+_INFRA_KINDS = frozenset((
+    "airport", "aerodrome", "terminal", "helipad", "heliport",
+    "air_transport_facility_or_service"))
+
+# the worship-kind words a Delhi user types carry a faith — a row
+# whose own name declares another is a wrong answer next to a
+# same-faith one, however close it sits
+_QUERY_REL = {
+    "masjid": "muslim", "mosque": "muslim",
+    "mandir": "hindu", "temple": "hindu",
+    "gurudwara": "sikh", "gurdwara": "sikh",
+    "church": "christian",
+}
+_REL_NAME = {
+    "muslim": frozenset((
+        "masjid", "mosque", "eidgah", "eidgaah", "dargah",
+        "kabristan", "qabrastan", "bilal", "madina", "mohammadi")),
+    "hindu": frozenset((
+        "mandir", "temple", "shiv", "shiva", "vishnu", "hanuman",
+        "durga", "kali", "ganesh", "shani", "krishna", "sai",
+        "laxmi", "radha", "devi", "bhagwan", "shivalya", "thakur",
+        "mata", "mahadev", "ram")),
+    "sikh": frozenset(("gurudwara", "gurdwara")),
+    "christian": frozenset(("church", "chapel", "baptist",
+                            "cathedral")),
+}
+
+
+def _row_rel(category, etoks):
+    """which faith a worship row declares — its kind tag first, then
+    its own name ('guru dwara'/'singh sabha' pairs read sikh; a bare
+    'dwara' is not a faith). None = neutral 'place_of_worship'."""
+    cat = category or ""
+    for rel in ("muslim", "hindu", "sikh", "christian"):
+        if cat.startswith(rel):
+            return rel
+    if {"guru", "dwara"} <= etoks or {"singh", "sabha"} <= etoks:
+        return "sikh"
+    for rel in ("sikh", "muslim", "hindu", "christian"):
+        if etoks & _REL_NAME[rel]:
+            return rel
+    return None
+
+
+# a transit LINE row is a system entity, not a place — 'Blue Line',
+# 'Delhi Metro Yellow Line', 'Rapid MetroRail Gurgaon' can never be
+# the anchor a user named and never the station/stop a kind asks for
+_LINE_ROW = re.compile(
+    r"^(delhi\s+metro|delhi|dmrc|nmrc|metro)?\s*"
+    r"(blue|yellow|pink|red|green|violet|aqua|magenta|orange|grey|"
+    r"silver|airport\s+express)?\s*(line|lines|metro|metrorail)$|"
+    r"^rapid\s+metro(rail)?(\s+gurgaon|\s+gurugram)?$")
+
+
+def _line_row_display(display) -> bool:
+    dn = re.sub(r"[^\w\s]", " ", (display or "").lower()).strip()
+    return bool(dn) and bool(_LINE_ROW.match(dn))
+
 
 # kind phrase -> cooked category set (entries_from_gazetteer kinds).
 # Multi-word forms ("petrol pump", "metro station") win before their
@@ -537,9 +602,12 @@ def _unit_pairs_hold(dseq, etoks, pairs):
 def _anchor_candidates(toks, lat, lon, k=6):
     """every plausible anchor, not just the top-1 — 'udyog vihar' is a
     Delhi locality AND the Gurgaon phases the user usually means; the
-    first candidate whose area actually contains the unit wins."""
+    first candidate whose area actually contains the unit wins. A
+    transit-line row ('Blue Line', 'Rapid MetroRail') is a system
+    name, never a place the user anchored on."""
     return [h for h in search_index().query(" ".join(toks), lat, lon, k)
-            if (h.get("cov") or 0.0) >= 0.75]
+            if (h.get("cov") or 0.0) >= 0.75
+            and not _line_row_display(h.get("display"))]
 
 
 def _area_row(anchor):
@@ -575,6 +643,13 @@ _UNIT_AFTER = frozenset(("sector", "phase", "part"))
 # 'Pocket 4') is a correct answer when it sits inside the anchor's
 # urban area — sectors inside a city can be km from its centroid
 _SUBPLACE_HIT_MAX_M = 6000.0
+# a metro-scale container ('faridabad', 'gurgaon') stretches the unit
+# scan to the reverse grid's edge — a numbered sector can sit 7 km
+# from the city's own row and still be inside the city the user asked
+_SUBPLACE_CITY_MAX_M = 8600.0
+_CITY_KINDS = frozenset((
+    "city", "administrative", "district", "subdistrict",
+    "municipality", "town", "tehsil", "county", "borough"))
 
 # address-surface vocab — a leftover name built only of these isn't a
 # place ('B-12 residential'); a leftover that resolves to another
@@ -752,8 +827,10 @@ def _subplace(toks, lat, lon, limit, hits=None, strict=False):
         floor = (_COMPOUND_AREA_MAX_M
                  if (anchor.get("category") or "") in _AREA_KINDS
                  else _COMPOUND_MAX_M)
-        radius = min(_SUBPLACE_HIT_MAX_M,
-                     max(floor, _anchor_extent(anchor) * 1.5))
+        cap = (_SUBPLACE_CITY_MAX_M
+               if (anchor.get("category") or "") in _CITY_KINDS
+               else _SUBPLACE_HIT_MAX_M)
+        radius = min(cap, max(floor, _anchor_extent(anchor) * 1.5))
         # a name-path row that already carries the unit and sits inside
         # the anchor's urban area IS the real sub-place — promote it
         # ahead of same-named units elsewhere ('Pocket B' in Jasola
@@ -839,6 +916,90 @@ def _subplace(toks, lat, lon, limit, hits=None, strict=False):
     return rows or ([] if strict else [_area_row(anchors[0])])
 
 
+def _place_anchor(place_toks, rest, lat, lon):
+    """the anchor for a kind+place query, or None.
+
+    Every contiguous place span resolves against the index — the
+    locality the user glued on is the anchor, a famous same-named POI
+    is evidence, never the ward: 'jama masjid shahdara' anchors on
+    'shahdara' (container), not on 'Jama Masjid'; 'veer hakikat rai
+    isbt sarai kale khan' keeps the whole 'sarai kale khan' phrase
+    over 'veer'. Resolved spans then pick the container over same-name
+    POIs and the longer phrase over its pieces; a candidate's own
+    coordinates are re-picked nearest the other resolved places so
+    'sector 34' beside 'noida' lands in Noida, not Rohini.
+
+    Returns (anchor_row, want_extra, name_want): unit tokens no anchor
+    consumed stay hard evidence; leftover name tokens order the kind
+    rows by preference."""
+    resolved = []
+    L = len(place_toks)
+    for span_len in range(L, 0, -1):
+        for s in range(0, L - span_len + 1):
+            qt = place_toks[s:s + span_len]
+            # a span of bare unit atoms ('28', 'b') is evidence for
+            # a unit row, never a place name
+            if all(t.isdigit() or len(t) == 1 for t in qt):
+                continue
+            cands = _anchor_candidates(qt, lat, lon)
+            if not cands:
+                continue
+            # prefer the candidate that reads as a container —
+            # 'gurgaon' is a city, not the 'Gurgaon' school row
+            pick = next(
+                (h for h in cands
+                 if (h.get("category") or "") in _AREA_KINDS),
+                cands[0])
+            resolved.append((pick, s, s + span_len))
+    if not resolved:
+        return None, [], []
+    # a lone-name POI span counts only when no container resolved at
+    # all — 'hospital near aiims' keeps 'aiims', but 'jama masjid
+    # shahdara' never lets the 'jama' POI sink the locality
+    has_area = any((r.get("category") or "") in _AREA_KINDS
+                   for r, _, _ in resolved)
+    if has_area:
+        resolved = [it for it in resolved
+                    if (it[0].get("category") or "") in _AREA_KINDS
+                    or it[2] - it[1] >= 2]
+    # co-resolution: a span's own candidate is the one nearest the
+    # places beside it — 'ashok nagar' beside 'shahdara' is the one in
+    # Shahdara, never the colony 10 km west
+    repicked = []
+    for row, s, e in resolved:
+        others = [r for r, os_, oe in resolved
+                  if (os_, oe) != (s, e) and (oe <= s or os_ >= e)]
+        if not others:
+            repicked.append((row, s, e))
+            continue
+        cx = sum(r["lat"] for r in others) / len(others)
+        cy = sum(r["lon"] for r in others) / len(others)
+        cands = _anchor_candidates(place_toks[s:e], lat, lon)
+        if cands:
+            best = min(cands, key=lambda h: _hav_m(
+                h["lat"], h["lon"], cx, cy))
+            if _hav_m(best["lat"], best["lon"], cx, cy) <= 7500.0:
+                row = best
+        repicked.append((row, s, e))
+    resolved = repicked
+    resolved.sort(key=lambda rs: (
+        0 if (rs[0].get("category") or "") in _AREA_KINDS else 1,
+        -(rs[2] - rs[1]), rs[1]))
+    anchor, s0, e0 = resolved[0]
+    used = set(place_toks[s0:e0])
+    for r, s, e in resolved[1:]:
+        if (r.get("category") or "") in _AREA_KINDS \
+                and not (set(range(s, e)) & set(range(s0, e0))):
+            used.update(place_toks[s:e])
+    want_extra = [t for t in place_toks
+                  if t not in used and _unitish(t)]
+    name_want = [t for t in rest
+                 if t not in used and not _unitish(t)
+                 and t.isalpha() and len(t) > 2
+                 and t not in _COMPOUND_STOP]
+    return anchor, want_extra, name_want
+
+
 def _compound(q, weak: bool, lat, lon, limit, hits=None):
     """kind+place compound rows, or [] when nothing honest resolves.
 
@@ -872,6 +1033,7 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
     kind_words = set(toks[kspan[0]:kspan[1]])
     anchor = None
     want_extra = []
+    name_want = []
     # "atm near me" — every non-kind token is filler or the me-marker
     if (rest and any(t in _ME_TOKENS for t in rest)
             and all(t in _ME_TOKENS or t in _COMPOUND_STOP
@@ -894,20 +1056,18 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
                                if t not in _COMPOUND_STOP]
         if not place_toks:
             return []
-        anchor = None
-        # shrink from the right — a trailing context token the user
-        # glued on ('ashok nagar shahdara …') must not kill the anchor
-        for cut in range(len(place_toks), 0, -1):
-            qt = place_toks[:cut]
-            ah = search_index().query(" ".join(qt), lat, lon, 1)
-            if ah and (ah[0].get("cov") or 0.0) >= 0.75:
-                anchor = ah[0]
-                # whatever the winning phrase didn't use still names the
-                # asked row when it's unit-shaped ('delhi airport t1' —
-                # the anchor ate 'delhi', 't1' filters the kind rows)
-                want_extra = [t for t in place_toks
-                              if t not in set(qt) and _unitish(t)]
-                break
+        anchor, want_extra, name_want = _place_anchor(
+            place_toks, rest, lat, lon)
+        whole = [t for t in rest if t not in _COMPOUND_STOP]
+        if place_toks != whole and (
+                anchor is None
+                or (anchor.get("category") or "") not in _AREA_KINDS):
+            # the stop word may live inside the place name itself —
+            # 'majnu ka tilla' is one locality, not 'tilla' the POI —
+            # so a right-side read that found no container retried
+            # against the whole remainder
+            anchor, want_extra, name_want = _place_anchor(
+                whole, rest, lat, lon)
         if anchor is None:
             return []
 
@@ -922,13 +1082,27 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
     # scan deep enough that dense localities can't starve a rarer kind —
     # Dwarka alone has ~1k rows inside the radius. A locality anchor
     # sweeps wider than a street — the sector's own rows sit at its
-    # edges ('pappu bakery' ~2 km out still answers 'bakery shahdara')
-    max_m = (_COMPOUND_AREA_MAX_M
+    # edges, and a metro-scale container's sit km out ('sector 28'
+    # inside Faridabad). The radius scales to the anchor's measured
+    # extent, never past the reverse grid's own reach.
+    floor = (_COMPOUND_AREA_MAX_M
              if (anchor.get("category") or "") in _AREA_KINDS
              else _COMPOUND_MAX_M)
+    max_m = min(_COMPOUND_GRID_MAX_M,
+                max(floor, _anchor_extent(anchor) * 1.5))
+    rel_want = _QUERY_REL.get(
+        next(iter(kind_words), "")) if len(kind_words) == 1 else None
+    # the anchor's own distinctive name is the strongest kind-row
+    # evidence: 'anand vihar metro' wants the row named after Anand
+    # Vihar, not the nearer bus bay that only shares the kind
+    acore = {t for t in alive_core_ref.normalize(
+        anchor.get("display") or "")
+        if t not in _PLACE_NEUTRAL and not t.isdigit() and len(t) > 1}
     for e, d in nearest(anchor["lat"], anchor["lon"],
                         max_m=max_m, limit=4096):
         etoks = None
+        if _line_row_display(e.get("display")):
+            continue
         # unit tokens the anchor phrase never consumed stay evidence —
         # 'delhi airport t1' anchors on 'delhi', but the row the user
         # wants still carries 't1'; a kind row that can't satisfy it
@@ -953,9 +1127,52 @@ def _compound(q, weak: bool, lat, lon, limit, hits=None):
                 ok = bool(kind_words & etoks)
             if not ok:
                 continue
-        out.append(_comp_row(e, d, anchor))
-        if len(out) >= limit:
-            break
+        # leftover name tokens are preference, never a gate — 'bilal
+        # masjid mustafabad' prefers Hazrat Bilal but any Mustafabad
+        # masjid is an honest answer; 'jama masjid shahdara' prefers a
+        # Shahdara Jama Masjid over Jama Masjid Old Delhi
+        if etoks is None:
+            etoks = set(alive_core_ref.normalize(
+                e.get("display") or ""))
+        nw = sum(1 for t in name_want if _leftover_ok(etoks, t)) \
+            if name_want else 0
+        echo = sum(1 for t in acore if _leftover_ok(etoks, t)) \
+            if acore else 0
+        rel_tier = 1
+        if rel_want:
+            rr = _row_rel(e.get("category"), etoks)
+            rel_tier = 0 if rr == rel_want else (2 if rr else 1)
+        out.append((-nw, -echo, rel_tier, d, e))
+    # name cover, then anchor namesake, then faith fit, then anchor
+    # distance — a row the user half-named beats a nearer row they
+    # didn't, and a row named for the place beats a bare kind row
+    out.sort(key=lambda t: t[:4])
+    if out:
+        return [_comp_row(e, d, anchor)
+                for _, _, _, d, e in out[:limit]]
+    if kinds and set(kinds) <= _INFRA_KINDS:
+        # city-unique infrastructure — the urban-area anchor legitimately
+        # reaches across the metro. The caller's own row order is the
+        # honest fallback when even that comes back empty.
+        cand = []
+        for e in _search_entries():
+            if (e.get("category") or "") not in kinds:
+                continue
+            d = _hav_m(anchor["lat"], anchor["lon"],
+                       e["lat"], e["lon"])
+            if d > _COMPOUND_INFRA_MAX_M:
+                continue
+            etoks = set(alive_core_ref.normalize(
+                e.get("display") or ""))
+            if want_extra and not all(
+                    _leftover_ok(etoks, t) for t in want_extra):
+                continue
+            if name_want and not any(
+                    _leftover_ok(etoks, t) for t in name_want):
+                continue
+            cand.append((d, e))
+        cand.sort(key=lambda t: t[0])
+        out = [_comp_row(e, d, anchor) for d, e in cand[:limit]]
     if out:
         return out
     # kind path found nothing in the radius — the query may still carry
