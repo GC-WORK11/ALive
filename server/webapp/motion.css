@@ -69,14 +69,19 @@ body[data-top="journey"] #mark { display: none; }
 
 /* ── ≥40×40 effective hit zones ────────────────────────────────────
    invisible ::after pads; the visual button stays the lane's size. */
-.back-btn, .x-btn, .jn-exit, .jr-x, .wt-swap, .am-x, .pm-x,
+.back-btn, .x-btn, .jn-exit, .jr-x, .wt-swap, .am-x, .pm-x, .wt-bbtn,
+.wt-vchip, .wt-vfb, .st-star, .maplibregl-ctrl-attrib-button,
 .maplibregl-ctrl-group > button { position: relative; }
-.back-btn::after, .x-btn::after, .jn-exit::after, .jr-x::after {
-  content: ""; position: absolute; inset: -3px;        /* 36 → 42 */
+.back-btn::after, .x-btn::after, .jn-exit::after, .jr-x::after,
+.wt-bbtn::after {
+  content: ""; position: absolute; inset: -3px;        /* 34-36 → 40-42 */
 }
+.wt-vfb::after { content: ""; position: absolute; inset: -4px -2px; }  /* ~34 → ~42 */
 .wt-swap::after { content: ""; position: absolute; inset: -5px; }   /* 30 → 40 */
 .am-x::after, .pm-x::after { content: ""; position: absolute; inset: -12px; }
 .maplibregl-ctrl-group > button::after { content: ""; position: absolute; inset: -6px; } /* 29 → 41 */
+/* the "i" attribution toggle lives outside .maplibregl-ctrl-group */
+.maplibregl-ctrl-attrib-button::after { content: ""; position: absolute; inset: -8px; }
 /* attribution links are 14px-tall inline text — pad them to a finger's reach */
 .maplibregl-ctrl-attrib a { position: relative; }
 .maplibregl-ctrl-attrib a::after { content: ""; position: absolute; inset: -13px -4px; }
@@ -84,8 +89,14 @@ body[data-top="journey"] #mark { display: none; }
 .am-x, .pm-x { position: relative; display: inline-block; }
 /* loc-chip reads ~33px tall — raise the row, visuals unchanged */
 #loc-chip { min-height: 40px; }
-.vchip { position: relative; }
+.vchip, .wt-vchip { position: relative; }
 .vchip::after { content: ""; position: absolute; inset: -3px -2px; }
+.wt-vchip::after { content: ""; position: absolute; inset: -3px -6px; }  /* 34 → 40 */
+.st-star::after { content: ""; position: absolute; inset: -6px; }        /* 28 → 40 */
+/* onboarding text buttons read ~32-35px tall — pad to reach, look unchanged */
+.onb-skip, .onb-loclater { position: relative; }
+.onb-skip::after { content: ""; position: absolute; inset: -5px -8px; }  /* ~32×30 → ~42×46 */
+.onb-loclater::after { content: ""; position: absolute; inset: -4px -6px; } /* ~35×80 → ~43×92 */
 
 /* ── focus + keyboard affordance ─────────────────────────────────── */
 :focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; border-radius: 6px; }

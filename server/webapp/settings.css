@@ -115,7 +115,7 @@
 .st-star.on { color: #C7A34F; }
 .st-rateinput {
   width: 100%; border: 0; background: var(--s2); border-radius: 13px;
-  padding: 9px 12px; font-family: var(--font); font-size: 15px; color: var(--ink);
+  padding: 9px 12px; font-family: var(--font); font-size: 16px; color: var(--ink);
   min-height: 44px; margin-top: 4px; box-sizing: border-box;
 }
 .st-ratefoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }

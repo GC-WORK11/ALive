@@ -113,7 +113,9 @@ body[data-top]:not([data-top="home"]) #loc-chip { display: none; }
 .searchbar .sdot { width: 9px; height: 9px; border-radius: 50%; flex: none }
 .searchbar .sdot.a { background: var(--accent) }
 .searchbar .sdot.b { background: var(--b3); border-radius: 2px }
-.searchbar input { flex: 1; border: 0; outline: 0; font-size: 15px; background: none; min-width: 0 }
+/* 16px floor on every text input — below it iOS auto-zooms on focus and
+   user-scalable=no locks the user there */
+.searchbar input { flex: 1; border: 0; outline: 0; font-size: 16px; background: none; min-width: 0 }
 .searchbar input::placeholder { color: var(--ink4) }
 .row-list { display: flex; flex-direction: column; }
 .srow { display: flex; align-items: center; gap: 11px; padding: 11px 6px;
@@ -121,8 +123,13 @@ body[data-top]:not([data-top="home"]) #loc-chip { display: none; }
 .srow:active, .srow.sel { background: var(--surface2); border-radius: 10px }
 .srow .ic { width: 30px; height: 30px; border-radius: 9px; background: var(--surface2);
   display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--ink3); flex: none }
-.srow .n { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.srow .s { font-size: 11.5px; color: var(--ink3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+/* every flex child may shrink below content so the name column can clip;
+   flex:none siblings (.ic/.src/.pm-rank/.pm-v) keep their basis anyway */
+.srow > span { min-width: 0 }
+.srow .n { font-weight: 500; font-size: 14px; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.srow .s { font-size: 11.5px; color: var(--ink3); margin-top: 1px; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .srow .src { font-size: 9.5px; font-family: var(--mono); color: var(--ink4); margin-left: auto; flex: none; padding-left: 8px }
 
 /* mode cards */
