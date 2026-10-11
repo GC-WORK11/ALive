@@ -1824,7 +1824,10 @@ async def webapp_index():
     import os
     return FileResponse(
         os.path.join(os.path.dirname(__file__), "webapp", "index.html"),
-        headers={"cache-control": "public, max-age=60"})
+        headers={"cache-control": "public, max-age=60",
+                 # the landing's live-preview phone embeds /app/ in an iframe —
+                 # SAMEORIGIN allows the same-origin embed, keeps clickjacking cover
+                 "x-frame-options": "SAMEORIGIN"})
 
 
 @app.get("/app/{asset:path}", include_in_schema=False)
