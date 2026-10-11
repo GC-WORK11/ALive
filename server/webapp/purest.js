@@ -473,6 +473,11 @@ A.screen('purest', {
     A.map.ready((m) => { m.on('click', AREA_FILL, onAreaClick); });
     A.map.setFieldVisible(false);
 
+    const onKey = (e) => {
+      if (e.key === 'Escape' && chrome.sheetEl.classList.contains('on')) chrome.close();
+    };
+    document.addEventListener('keydown', onKey);
+
     /* teardown must survive BOTH router paths: back() calls our cleanup,
        but show(replace) only drops the 'on' class and removes the element
        — so a class observer catches that case too. */
@@ -481,6 +486,7 @@ A.screen('purest', {
       if (torn) return;
       torn = true;
       document.removeEventListener('alive:maptap', onTap);
+      document.removeEventListener('keydown', onKey);
       mo.disconnect();
       A.map.ready((m) => { if (m.getLayer(AREA_FILL)) m.off('click', AREA_FILL, onAreaClick); });
       setAreasVisible(false);

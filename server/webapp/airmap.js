@@ -340,6 +340,11 @@ A.screen('airmap', {
     };
     document.addEventListener('alive:maptap', onTap);
 
+    const onKey = (e) => {
+      if (e.key === 'Escape' && chrome.sheetEl.classList.contains('on')) chrome.close();
+    };
+    document.addEventListener('keydown', onKey);
+
     /* teardown must survive BOTH router paths: back() calls our cleanup,
        but show(replace) only drops the 'on' class and removes the element
        — so a class observer catches that case too. */
@@ -348,6 +353,7 @@ A.screen('airmap', {
       if (torn) return;
       torn = true;
       document.removeEventListener('alive:maptap', onTap);
+      document.removeEventListener('keydown', onKey);
       mo.disconnect();
       setFieldVisible(false);
       if (state.readEl) state.readEl.hidden = true;

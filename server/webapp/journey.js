@@ -673,11 +673,25 @@ A.screen('journey', {
       // keep the route on the map behind the receipt — it's the story
     }
 
+    /* Escape steps back one level: dismiss the end-confirm, leave the
+       receipt, or open the end-confirm — the same taps as on-screen */
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      const no = el.querySelector('.jn-no');
+      if (no && no.offsetParent) { no.click(); return; }
+      const done = el.querySelector('.jr-done');
+      if (done) { done.click(); return; }
+      const end = el.querySelector('.jn-end');
+      if (end) end.click();
+    };
+    document.addEventListener('keydown', onKey);
+
     /* ── choose the mode, start the engine ────────────────────────── */
     if (navigator.geolocation && A.geo.consent === 'granted') startLive();
     else startPreview();
 
     return () => {
+      document.removeEventListener('keydown', onKey);
       S.dead = true; S.done = true;
       if (S.watchId != null) A.geo.clearWatch(S.watchId);
       if (S.raf) cancelAnimationFrame(S.raf);

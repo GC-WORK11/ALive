@@ -207,6 +207,7 @@ function renderOptions() {
 }
 
 async function plan() {
+  const s = state;
   const res = state.body.querySelector('.wt-results');
   res.innerHTML = `
     <div class="wt-planning">
@@ -220,6 +221,9 @@ async function plan() {
     from: { lat: state.from.lat, lon: state.from.lon },
     to: { lat: state.to.lat, lon: state.to.lon },
   }, 45000);
+  /* the sheet may have closed (or remounted) while the engine thought —
+     never write a stale plan into whatever state is there now */
+  if (state !== s) return;
   if (!j) {
     res.innerHTML = `<div class="wt-err">
       <div class="wt-err-t">couldn't plan this trip</div>
@@ -426,7 +430,7 @@ A.screen('whereto', {
     // resolve a real label for a bare from
     if (state.from && !state.from.label) {
       A.search.reverse(state.from.lat, state.from.lon).then((n) => {
-        if (n && state.from) { state.from.label = n; renderMain(); }
+        if (n && state && state.from) { state.from.label = n; renderMain(); }
       });
     }
 
@@ -440,7 +444,7 @@ A.screen('whereto', {
       const p = e.detail;
       state[which] = { lat: p.lat, lon: p.lon, label: 'dropped pin' };
       A.search.reverse(p.lat, p.lon).then((n) => {
-        if (n && state[which]) { state[which].label = n; renderMain(); }
+        if (n && state && state[which]) { state[which].label = n; renderMain(); }
       });
       pushRecent(state[which]);
       state.plan = null; state.sel = null;
@@ -450,8 +454,22 @@ A.screen('whereto', {
     document.addEventListener('alive:maptap', onTap);
     A.map.setFieldVisible(false);
 
+    /* Escape walks back one level at a time: armed pin → search → close */
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || !state) return;
+      const un = state.body.querySelector('[data-unarm]');
+      if (un) { un.click(); return; }
+      if (state.body.querySelector('.wt-search-head')) {
+        const bk = state.body.querySelector('[data-back]');
+        if (bk) { bk.click(); return; }
+      }
+      if (chrome.sheetEl.classList.contains('on')) chrome.close();
+    };
+    document.addEventListener('keydown', onKey);
+
     return () => {
       document.removeEventListener('alive:maptap', onTap);
+      document.removeEventListener('keydown', onKey);
       A.map.hideAllRoutes();
       state = null;
     };
