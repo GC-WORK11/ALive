@@ -385,17 +385,33 @@ function saveStrip() {
 const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 0.001 && Math.abs(a.lon - b.lon) < 0.001;
 const rowKey = (p) => `${p.name || p.label}|${(p.lat || 0).toFixed(4)}|${(p.lon || 0).toFixed(4)}`;
 
-/* local instant rows — the "t0" paint: saved + recents matching query */
+/* local instant rows — the "t0" paint: saved + recents matching query.
+   word-substring test runs on name + sub so a kind word ('bakery') also
+   surfaces a recent whose subtitle carries it; dist is the same bias the
+   server tier uses, so the merge can order honestly. */
+const havM = (a, b) => {
+  if (!a || !b || b.lat == null) return null;
+  const R = 6371000, rad = Math.PI / 180;
+  const s = Math.sin((b.lat - a.lat) * rad / 2) ** 2 +
+    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) *
+    Math.sin((b.lon - a.lon) * rad / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+};
+const searchBias = () => S.from || (A.geo && A.geo.pos) || A.DELHI;
 function instantRows() {
   const q = NORM(S.q).trim();
   const out = [];
+  const bias = searchBias();
   const test = (nm) => { const n = NORM(nm); return q.split(/\s+/).every((w) => n.includes(w)); };
   for (const slot of ['home', 'work']) {
     const p = S.saved[slot];
-    if (p && test(`${slot} ${p.name}`)) out.push({ ...p, _slot: slot });
+    if (p && test(`${slot} ${p.name} ${p.sub || ''}`)) out.push({ ...p, _slot: slot });
   }
-  for (const r of S.recents) if (test(r.name)) out.push({ ...r, _recent: true });
-  return out.slice(0, 4);
+  for (const r of S.recents) if (test(`${r.name} ${r.sub || ''}`)) out.push({ ...r, _recent: true });
+  return out.slice(0, 4).map((p) => {
+    const d = havM(bias, p);
+    return d == null ? p : { ...p, dist: d / 1000 };
+  });
 }
 const doorRows = () => `
   <div class="wt-sec">${t('exploreHeader')}</div>
@@ -403,6 +419,12 @@ const doorRows = () => `
   ${placeRow({ key: 'door:play', glyph: 'explore', gcolor: ACCENT, title: t('explorePlayTitle'), sub: t('doorPlaySub') })}`;
 const AIR_RE = /\b(air|aqi|pollution|smoke|smog|pm ?2\.?5)\b/i;
 const STAY_RE = /\b(stay|stays|hotel|hotels|sleep|lodge|lodge)\b/i;
+
+/* kind-intent — 'bakery' alone is a kind search, not a name: the union
+   of CAT_MAP's existing kind vocabulary decides, so no new word list is
+   invented. the row is an accelerator — tapping it fires the same engine
+   query now, and the engine's own kind path returns many near matches. */
+const KIND_RE = new RegExp(`\\b(${CAT_MAP.map(([re]) => re.source).join('|')})\\b`, 'i');
 
 /* explore.ts ports — airIntent + exploreIntent run on the raw query
    here (the web surface has no parser): token sets + near-anchor
@@ -438,6 +460,15 @@ function exploreIntentWeb(q) {
   const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
   const anchor = stem.filter((x) => !STAY_TOKS.has(x) && !PLAY_TOKS.has(x)).join(' ');
   return { mode, nearQuery: near || anchor || null };
+}
+function kindIntent(q) {
+  const toks = iToks(q);
+  if (!toks.length || hasToDest(toks)) return null;
+  const ni = toks.indexOf('near');
+  const stem = (ni >= 0 ? toks.slice(0, ni) : toks).filter((x) => !I_STOP.has(x));
+  if (!stem.length || !stem.every((x) => KIND_RE.test(x))) return null;
+  const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
+  return { stem: stem.join(' '), nearQuery: near || null };
 }
 
 function searchListHTML() {
@@ -484,7 +515,13 @@ function searchListHTML() {
       sub: intent.nearQuery ? t('exploreNearPlace', { place: intent.nearQuery }) : t('exploreNearYou') });
   }
   const inst = instantRows();
-  if (airI || intent || inst.length || S.pending || (S.results && S.results.length))
+  const kindI = (!airI && !intent) ? kindIntent(S.q) : null;
+  const results = S.results || [];
+  const asked = S.results != null;
+  /* local tier paints first, synchronously — the server merge lands under
+     the same 'Results' header when it answers, so nothing blocks and the
+     list never flashes empty-then-filled */
+  if (airI || intent || inst.length || kindI || S.pending || asked)
     h += `<div class="wt-sec">${t('resultsHeader')}</div>`;
   const instKeys = new Set();
   for (const p of inst) {
@@ -493,40 +530,63 @@ function searchListHTML() {
     h += placeRow({ key: k, glyph: p._slot || 'clock', titleHtml: matchSpans(p._slot ? t(p._slot) : p.name, S.q), sub: p._slot ? p.name : p.sub, dist: p.dist, armed: S.saveFor && S.saveFor.key === k });
     if (S.saveFor && S.saveFor.key === k) h += saveStrip();
   }
-  h += `<i class="wt-hl"></i>`;
-  if (S.pending) h += `<div class="wt-status">${t('searching')}</div>`;
-  else if (S.results && S.results.length) {
-    for (const r of S.results) {
+  if (kindI) h += placeRow({ key: `kind:${kindI.stem}`, glyph: catGlyph(kindI.stem), gcolor: ACCENT,
+    title: kindI.stem,
+    sub: kindI.nearQuery ? t('exploreNearPlace', { place: kindI.nearQuery }) : t('exploreNearYou') });
+  if ((inst.length || kindI) && (S.pending || asked)) h += `<i class="wt-hl"></i>`;
+  if (S.pending && !results.length) h += `<div class="wt-status">${t('searching')}</div>`;
+  else if (results.length) {
+    const dup = new Set(inst.map((p) => rowKey(p)));
+    for (const r of results) {
       const k = rowKey(r);
+      if (dup.has(k)) continue;      /* already shown in the local tier */
       h += placeRow({ key: `res:${k}`, glyph: catGlyph(r.kind), titleHtml: matchSpans(r.name, S.q), sub: r.sub, dist: r.dist != null ? r.dist / 1000 : null, armed: S.saveFor && S.saveFor.key === `res:${k}` });
       if (S.saveFor && S.saveFor.key === `res:${k}`) h += saveStrip();
     }
-  } else {
+  } else if (asked && !S.pending) {
     h += `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('noPlaceFound')}</span></div>`;
   }
+  if (!h) h = `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('emptySearchHint')}</span></div>`;
   return h;
 }
-function renderSearch() {
-  const fromTxt = S.from ? S.from.label : t('searchFromPlaceholder');
-  const toTxt = S.to ? S.to.label : t('searchPlaceholder');
+/* a from/to row — the armed row IS the input (Uber pattern): the value
+   label becomes a real text field with the caret in place, the current
+   value degrades to the ghost placeholder while you type over it */
+function rrowHtml(which) {
+  const key = which === 'from' ? t('fromLabel') : t('fieldTo');
+  const dot = which === 'to' ? ' to' : '';
+  if (S.armed !== which) {
+    const v = S[which] ? S[which].label : (which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder'));
+    return `<button class="wt-rrow" type="button" data-arm="${which}">
+      <i class="wt-rdot${dot}"></i><span class="wt-rkey">${key}</span>
+      <span class="wt-rval${S[which] ? '' : ' ph'}">${esc(v)}</span>
+    </button>`;
+  }
+  const ph = S[which] ? S[which].label : (which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder'));
+  return `<div class="wt-rrow on edit" data-arm="${which}">
+    <i class="wt-rdot${dot}"></i><span class="wt-rkey">${key}</span>
+    <input class="wt-rin" type="text" autocapitalize="off" autocomplete="off" spellcheck="false"
+      enterkeyhint="search" placeholder="${esc(ph)}" value="${esc(S.q)}">
+    <button class="wt-bbtn wt-rx" type="button" data-act="clear" aria-label="clear" ${S.q ? '' : 'hidden'}>${icon('close', 15, INK3)}</button>
+  </div>`;
+}
+function focusArmed() {
+  const inp = S.body.querySelector('.wt-rin');
+  if (!inp) return;
+  inp.focus();
+  const n = inp.value.length;
+  inp.setSelectionRange(n, n);
+}
+function renderSearch(focus) {
   const inCls = S._anim !== 'search' ? ' wt-in' : ''; S._anim = 'search';
   S.body.innerHTML = `<div class="wt${inCls}">
     <div class="wt-rc">
-      <button class="wt-rrow${S.armed === 'from' ? ' on' : ''}" type="button" data-arm="from">
-        <i class="wt-rdot"></i><span class="wt-rkey">${t('fromLabel')}</span>
-        <span class="wt-rval${S.from ? '' : ' ph'}">${esc(fromTxt)}</span>
-      </button>
-      <i class="wt-rhair"></i>
-      <button class="wt-rrow${S.armed === 'to' ? ' on' : ''}" type="button" data-arm="to">
-        <i class="wt-rdot to"></i><span class="wt-rkey">${t('fieldTo')}</span>
-        <span class="wt-rval${S.to ? '' : ' ph'}">${esc(toTxt)}</span>
-      </button>
-    </div>
-    <div class="wt-bar">
       <button class="wt-bbtn" type="button" data-act="close" aria-label="back">${BACK_SVG}</button>
-      <input class="wt-input" type="text" autocapitalize="off" autocomplete="off" spellcheck="false"
-        placeholder="${esc(S.armed === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder'))}" value="${esc(S.q)}">
-      <button class="wt-bbtn wt-x" type="button" data-act="clear" aria-label="clear" ${S.q ? '' : 'hidden'}>${icon('close', 16, INK3)}</button>
+      <div class="wt-rrows">
+        ${rrowHtml('from')}
+        <i class="wt-rhair"></i>
+        ${rrowHtml('to')}
+      </div>
     </div>
     ${S.notice ? `<div class="wt-notice"><span>${esc(S.notice)}</span></div>` : ''}
     <div class="wt-list">${searchListHTML()}</div>
@@ -537,20 +597,43 @@ function renderSearch() {
     </div>
   </div>`;
   bindSearch();
+  if (focus) focusArmed();
 }
 function bindSearch() {
   const root = S.body.querySelector('.wt');
-  const input = root.querySelector('.wt-input');
-  root.querySelectorAll('.wt-rrow').forEach((b) => b.addEventListener('click', () => {
+  /* unarmed row: tap arms it — the input moves into that row */
+  root.querySelectorAll('button.wt-rrow').forEach((b) => b.addEventListener('click', () => {
+    if (S.armed === b.dataset.arm) return;
     S.armed = b.dataset.arm;
-    root.querySelectorAll('.wt-rrow').forEach((x) => x.classList.toggle('on', x === b));
-    input.placeholder = S.armed === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder');
-    input.focus();
+    renderSearch(true);
   }));
+  const armedRow = root.querySelector('.wt-rrow.edit');
+  const input = armedRow && armedRow.querySelector('.wt-rin');
+  if (armedRow && input) {
+    armedRow.addEventListener('click', (e) => {
+      if (e.target === input || e.target.closest('[data-act="clear"]')) return;
+      input.focus();
+      const n = input.value.length;
+      input.setSelectionRange(n, n);
+    });
+    input.addEventListener('input', () => {
+      const x = armedRow.querySelector('[data-act="clear"]');
+      if (x) x.hidden = !input.value;
+      onQ(input.value);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      /* Go = take the top place row — never a door/intent row */
+      const first = root.querySelector('.wt-list .wt-row[data-k^="res:"], .wt-list .wt-row[data-k^="recent:"], .wt-list .wt-row[data-k^="saved:"]');
+      if (first) pickRow(first.dataset.k);
+    });
+  }
   root.querySelector('[data-act="close"]').addEventListener('click', () => S.chrome.close());
   const xBtn = root.querySelector('[data-act="clear"]');
-  xBtn.addEventListener('click', () => { input.value = ''; onQ(''); input.focus(); });
-  input.addEventListener('input', () => { xBtn.hidden = !input.value; onQ(input.value); });
+  if (xBtn) xBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (input) { input.value = ''; onQ(''); input.focus(); }
+  });
   root.querySelector('[data-act="locate"]').addEventListener('click', locateFill);
   root.querySelector('[data-act="map"]').addEventListener('click', armPinDrop);
   /* rows — click fills the armed slot; press-and-hold opens SaveStrip */
@@ -570,24 +653,44 @@ function bindSearch() {
     e.stopPropagation(); saveSlot(b.dataset.slot);
   }));
 }
+/* near-first combining: same-name rows keep their engine tier position
+   and sort nearest-first inside it — 'bakery' surfaces many bakeries,
+   the closest of each name leading */
+function nearFirst(rows) {
+  const groups = new Map(), order = [];
+  for (const r of rows) {
+    const k = NORM(r.name || '').replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!groups.has(k)) { groups.set(k, []); order.push(k); }
+    groups.get(k).push(r);
+  }
+  const out = [];
+  for (const k of order) {
+    out.push(...groups.get(k).sort((a, b) => (a.dist ?? 9e12) - (b.dist ?? 9e12)));
+  }
+  return out;
+}
 let qTimer = 0;
 function onQ(v) {
   S.q = v;
   clearTimeout(qTimer);
-  S.pending = !!v.trim();
+  const len = v.trim().length;
+  /* first letter paints the local tier synchronously; the engine tier is
+     only worth firing at 2+ chars (the cascade returns early below that) */
+  if (len < 2) S.results = null;
+  S.pending = len >= 2;
   const list = S.body.querySelector('.wt-list');
-  if (list) list.innerHTML = searchListHTML(), rebindList();
-  if (!v.trim()) return;
+  if (list) { list.innerHTML = searchListHTML(); rebindList(); }
+  if (len < 2) return;
+  qTimer = setTimeout(() => runSearch(v), 190);
+}
+async function runSearch(v) {
   const seq = ++S.seq;
-  qTimer = setTimeout(async () => {
-    const bias = S.from || (A.geo && A.geo.pos) || A.DELHI;
-    const rows = await A.search.search(v, bias);
-    if (seq !== S.seq || A.current() !== 'whereto') return;
-    S.results = rows || [];
-    S.pending = false;
-    const l = S.body.querySelector('.wt-list');
-    if (l) l.innerHTML = searchListHTML(), rebindList();
-  }, 260);
+  const rows = await A.search.search(v, searchBias());
+  if (!S || seq !== S.seq || v !== S.q || A.current() !== 'whereto') return;
+  S.results = nearFirst(rows || []);
+  S.pending = false;
+  const l = S.body.querySelector('.wt-list');
+  if (l) { l.innerHTML = searchListHTML(); rebindList(); }
 }
 function rebindList() {
   const root = S.body.querySelector('.wt');
@@ -616,6 +719,7 @@ function placeByKey(k) {
     const kk = k.slice(4);
     return (S.results || []).find((r) => rowKey(r) === kk) || null;
   }
+  if (k && k.startsWith('kind:')) return { kindRow: true };
   return null;
 }
 function openSave(k) {
@@ -623,7 +727,7 @@ function openSave(k) {
   if (k.startsWith('saved:')) S.saveFor = { key: k, slot: k.slice(6) };
   else {
     const p = placeByKey(k);
-    if (!p || p.door || p.saved) return;
+    if (!p || p.door || p.saved || p.kindRow) return;
     S.saveFor = { key: k, place: p };
   }
   const l = S.body.querySelector('.wt-list');
@@ -647,6 +751,14 @@ function saveSlot(slot) {
 function pickRow(k) {
   const p = placeByKey(k);
   if (!p) return;
+  /* the kind-intent row is an accelerator, not a place — tapping it fires
+     the same engine query immediately instead of waiting on the debounce.
+     (server rows carry their own `kind` field — never key off that) */
+  if (p.kindRow) {
+    clearTimeout(qTimer);
+    if (S.q.trim().length >= 2) runSearch(S.q);
+    return;
+  }
   if (p.door) { A.show(p.door); return; }
   if (p.saved != null) {
     const s = S.saved[p.saved];
@@ -659,10 +771,10 @@ function finish(place) {
   S[S.armed] = { label: place.label || place.name, lat: place.lat, lon: place.lon };
   pushRecent({ name: place.name, sub: place.sub, lat: place.lat, lon: place.lon });
   A.store.set(K_LAST, { from: S.from, to: S.to });
-  S.q = ''; S.results = null; S.saveFor = null; S.notice = null;
+  S.q = ''; S.results = null; S.pending = false; S.saveFor = null; S.notice = null;
   /* RN: picking fills the field; if both set → the plan runs */
   if (S.from && S.to) { S.phase = 'plan'; plan(); }
-  else { S.armed = S.armed === 'to' ? 'from' : 'to'; renderSearch(); }
+  else { S.armed = S.armed === 'to' ? 'from' : 'to'; renderSearch(true); }
 }
 function pushRecent(p) {
   if (!p || p.name == null || p.lat == null) return;
@@ -674,11 +786,13 @@ async function locateFill() {
   if (!pos) {
     try { pos = await A.geo.locate(); } catch (e) { pos = null; }
   }
-  if (!pos) { S.notice = 'couldn’t get your location — choose on the map instead'; renderSearch(); return; }
+  if (!pos) { S.notice = 'couldn’t get your location — choose on the map instead'; renderSearch(true); return; }
   finish({ name: t('yourLocation'), lat: pos.lat, lon: pos.lon });
 }
 /* armed pin-drop — fold the sheet into a hint strip; one map tap fills it */
 function armPinDrop() {
+  const ae = document.activeElement;
+  if (ae && ae.blur) ae.blur();          /* park the field's caret while folded */
   S.armedPin = S.armed;
   S.el.classList.add('wt-armed');
   const strip = el(`<div class="wt-pinbar">
@@ -697,7 +811,7 @@ function armPinDrop() {
     A.search.reverse(lat, lon).then((nm) => {
       if (nm && S && S[which] && S[which].lat === lat) {
         S[which].label = nm;
-        if (S.phase === 'search') renderSearch();
+        if (S.phase === 'search') renderSearch(true);
         else if (S.phase === 'plan') renderPlan();
       }
     }).catch(() => {});
@@ -711,6 +825,8 @@ function disarmPin() {
   const s = S.el.querySelector('.wt-pinbar');
   if (s) s.remove();
   if (S._tapOff) { S._tapOff(); S._tapOff = null; }
+  /* sheet unfolds back to the same inline field — hand the caret back */
+  if (S.phase === 'search' && A.current() === 'whereto') focusArmed();
 }
 
 /* ═══════════════ OPTIONS SURFACE — CompareSheet twin ═══════════════ */
@@ -887,7 +1003,7 @@ function renderPlan() {
   </div>`;
   const root = S.body.querySelector('.wt');
   root.querySelectorAll('.wt-th').forEach((b) => b.addEventListener('click', () => {
-    S.armed = b.dataset.arm; S.phase = 'search'; S.q = ''; S.results = null; renderSearch();
+    S.armed = b.dataset.arm; S.phase = 'search'; S.q = ''; S.results = null; renderSearch(true);
   }));
   const retry = root.querySelector('[data-act="retry"]');
   if (retry) retry.addEventListener('click', () => { S.planErr = null; plan(); });
@@ -1065,7 +1181,7 @@ function bindVehicle() {
   if (q('[data-act="start"]')) q('[data-act="start"]').addEventListener('click', () => goStep('cls'));
   root.querySelectorAll('[data-act="skip"]').forEach((b) => b.addEventListener('click', () => {
     if (w.step === 'puc') finish(false);
-    else { S.phase = 'plan'; if (S.plan || (S.from && S.to)) renderPlan(), plan(); else { S.phase = 'search'; renderSearch(); } }
+    else { S.phase = 'plan'; if (S.plan || (S.from && S.to)) renderPlan(), plan(); else { S.phase = 'search'; renderSearch(true); } }
   }));
   if (q('[data-act="back"]')) q('[data-act="back"]').addEventListener('click', prevStep);
   if (q('[data-act="save"]')) q('[data-act="save"]').addEventListener('click', () => finish(true));
@@ -1122,7 +1238,7 @@ A.screen('whereto', {
     if (!S.from && A.geo && A.geo.pos) S.from = { label: t('yourLocation'), lat: A.geo.pos.lat, lon: A.geo.pos.lon };
     S.armed = S.to ? 'from' : (S.from ? 'to' : 'from');
     if (S.from && S.to) { S.phase = 'plan'; plan(); }
-    else renderSearch();
+    else renderSearch(true);
     A.map.setFieldVisible(false);
     return () => {
       disarmPin();

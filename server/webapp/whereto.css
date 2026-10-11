@@ -17,14 +17,23 @@
 @keyframes wtIn { from { transform: translateY(36px); opacity: 0 } to { transform: none; opacity: 1 } }
 .wt-in { animation: wtIn .36s cubic-bezier(.22,.8,.32,1) both }
 
-/* ── search surface ── routeCard ────────────────────────────── */
-.wt-rc { margin: 12px 14px 0; background: #F3F2EC; border-radius: 13px; overflow: hidden; flex: none }
+/* ── search surface ── routeCard: back rail + the two field rows.
+   the rows ARE the inputs — the armed row carries a live text field
+   where its value label used to sit (no separate composer) ────────── */
+.wt-rc {
+  display: flex; align-items: center;
+  margin: 12px 14px 0; background: #F3F2EC; border-radius: 13px;
+  overflow: hidden; flex: none;
+}
+.wt-rc > .wt-bbtn { margin-left: 8px }
+.wt-rrows { flex: 1; min-width: 0 }
 .wt-rrow {
   display: flex; align-items: center; gap: 10px; height: 48px;
   padding: 0 12px; width: 100%; text-align: left;
   background: transparent; border: 0; cursor: pointer; color: inherit;
 }
 .wt-rrow.on { background: #E5E2DA }
+.wt-rrow.edit { cursor: default }
 .wt-rdot { width: 10px; height: 10px; border-radius: 5px; background: #35614B; flex: none }
 .wt-rdot.to { background: transparent; border: 2px solid #6E7278; box-sizing: border-box }
 .wt-rkey { width: 34px; font-size: 13px; color: #6E7278; flex: none }
@@ -35,24 +44,20 @@
 .wt-rval.ph { color: #6E7278; font-weight: 400 }
 .wt-rhair { display: block; height: 1px; background: #E3E0D7; margin-left: 32px }
 
-/* ── bar (pill) ─────────────────────────────────────────────── */
-.wt-bar {
-  display: flex; align-items: center; height: 56px;
-  margin: 8px 14px; padding: 0 12px;
-  background: #F3F2EC; border-radius: 999px; flex: none;
-}
+/* the inline field + its clear — same slot the .wt-rval label held */
 .wt-bbtn {
   width: 34px; height: 34px; border: 0; border-radius: 50%;
   background: transparent; display: flex; align-items: center; justify-content: center;
   cursor: pointer; padding: 0; flex: none;
 }
 .wt-bbtn:active { transform: scale(.92) }
-.wt-input {
-  flex: 1; min-width: 0; height: 100%; margin-left: 6px;
+.wt-rin {
+  flex: 1; min-width: 0; height: 100%;
   border: 0; background: transparent; outline: none;
-  font-size: 17px; color: #16181D;
+  font-size: 17px; font-weight: 500; color: #16181D;
 }
-.wt-input::placeholder { color: #4A4E57 }
+.wt-rin::placeholder { color: #6E7278; font-weight: 400 }
+.wt-rx { margin-right: -4px }
 
 /* ── notice ─────────────────────────────────────────────────── */
 .wt-notice { margin: 2px 14px 6px; padding: 7px 12px; border-radius: 13px; background: #F3F2EC }
@@ -303,5 +308,5 @@
 
 /* wide sheet — keep RN margins proportional */
 @media (min-width: 720px) {
-  .wt-rc, .wt-bar { margin-left: 16px; margin-right: 16px }
+  .wt-rc { margin-left: 16px; margin-right: 16px }
 }
