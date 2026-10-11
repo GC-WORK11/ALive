@@ -115,3 +115,9 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Relay: armed.patch (single commit) sent to geo lane. NOTE: /v3/attachments is wrong path; correct = /v3/organizations/{org}/attachments.
 - gazupdate still running (deep-name hunt).
 - Deploys: :266=c93d8203, :267=c4c7daa2.
+
+## 2026-10-11 ~07:00 UTC — :268 gazupdate round
+- gazupdate lane done (72MB patch→am as 193fa5b7): real pyosmium pass Oct-9 Geofabrik north+central PBFs + Overture latest → corpus 345,001; served gazetteer 123,934→210,000 rows. aliases.json +7 general pairs (sitaram↔sita ram, pawan↔pavan, neelanchal↔nilanchal, dewan↔diwan). _SECT_SUB synth for block canonicals.
+- Verified on prod :268: `sitaram diwan chand paharganj`→Sita Ram Dewan Chand #1; `pawan bakery shahdara`→real Shahdara bakeries; `a2 block rohini`→real rows; `neelanchal dham`→honest empty (verified unmappable in EVERY upstream — OSM/Overture/GeoNames/Wikidata/Nominatim/Photon).
+- acct2 verify-rounds all green: e2e3 (armed-pin 7/7), mobile3 (4 fixes ALIVE, zero new), one P2 fixed→Esc mid-arm now unarms via data-unarm on wt-pinx (1e4feec).
+- Deploys: :266=c93d8203, :267=c4c7daa2, :268=193fa5b7.
