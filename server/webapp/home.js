@@ -107,6 +107,152 @@ const saveCheckin = (patch) => {
   return all;
 };
 
+/* ── day log — port of Mobile/src/store/daylog.ts: ambient samples from
+   live field reads at a fresh fix + finished trips → the day's dose
+   reconstruction. On this device only, never uploaded. ── */
+const GAP_INTERP_MS = 45 * 60000, VE_REST_M3H = 0.6,
+  SAMPLE_KEEP_MS = 21 * 86400000, MAX_SAMPLES = 4000;
+const getSamples = () => A.store.get('daylog.samples', []) || [];
+const saveSamples = (ls) => A.store.set('daylog.samples', ls);
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+function recordSample(s) {
+  const ls = getSamples();
+  const last = ls.length ? ls[ls.length - 1] : null;
+  /* dedupe: the same air at the same spot under 8 min is one sample */
+  if (last && s.ts - last.ts < 8 * 60000 &&
+      Math.abs(s.lat - last.lat) + Math.abs(s.lon - last.lon) < 0.008) return;
+  ls.push(s);
+  saveSamples(ls.filter((x) => x.ts >= Date.now() - SAMPLE_KEEP_MS).slice(-MAX_SAMPLES));
+}
+function personalSample(fix, read, now) {
+  /* RN personalAmbientSample — a fresh fix + a live field read, else
+     nothing: we never attribute air the phone can't place-and-date */
+  if (!fix || !isNum(fix.lat) || !isNum(fix.lon)) return null;
+  const ts = fix.ts || 0;
+  if (ts <= 0 || now - ts > 15 * 60000) return null;
+  const amb = read ? read.amb : null;
+  if (!isNum(amb) || amb < 0) return null;
+  const ageS = read ? read.fieldAgeS : null;
+  if (ageS != null && (!isNum(ageS) || ageS < 0 || ageS > 900)) return null;
+  return { ts, lat: fix.lat, lon: fix.lon, amb,
+    bz: read && isNum(read.bz) ? read.bz : null };
+}
+/* the IST day the key names — +05:30 boundaries regardless of device tz */
+const dayStartOf = (k) => Date.parse(`${k}T00:00:00+05:30`);
+const istHourOf = (t0) => new Date(t0 + IST_MS).getUTCHours();
+const loadTrips = () => (A.store.get('journey.history', []) || [])
+  .filter((r) => r && !r.simulated && (r.dose_ug > 0))   /* previews never counted — nobody breathed them */
+  .map((r) => ({ ts: r.t || 0, dose_ug: +r.dose_ug || 0, vehicle: r.vehicle || '',
+    label: r.label || '',
+    from: (r.from && r.from.label) || '', to: (r.to && r.to.label) || '' }))
+  .filter((tr) => tr.ts > 0);
+/* the wire qualifier in a saved trip label always translates — the same
+   rule whereto.js's modeLabel follows */
+const tripModeLabel = (mode, label) => {
+  const lbl = String(label || mode || '').trim();
+  const alt = lbl.match(/^(.*?) · least-smoke alt (\d+)$/);
+  if (alt) return alt[1] + ' · least smoky option ' + alt[2];
+  if (/ · least-smoke rd$/.test(lbl)) return lbl.replace(/ · least-smoke rd$/, ' · least smoky way');
+  const a = lbl.match(/^(.*?) · alt (\d+)$/);
+  if (a) return a[1] + ' · alt ' + a[2];
+  return lbl;
+};
+/* '9:30am' — one clock convention, minutes only when non-zero */
+const clockTight = (t0) => {
+  const d = new Date(t0 + IST_MS);
+  let h = d.getUTCHours() % 12; if (h === 0) h = 12;
+  const m = d.getUTCMinutes(), ap = d.getUTCHours() < 12 ? 'am' : 'pm';
+  return m ? `${h}:${`${m}`.padStart(2, '0')}${ap}` : `${h}${ap}`;
+};
+/* reconstructDay — verbatim port (local → IST hours, day bounds +05:30) */
+function reconstructDay(day, samples, trips, now) {
+  const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, conc: null, dose_ug: 0, covered: false, trip_marks: 0 }));
+  const dayStart = dayStartOf(day);
+  const dayEnd = Math.min(dayStart + 24 * 3600 * 1000, now);
+  const segs = [];
+  const concOf = (s) => (isNum(s.bz) ? s.bz : s.amb);
+  for (let i = 0; i < samples.length; i++) {
+    const a = samples[i], b = samples[i + 1];
+    if (!b) break;
+    if (a.ts >= dayEnd || b.ts <= dayStart) continue;
+    const gap = b.ts - a.ts;
+    if (gap <= 0 || gap > GAP_INTERP_MS) continue;
+    const t0 = Math.max(a.ts, dayStart), t1 = Math.min(b.ts, dayEnd);
+    if (t1 <= t0) continue;
+    const c0 = concOf(a) + (concOf(b) - concOf(a)) * ((t0 - a.ts) / gap);
+    const c1 = concOf(a) + (concOf(b) - concOf(a)) * ((t1 - a.ts) / gap);
+    segs.push({ t0, t1, c0, c1 });
+  }
+  const acc = Array.from({ length: 24 }, () => ({ wMin: 0, concW: 0 }));
+  let coveredMs = 0;
+  for (const sg of segs) {
+    coveredMs += sg.t1 - sg.t0;
+    let t0 = sg.t0;
+    while (t0 < sg.t1) {
+      const h = istHourOf(t0);
+      const hourEnd = Math.min(sg.t1, dayStart + (h + 1) * 3600 * 1000);
+      const span = Math.max(1, hourEnd - t0);
+      const f0 = (t0 - sg.t0) / (sg.t1 - sg.t0);
+      const f1 = (hourEnd - sg.t0) / (sg.t1 - sg.t0);
+      const cMean = (sg.c0 + (sg.c1 - sg.c0) * f0 + sg.c0 + (sg.c1 - sg.c0) * f1) / 2;
+      acc[h].wMin += span / 60000;
+      acc[h].concW += cMean * span;
+      hours[h].dose_ug += cMean * VE_REST_M3H * (span / 3600000);
+      hours[h].covered = true;
+      t0 = hourEnd;
+    }
+  }
+  for (let h = 0; h < 24; h++) if (acc[h].wMin > 0) hours[h].conc = acc[h].concW / (acc[h].wMin * 60000);
+  const parts = [];
+  let tripUg = 0;
+  for (const tr of trips) {
+    if (dayKeyOf(tr.ts) !== day || !(tr.dose_ug > 0)) continue;
+    const h = istHourOf(tr.ts);
+    hours[h].dose_ug += tr.dose_ug;
+    hours[h].trip_marks += 1;
+    hours[h].covered = true;
+    tripUg += tr.dose_ug;
+    parts.push({ label: `${tripModeLabel(tr.vehicle, tr.label)} · ${tr.from} → ${tr.to}`, ug: tr.dose_ug });
+  }
+  for (const sg of segs) {
+    const ug = ((sg.c0 + sg.c1) / 2) * VE_REST_M3H * ((sg.t1 - sg.t0) / 3600000);
+    if (ug < 2) continue;
+    parts.push({ label: `${clockTight(sg.t0)}–${clockTight(sg.t1)}`, ug });
+  }
+  parts.sort((a, b) => b.ug - a.ug);
+  const endHour = Math.max(-1, Math.min(23, Math.floor((dayEnd - dayStart) / 3600000)));
+  for (let h = endHour + 1; h < 24; h++) hours[h].covered = false;
+  const stayOnlyUg = segs.reduce((s, sg) => s + ((sg.c0 + sg.c1) / 2) * VE_REST_M3H * ((sg.t1 - sg.t0) / 3600000), 0);
+  const totalUg = stayOnlyUg + tripUg;
+  const coveredMin = Math.round(coveredMs / 60000) + Math.min(60, parts.filter((p) => p.label.includes('→')).length * 15);
+  const daySamples = samples.filter((s) => dayKeyOf(s.ts) === day).length;
+  const dayTrips = trips.filter((tr) => dayKeyOf(tr.ts) === day).length;
+  return {
+    day,
+    arc: hours.slice(0, endHour + 1),
+    totalUg: Math.round(totalUg * 10) / 10,
+    coveredMin,
+    parts: parts.slice(0, 4),
+    thin: daySamples < THIN_SAMPLE_MIN && dayTrips === 0,
+    samplesToday: daySamples,
+  };
+}
+/* today + the 7-day strip — RN useDayData */
+function dayData(now) {
+  const t0 = now || Date.now();
+  const samples = getSamples(), trips = loadTrips();
+  const rec = reconstructDay(dayKeyOf(t0), samples, trips, t0);
+  const anchor = new Date(t0 + IST_MS);
+  const week = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate() - i));
+    const k = d.toISOString().slice(0, 10);
+    const r = i === 0 ? rec : reconstructDay(k, samples, trips, t0);
+    week.push({ day: k, ug: r.thin ? 0 : r.totalUg });
+  }
+  return { rec, week, weekCounted: week.filter((w) => w.ug > 0).length >= 2 };
+}
+
 /* ── strings: verbatim en values from Mobile/src/i18n/strings.ts ── */
 const S = {
   searchPlaceholder: 'Where to?', goLabel: 'go somewhere', a11yMenu: 'menu', cityName: 'Delhi',
@@ -132,6 +278,10 @@ const S = {
   daySparseWait: 'waiting for the first air reading today',
   daySparseCount: 'your count starts once the phone logs its first hours',
   dayCovered: '{h}h {m}m counted', dayCoveredMin: '{m}m counted',
+  dayTitle: 'your day', dayPartsTitle: 'where it accumulated',
+  dayArcDose: '≈{n} µg · {h}', dayArcAir: '{h} · air ~{c} µg/m³', dayArcFlat: '{h}',
+  weekTitle: "your lungs' calendar", weekNoReads: 'nothing logged',
+  weekSheetFine: "only real readings land here — a blank day is a day the app wasn't with you, never a zero",
   band_good: 'good', band_satisfactory: 'satisfactory', band_moderate: 'moderate',
   band_poor: 'poor', band_veryPoor: 'very poor', band_severe: 'severe',
   felt_easy: 'good', felt_fine: 'satisfactory', felt_fair: 'moderate',
@@ -515,6 +665,9 @@ function heroHtml(d) {
       <div class="hs-progrow">${Array.from({ length: THIN_SAMPLE_MIN }, (_, i) =>
         `<span class="hs-progseg" style="background:${i < d.samplesToday ? ink : 'var(--surface3)'}"></span>`).join('')}
         <span class="hs-proglbl">${esc(t('daySparseCount'))}</span></div>` : ''}
+    ${d.weekCounted ? `<div class="hs-weekrow">${d.week.map((w) =>
+        `<span class="hs-weekbar" style="background:${w.ug > 0 ? doseDotColor(w.ug, d.budget) : 'var(--surface3)'};height:${w.ug > 0 ? 4 + 14 * (w.ug / d.weekMax) : 4}px"></span>`).join('')}
+        <span class="hs-weeklbl">${esc(t('homeWeek', { n: approx(doseUgRound(d.weekTotal)) }))}</span></div>` : ''}
   `;
 }
 function countUp(span) {
@@ -721,11 +874,55 @@ function lensHtml() {
   </div>`;
 }
 
+/* ══ YOUR DAY — RN DayCard + HourArc ports ══ */
+const bandColorFor = (v) => { const i = isNum(v) ? bandIdx(v) : null; return i != null ? bandColorIdx(i) : null; };
+/* the day's 24-slot heat strip: bar height = that hour's counted dose,
+   colour = the air breathed; uncovered reads keep a band dot; trips
+   leave a dot. RN's scrub gesture is read-only here — the strip and
+   its hour ticks carry the same information */
+function hourArcHtml(rec) {
+  const max = Math.max(...rec.arc.map((h) => h.dose_ug), 0.5);
+  const nh = nowHour();
+  return `<div class="hs-arcwrap">${rec.arc.map((h) => `<div class="hs-arccol"><div class="hs-arcbarcol">${
+    h.covered && h.dose_ug > 0
+      ? `<span class="hs-arcbar" style="height:${4 + 44 * (h.dose_ug / max)}px;background:${bandColorFor(h.conc) || 'var(--ink3)'}"></span>`
+      : h.conc != null
+        ? `<span class="hs-arcdot" style="background:${bandColorFor(h.conc) || 'var(--hairc)'}"></span>` : ''
+  }${h.trip_marks > 0 ? '<span class="hs-arctrip"></span>' : ''}</div><span class="hs-archr"${h.hour === nh ? ' style="color:var(--ink)"' : ''}>${h.hour % 3 === 0 ? h.hour : ''}</span></div>`).join('')}</div>
+  <div class="hs-arcscrub"></div>`;
+}
+function dayCardHtml(rec, budget) {
+  const parts = rec.parts.map((p) => {
+    const pt = doseTierIdx(p.ug, budget);
+    return `<div class="hs-partchip"><span class="hs-partspine" style="background:${doseDotColor(p.ug, budget)}"></span><span class="hs-partlbl">${esc(p.label)}</span><span class="hs-partug" style="color:${pt != null ? bandInkIdx(pt) || 'var(--ink)' : 'var(--ink)'}">${esc(approx(doseUgRound(p.ug)))} µg</span></div>`;
+  }).join('');
+  return `<div class="hcard">${cardTitle('dayTitle')}${hourArcHtml(rec)}${
+    rec.parts.length ? `<div class="hs-partst">${esc(t('dayPartsTitle'))}</div>${parts}` : ''}</div>`;
+}
+
+/* ══ YOUR LUNGS' CALENDAR — RN WeekStrip port: seven band-washed day
+   cells, oldest → today; uncounted days stay bare stubs, never zeros ══ */
+const narrowLetter = (dayK) => new Date(`${dayK}T12:00:00Z`).toLocaleDateString('en-IN', { weekday: 'narrow', timeZone: 'UTC' });
+function weekStripHtml(week, budget) {
+  const maxW = Math.max(...week.map((w) => w.ug), 1);
+  const total = week.reduce((s, w) => s + w.ug, 0);
+  const todayK = week[week.length - 1].day;
+  const cells = week.map((w) => {
+    const tier = doseTierIdx(w.ug, budget);
+    const isToday = w.day === todayK;
+    const cellBg = tier != null ? bandWashDeepIdx(tier) : 'var(--s2)';
+    const dayCol = isToday ? 'var(--accent-ink)' : (tier != null ? bandInkIdx(tier) || 'var(--ink3)' : 'var(--ink3)');
+    const letter = isToday ? t('dayLbl_today') : narrowLetter(w.day);
+    return `<div class="hs-weekcell" style="background:${cellBg}" aria-label="${esc(letter)}, ${w.ug > 0 ? `${approx(doseUgRound(w.ug))} µg` : t('weekNoReads')}"><span class="hs-weekday" style="color:${dayCol}">${esc(letter)}</span><span class="hs-weekbarcol"><span class="hs-weekbarv" style="height:${w.ug > 0 ? 4 + 30 * (w.ug / maxW) : 4}px;background:${w.ug > 0 ? doseDotColor(w.ug, budget) : 'var(--surface3)'};opacity:${w.ug > 0 ? 0.55 + 0.45 * (w.ug / maxW) : 0.9}"></span></span><span class="hs-weekug"${isToday ? ' style="color:var(--ink)"' : ''}>${w.ug > 0 ? esc(approx(doseUgRound(w.ug))) : ' '}</span></div>`;
+  }).join('');
+  return `<div class="hcard"><div class="hs-weekhead">${cardTitle('weekTitle')}<span class="hs-weektotal">${esc(t('homeWeek', { n: approx(doseUgRound(total)) }))} ${ic('chevron', 15)}</span></div><div class="hs-weekcells">${cells}</div><div class="hs-weekhint">${esc(t('weekSheetFine'))}</div></div>`;
+}
+
 /* ══ BUDGET ══ */
-function budgetHtml() {
+function budgetHtml(totalUg) {
   const s = getSettings();
   const budget = profileBudgetUg(s.profile);
-  const total = 0;   // no on-device dose reconstruction on web — the honest 0
+  const total = totalUg || 0;   // the day's reconstructed dose — real, on-device
   const over = total - budget;
   const frac = Math.max(0, Math.min(1, total / budget));
   const profName = t(`profile${cap(s.profile)}`);
@@ -752,8 +949,13 @@ function heroData() {
   const pos = cur.pos || A.geo.pos;
   const atGps = A.geo.consent === 'granted' && pos && !pos.picked;
   const ambientUg = aqi && aqi.pm25 != null ? Math.round(aqi.pm25) : null;
+  const dd = dayData();
   return {
-    thin: true, totalUg: 0, samplesToday: 0, yday: 0,
+    thin: dd.rec.thin, totalUg: dd.rec.totalUg, samplesToday: dd.rec.samplesToday,
+    yday: dd.week.length > 1 ? dd.week[dd.week.length - 2].ug : 0,
+    rec: dd.rec, week: dd.week, weekCounted: dd.weekCounted,
+    weekTotal: dd.week.reduce((sum, w) => sum + w.ug, 0),
+    weekMax: Math.max(...dd.week.map((w) => w.ug), 1),
     budget: profileBudgetUg(s.profile), profileSet: s.profile_set,
     ambientUg,
     series: cur.day ? cur.day.series : [],
@@ -769,7 +971,7 @@ function heroData() {
 }
 
 /* ══ screen ── */
-let root, heroEl, incWrap, doorsWrap, moveWrap, oaWrap, lensWrap, budWrap;
+let root, heroEl, incWrap, doorsWrap, moveWrap, dayWrap, weekWrap, oaWrap, lensWrap, budWrap;
 let clockTimer = null, moodIdx = null, moodEl = null;
 
 function paint() {
@@ -801,15 +1003,30 @@ function paint() {
   renderSparseArc(heroEl.querySelector('#hs-arc'), d.series, ink);
   incWrap.innerHTML = cur.cityWhy ? incidentHtml(cur.cityWhy) : '';
   moveWrap.innerHTML = moveHtml(cur.day, cur.pos ? !A.search.inDelhi(cur.pos.lat, cur.pos.lon) : false);
+  dayWrap.innerHTML = (d.rec && !d.rec.thin) ? dayCardHtml(d.rec, d.budget) : '';
+  weekWrap.innerHTML = (d.week && d.week.some((w) => w.ug > 0)) ? weekStripHtml(d.week, d.budget) : '';
   oaWrap.innerHTML = cur.outlook ? outlookHtml(cur.outlook) : '';
-  budWrap.innerHTML = budgetHtml();
+  budWrap.innerHTML = budgetHtml(d.totalUg);
 }
 
 async function refresh() {
   const pos = cur.pos || A.geo.pos || A.DELHI;
+  /* a granted consent keeps the fix live — re-locate silently so
+     pos.t stays fresh for sampling (RN's fix is always live) */
+  if (A.geo.consent === 'granted' && (!pos.t || Date.now() - pos.t > 60000)) {
+    A.geo.locate().then((p) => {
+      if (p && cur.pos) { cur.pos = Object.assign({}, p, { label: cur.pos.label || p.label }); A.store.set('pos', cur.pos); }
+    }).catch(() => {});
+  }
   const j = await A.api.get(`/aqi?lat=${pos.lat}&lon=${pos.lon}`, 8000);
   if (j) {
     cur.aqi = j;
+    /* a live field read at a fresh fix → an ambient sample for the day
+       log (RN: the sampling loop writes these continuously) */
+    const smp = personalSample(pos.t ? { lat: pos.lat, lon: pos.lon, ts: pos.t } : null,
+      { amb: j.pm25_ambient != null ? j.pm25_ambient : j.pm25, bz: j.pm25,
+        fieldAgeS: j.field && j.field.age_s != null ? j.field.age_s : null }, Date.now());
+    if (smp) recordSample(smp);
     if (!cur.label) {
       A.search.reverse(pos.lat, pos.lon).then((n) => { if (n) { cur.label = n; paint(); } });
     }
@@ -834,7 +1051,7 @@ function onbHtml(page, ambientUg) {
   const band = ambientUg != null ? bandIdx(ambientUg) : null;
   const body = [
     `<div class="onb-eyebrow">${esc(t('onb_airKicker'))}</div>
-     ${ambientUg != null ? `<div class="onb-airrow"><span class="onb-airnum" style="color:${bandInkIdx(band)}">${Math.round(ambientUg)}</span><div class="onb-airmeta"><span class="onb-airunit">µg/m³</span><span class="onb-airband" style="color:${bandInkIdx(band)}">${esc(bandWord(band))}</span></div></div>` : ''}
+     ${ambientUg != null ? `<div class="onb-airrow"><span class="onb-airnum" style="color:${bandInkIdx(band)}">~${Math.round(ambientUg)}</span><div class="onb-airmeta"><span class="onb-airunit">µg/m³</span><span class="onb-airband" style="color:${bandInkIdx(band)}">${esc(bandWord(band))}</span></div></div>` : ''}
      <div class="onb-line">${esc(t('onb_airLine'))}</div>`,
     `<div class="onb-hero">${esc(t('onb_whatTitle'))}</div>
      <div class="onb-arc">
@@ -844,7 +1061,7 @@ function onbHtml(page, ambientUg) {
      </div>`,
     `<div class="onb-hero">${esc(t('onb_phoneTitle'))}</div>
      <div class="onb-lead">${esc(t('onb_phoneBody'))}</div>
-     <div class="onb-kcard"><div class="onb-knum">3</div><div class="onb-klabel">${esc(t('onb_kLabel'))}</div></div>`,
+     <div class="onb-kcard"><div class="onb-knum">3+</div><div class="onb-klabel">${esc(t('onb_kLabel'))}</div></div>`,
     `<div class="onb-hero">${esc(t('consent_title'))}</div>
      <div class="onb-lead">${esc(t('consent_body'))}</div>
      <div class="onb-choice">
@@ -866,7 +1083,7 @@ function onbHtml(page, ambientUg) {
     ${page <= ONB_CHOICE ? `<div class="onb-foot">${esc(t('consent_footnote'))}</div>` : ''}
     <div class="onb-footer">
       <div class="onb-dots">${Array.from({ length: ONB_PAGES }, (_, i) => `<span class="onb-dot ${i === page ? 'on' : ''}"></span>`).join('')}</div>
-      ${page < ONB_PAGES - 1 ? `<button class="onb-next" data-onb="next">${esc(t('onb_next'))}${ic('chevron', 18)}</button>` : ''}
+      ${page < ONB_CHOICE ? `<button class="onb-next" data-onb="next">${esc(t('onb_next'))}${ic('chevron', 18)}</button>` : '<div class="onb-nextghost"></div>'}
     </div>`;
 }
 let onbPage = 0;
@@ -885,13 +1102,37 @@ function wireConsentLayer(consentEl) {
     if (act) {
       e.stopPropagation(); e.preventDefault();
       const a = act.dataset.onb;
-      if (a === 'next') { onbPage = Math.min(ONB_PAGES - 1, onbPage + 1); renderOnb(consentEl); }
-      else if (a === 'skip') { A.store.set('onboarded', 1); consentEl.hidden = true; }
+      if (a === 'next') { if (onbPage < ONB_CHOICE) { onbPage += 1; renderOnb(consentEl); } }
+      /* RN leave(): persist share=off AND fire the location ask — skip
+         never writes consent silently */
+      else if (a === 'skip') { setSettings({ share: false }); A.store.set('onboarded', 1); answer('gps'); }
       else if (a === 'share') { setSettings({ share: true }); onbPage = 4; renderOnb(consentEl); }
       else if (a === 'keep') { setSettings({ share: false }); onbPage = 4; renderOnb(consentEl); }
       return;
     }
     if (A.geo.consent && e.target === consentEl) consentEl.hidden = true;
+  }, true);
+  /* horizontal swipe paging — RN PanResponder: claims a clearly-
+     horizontal drag (>28px, 1.6× dominant), commits on release at ±48px;
+     forward stops at the consent choice, back walks to page 0 */
+  let sw = null, swiping = false, swStamp = 0;
+  consentEl.addEventListener('pointerdown', (e) => { sw = { x: e.clientX, y: e.clientY }; swiping = false; });
+  consentEl.addEventListener('pointermove', (e) => {
+    if (!sw || swiping) return;
+    const dx = Math.abs(e.clientX - sw.x), dy = Math.abs(e.clientY - sw.y);
+    if (dx > 28 && dx > dy * 1.6) { swiping = true; try { consentEl.setPointerCapture(e.pointerId); } catch (_) {} }
+  });
+  consentEl.addEventListener('pointerup', (e) => {
+    if (swiping && sw) {
+      const dx = e.clientX - sw.x;
+      swStamp = Date.now();
+      if (dx < -48 && onbPage < ONB_CHOICE) { onbPage += 1; renderOnb(consentEl); }
+      else if (dx > 48 && onbPage > 0) { onbPage -= 1; renderOnb(consentEl); }
+    }
+    sw = null; swiping = false;
+  });
+  consentEl.addEventListener('click', (e) => {
+    if (Date.now() - swStamp < 400) { e.stopPropagation(); e.preventDefault(); }
   }, true);
 }
 function openConsent() {
@@ -914,6 +1155,7 @@ function answer(mode) {
   }
 }
 function applyPos(pos) {
+  if (!pos.t) pos.t = Date.now();   /* the fix's age gates sampling */
   cur.pos = pos; cur.label = pos.label || null;
   A.store.set('pos', pos);
   cur.aqi = null; cur.day = null; cur.outlook = null; cur.cityWhy = null;
@@ -944,6 +1186,8 @@ A.screen('home', {
           <section class="hs-fade" id="hs-incwrap" style="animation-delay:70ms"></section>
           <section class="hs-fade" id="hs-doorswrap" style="animation-delay:90ms"></section>
           <section class="hs-fade" id="hs-movewrap" style="animation-delay:130ms"></section>
+          <section class="hs-fade" id="hs-daywrap" style="animation-delay:170ms"></section>
+          <section class="hs-fade" id="hs-weekwrap" style="animation-delay:190ms"></section>
           <section class="hs-fade" id="hs-oawrap" style="animation-delay:210ms"></section>
           <section class="hs-fade" id="hs-lenswrap" style="animation-delay:250ms"></section>
           <section class="hs-fade" id="hs-budwrap" style="animation-delay:300ms"></section>
@@ -955,6 +1199,8 @@ A.screen('home', {
     incWrap = elm.querySelector('#hs-incwrap');
     doorsWrap = elm.querySelector('#hs-doorswrap');
     moveWrap = elm.querySelector('#hs-movewrap');
+    dayWrap = elm.querySelector('#hs-daywrap');
+    weekWrap = elm.querySelector('#hs-weekwrap');
     oaWrap = elm.querySelector('#hs-oawrap');
     lensWrap = elm.querySelector('#hs-lenswrap');
     budWrap = elm.querySelector('#hs-budwrap');

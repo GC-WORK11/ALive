@@ -316,3 +316,39 @@
 /* paper screens own their top — the frozen #chrome (wordmark + loc-chip)
    duplicates the RN header on home; off-home screens keep it */
 body[data-top="home"] #chrome { display: none; }
+
+/* ── hero week row (RN heroWeekRow — mini dose bars over the week) ── */
+.hs-weekrow { display: flex; align-items: flex-end; gap: 6px; margin-top: 16px; }
+.hs-weekbar { width: 8px; height: 16px; border-radius: 4px; flex: 0 0 auto; }
+.hs-weeklbl { color: var(--ink3); font-size: 13px; margin-left: 8px; font-variant-numeric: tabular-nums; }
+
+/* ── your day card (RN DayCard + HourArc) ── */
+.hs-arcwrap { display: flex; align-items: flex-end; margin-top: 12px; }
+.hs-arccol { flex: 1; display: flex; flex-direction: column; align-items: center; }
+.hs-arcbarcol { height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.hs-arcbar { width: 6px; border-radius: 3px; }
+.hs-arcdot { width: 5px; height: 5px; border-radius: 2.5px; margin-bottom: 3px; }
+.hs-arctrip { width: 5px; height: 5px; margin-top: 3px; border-radius: 1.5px; background: var(--accent); }
+.hs-archr { color: var(--ink3); font-size: 11px; margin-top: 4px; height: 14px; line-height: 14px; font-variant-numeric: tabular-nums; }
+.hs-arcscrub { height: 17px; margin-top: 6px; }
+.hs-partst { color: var(--ink3); font-size: 13px; margin-top: 16px; margin-bottom: 6px; }
+.hs-partchip { display: flex; align-items: center; gap: 10px; background: var(--s2); border-radius: 13px; padding: 9px 10px; margin-top: 6px; }
+.hs-partspine { width: 4px; height: 18px; border-radius: 2px; flex: 0 0 auto; }
+.hs-partlbl { color: var(--ink); font-size: 15px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hs-partug { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+
+/* ── your lungs' calendar (RN WeekStrip) ── */
+.hs-weekhead { display: flex; align-items: baseline; justify-content: space-between; }
+.hs-weekhead .hcard-title { margin-bottom: 0; }
+.hs-weektotal { color: var(--ink3); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.hs-weektotal .ic { color: var(--ink4); }
+.hs-weekcells { display: flex; gap: 6px; margin-top: 10px; }
+.hs-weekcell { flex: 1; min-width: 0; border-radius: 15px; background: var(--s2); padding: 9px 4px 8px; display: flex; flex-direction: column; align-items: center; }
+.hs-weekday { color: var(--ink3); font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hs-weekbarcol { height: 34px; display: flex; align-items: flex-end; margin-top: 4px; }
+.hs-weekbarv { width: 8px; border-radius: 4px; }
+.hs-weekug { color: var(--ink3); font-size: 11px; margin-top: 4px; height: 13px; line-height: 13px; font-variant-numeric: tabular-nums; }
+.hs-weekhint { color: var(--ink4); font-size: 11px; margin-top: 10px; }
+
+/* the consent choice page carries a ghost where Next sat (RN nextGhost) */
+.onb-nextghost { height: 56px; padding: 0 28px; }

@@ -40,6 +40,12 @@ const T = {
   staysTitle: 'where to stay', doorStaysSub: 'stays, lightest air first · near you',
   explorePlayTitle: 'when to go out', doorPlaySub: 'the next 24 h · near you',
   airIntentTitle: 'the air map',
+  exploreStaysTitle: 'stays — lightest air first',
+  explorePlayRowTitle: "when's the air lightest to play",
+  exploreNearYou: 'near you', exploreNearPlace: 'near {place}',
+  mode_leastSmoke: ' · least smoky way',
+  mode_leastSmokeAlt: ' · least smoky option {n}',
+  mode_altN: ' · alt {n}',
   checkingRoutes: 'finding the purest route for you…',
   noRoutes: 'no route found between those two places',
   plan_failed: "couldn't load the ways there — check the connection",
@@ -284,9 +290,19 @@ function deltaLine(o, minDose) {
   }
   return parts ? { text: parts, tone: 'flat' } : null;
 }
-/* RN modeLabel: server label + wire suffix (" · least-smoke alt 2") —
-   the en surface just carries the label; split qualifier for styling */
-const modeLabel = (o) => String(o.label || '').trim() || 'way there';
+/* RN modeLabel: server label + wire suffix — the wire qualifiers
+   ("· least-smoke rd/alt N", "· alt N") always translate to the voice's
+   own wording, never leak raw wire English into a visible row */
+const modeLabel = (o) => {
+  const lbl = String(o.label || '').trim() || 'way there';
+  const alt = lbl.match(/^(.*?) · least-smoke alt (\d+)$/);
+  if (alt) return alt[1] + t('mode_leastSmokeAlt', { n: alt[2] });
+  if (/ · least-smoke rd$/.test(lbl))
+    return lbl.replace(/ · least-smoke rd$/, t('mode_leastSmoke'));
+  const a = lbl.match(/^(.*?) · alt (\d+)$/);
+  if (a) return a[1] + t('mode_altN', { n: a[2] });
+  return lbl;
+};
 const isTransit = (o) => /metro|bus/.test(o.mode || '') || !!o.stations;
 
 /* ── vehicle profile — store/vehicle.ts ports ─────────��─��─────────── */
@@ -388,6 +404,42 @@ const doorRows = () => `
 const AIR_RE = /\b(air|aqi|pollution|smoke|smog|pm ?2\.?5)\b/i;
 const STAY_RE = /\b(stay|stays|hotel|hotels|sleep|lodge|lodge)\b/i;
 
+/* explore.ts ports — airIntent + exploreIntent run on the raw query
+   here (the web surface has no parser): token sets + near-anchor
+   extraction straight from Mobile/src/search/explore.ts */
+const I_STOP = new Set(['the','a','an','for','with','of','to','in','near','around','my','me','best','good','place','places','spot','spots','somewhere','somewere','where','there','here','out','at','and','is','it','what','whats','how','today','now','tonight','tomorrow','any','some']);
+const STAY_TOKS = new Set(['hotel','hotels','stay','stays','hostel','hostels','resort','resorts','lodge','lodges','room','rooms','guesthouse','guesthouses','bnb','airbnb','cottage','villa','villas','rental','rentals','accomodation','accommodation','pg','sleep']);
+const PLAY_TOKS = new Set(['play','playing','basketball','football','soccer','badminton','tennis','cricket','volleyball','pickleball','run','running','jog','jogging','walk','walking','hike','hiking','swim','swimming','cycle','cycling','workout','gym','exercise','park','parks','outdoors','picnic','sports','yoga','kite','kites']);
+const PLAY_PHRASE = /\bplay\b/i;
+const AIR_TOKS = new Set(['air','aqi','pollution','polluted','smoke','smog','smoggy','pm','pm2','pm25','breathe','breathing','breathed','airmap','quality','level','levels','concentration','spread','trend','trends','clean','cleanest','dirtiest','dust','dusty']);
+const AIR_WORD = /\b(air|aqi|pollution|polluted|smoke|smog|smoggy|pm2?\.?5|breathe|breathing|breathed|airmap|quality|concentration|cleanest|dirtiest|dust|dusty)\b/i;
+/* blockers — the query wants a place/thing/route, not the air map */
+const AIR_BLOCK = new Set(['route','routes','way','plan','trip','drive','compare','vs','which','shop','shops','shopping','restaurant','restaurants','eat','eats','food','hotel','hotels','stay','play','movie','office','school','college','metro','station','mall','market','doctor','hospital','chemist','pharmacy','gym','petrol','atm','bank','temple','temples']);
+const iToks = (q) => String(q || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const hasToDest = (toks) => { const i = toks.indexOf('to'); return i > 0 && toks.slice(i + 1).some((x) => !I_STOP.has(x)); };
+function airIntentWeb(q) {
+  const toks = iToks(q);
+  if (!toks.length || toks.some((x) => AIR_BLOCK.has(x))) return null;
+  const ni = toks.indexOf('near');
+  const stem = ni >= 0 ? toks.slice(0, ni) : toks;
+  if (!stem.some((x) => AIR_TOKS.has(x) || AIR_WORD.test(x))) return null;
+  const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
+  return { nearQuery: near || null };
+}
+function exploreIntentWeb(q) {
+  const toks = iToks(q);
+  if (!toks.length || hasToDest(toks)) return null;
+  const ni = toks.indexOf('near');
+  const stem = (ni >= 0 ? toks.slice(0, ni) : toks).filter((x) => !I_STOP.has(x));
+  let mode = null;
+  if (stem.some((x) => STAY_TOKS.has(x))) mode = 'stays';
+  else if (stem.some((x) => PLAY_TOKS.has(x)) || PLAY_PHRASE.test(q)) mode = 'playtime';
+  if (!mode) return null;
+  const near = ni >= 0 ? toks.slice(ni + 1).filter((x) => !I_STOP.has(x)).join(' ') : '';
+  const anchor = stem.filter((x) => !STAY_TOKS.has(x) && !PLAY_TOKS.has(x)).join(' ');
+  return { mode, nearQuery: near || anchor || null };
+}
+
 function searchListHTML() {
   let h = '';
   const typing = S.q.trim().length > 0;
@@ -409,16 +461,31 @@ function searchListHTML() {
         if (S.saveFor && S.saveFor.key === `recent:${k}`) h += saveStrip();
       }
     }
-    h += doorRows();
+    /* RN order: saved → recents → Quiet → 'air answers' door rows */
     if (!S.recents.length && !saved.length) {
       h += `<div class="wt-quiet">${icon('search', 20, INK3)}<span>${t('emptySearchHint')}</span></div>`;
     }
+    h += doorRows();
     return h;
   }
-  /* typing — air door + results (instant rows, then cascade below a hairline) */
-  if (AIR_RE.test(S.q) || STAY_RE.test(S.q)) h += doorRows();
-  h += `<div class="wt-sec">${t('resultsHeader')}</div>`;
+  /* typing — a typed air/stay/play-intent query earns ONE explore row
+     under 'air answers' (SearchScreen's airI/intent split), never the
+     static door pair; real results sit under 'Results' below */
+  const airI = airIntentWeb(S.q);
+  const intent = airI ? null : exploreIntentWeb(S.q);
+  if (airI || intent) {
+    h += `<div class="wt-sec">${t('exploreHeader')}</div>`;
+    if (airI) h += placeRow({ key: 'door:airmap', glyph: 'leaf', gcolor: ACCENT,
+      title: t('airIntentTitle'),
+      sub: airI.nearQuery ? t('exploreNearPlace', { place: airI.nearQuery }) : t('exploreNearYou') });
+    if (intent) h += placeRow({ key: intent.mode === 'stays' ? 'door:stay' : 'door:play',
+      glyph: intent.mode === 'stays' ? 'hotel' : 'explore', gcolor: ACCENT,
+      title: intent.mode === 'stays' ? t('exploreStaysTitle') : t('explorePlayRowTitle'),
+      sub: intent.nearQuery ? t('exploreNearPlace', { place: intent.nearQuery }) : t('exploreNearYou') });
+  }
   const inst = instantRows();
+  if (airI || intent || inst.length || S.pending || (S.results && S.results.length))
+    h += `<div class="wt-sec">${t('resultsHeader')}</div>`;
   const instKeys = new Set();
   for (const p of inst) {
     const k = p._slot ? `saved:${p._slot}` : `recent:${rowKey(p)}`;
@@ -440,7 +507,7 @@ function searchListHTML() {
   return h;
 }
 function renderSearch() {
-  const fromTxt = S.from ? S.from.label : t('yourSpot');
+  const fromTxt = S.from ? S.from.label : t('searchFromPlaceholder');
   const toTxt = S.to ? S.to.label : t('searchPlaceholder');
   const inCls = S._anim !== 'search' ? ' wt-in' : ''; S._anim = 'search';
   S.body.innerHTML = `<div class="wt${inCls}">
