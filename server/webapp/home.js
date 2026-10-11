@@ -353,6 +353,8 @@ const S = {
   consent_shareBtn: 'Share trips anonymously', consent_shareSub: 'helps Delhi see its air, street by street',
   consent_keepBtn: 'Keep everything on my phone', consent_keepSub: 'nothing is uploaded — you can turn it on later',
   consent_footnote: 'Skipping keeps everything on this phone — either way, one tap in Settings changes it.',
+  pickPointHint: 'tap the map where you are — the air reads there',
+  consentShare: 'use my location',
 };
 const FELT_BY_BAND = ['felt_easy', 'felt_fine', 'felt_fair', 'felt_heavy', 'felt_rough', 'felt_harsh'];
 const MOVE_BAND_KEYS = ['band_good', 'band_satisfactory', 'band_moderate', 'band_poor', 'band_veryPoor', 'band_severe'];
@@ -1181,6 +1183,10 @@ A.screen('home', {
             <span class="hs-ctaarrow">${ic('navigate', 16)}</span>
           </button>
         </div>
+        <div class="hs-pickcard" id="hs-pickcard">
+          <div class="hs-picktxt">${esc(t('pickPointHint'))}</div>
+          <button class="hs-pickgps" id="hs-pickgps" type="button">${esc(t('consentShare'))}</button>
+        </div>
         <div class="hs-scroll">
           <section class="hs-fade" style="animation-delay:0ms"><div class="hs-hero" id="hs-hero"></div></section>
           <section class="hs-fade" id="hs-incwrap" style="animation-delay:70ms"></section>
@@ -1265,6 +1271,15 @@ A.screen('home', {
          the frozen #loc-chip stays hidden (consent opens on first run) */
     };
     setChip();
+    const setPick = () => {
+      root.classList.toggle('hs-picking', A.geo.consent === 'picked' && !A.geo.pos);
+    };
+    setPick();
+    const pickGps = elm.querySelector('#hs-pickgps');
+    if (pickGps) pickGps.addEventListener('click', () => {
+      A.geo.consent = 'granted'; A.store.set('consent', 'granted');
+      A.geo.locate().then((pos) => { if (pos) { applyPos(pos); setPick(); } }).catch(() => {});
+    });
     if (chip && !chip.dataset.homeWired) {
       chip.dataset.homeWired = '1';
       chip.addEventListener('click', openConsent);
@@ -1296,6 +1311,7 @@ A.screen('home', {
       const p = { lat: e.detail.lat, lon: e.detail.lon, label: null, picked: true };
       applyPos(p);
       A.map.puckMove(p.lat, p.lon, null);
+      setPick();
     };
     document.addEventListener('alive:location', onLoc);
     document.addEventListener('alive:maptap', onTap);

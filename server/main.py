@@ -1830,6 +1830,20 @@ async def webapp_index():
                  "x-frame-options": "SAMEORIGIN"})
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Browsers that ignore <link rel=icon> still probe /favicon.ico —
+    answer it (the same ring mark the app declares) so the console
+    stays clean."""
+    from fastapi.responses import Response
+    svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+           "<rect width='32' height='32' rx='8' fill='#f4f1ea'/>"
+           "<circle cx='16' cy='16' r='9' fill='none' stroke='#2f5d3f' "
+           "stroke-width='3.2'/></svg>")
+    return Response(svg, media_type="image/svg+xml",
+                    headers={"cache-control": "public, max-age=86400"})
+
+
 @app.get("/app/{asset:path}", include_in_schema=False)
 async def webapp_asset(asset: str):
     """Webapp assets under server/webapp/ — traversal-proof like

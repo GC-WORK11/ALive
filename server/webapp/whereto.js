@@ -764,7 +764,7 @@ function optionCard(o, i, minDose, lightest) {
         : t('compare_moreVs', { n: doseGap, m: lightestWord }))
     : null;
   const meta = (o.distance_km != null ? `${o.distance_km} ${t('unitsKm')} · ` : '')
-    + t('arriveAt', { t: clockLabel(Date.now() + (o.duration_min || 0) * 60000) })
+    + t('arriveAt', { t: clockLabel(Date.now() + ((o.eta_s != null ? o.eta_s : (o.duration_min || 0) * 60)) * 1000) })
     + (o.stations ? ` · ${esc(o.stations.board)}→${esc(o.stations.alight)}` : '');
   const tag = o.tag ? (T[TAG_KEY[String(o.tag).toLowerCase()]] || o.tag) : null;
   const lbl = modeLabel(o);
@@ -806,7 +806,7 @@ function optionCard(o, i, minDose, lightest) {
         ? `<span class="wt-dose" style="color:${dCol}">≈${doseRound(d.mid)}</span>
            <span class="wt-dsub">µg${band ? ` ${band}` : ''}</span>`
         : `<span class="wt-dna">${t('compare_doseNA')}</span>`}
-      <span class="wt-eta">${o.duration_min != null ? `${Math.round(o.duration_min)} ${t('minUnit')}` : ''}</span>
+      <span class="wt-eta">${o.eta_s != null ? `${Math.max(1, Math.round(o.eta_s / 60))} ${t('minUnit')}` : (o.duration_min != null ? `${Math.round(o.duration_min)} ${t('minUnit')}` : '')}</span>
       ${d && d.mid != null ? `<span class="wt-barsrow">${icon('dust', 11, INK3)}<i class="wt-track"><i style="width:${Math.round(frac * 100)}%;background:${fillCol}"></i></i><span class="wt-i" data-info="${i}">${icon('info', 13, INK3)}</span></span>` : ''}
     </span>
     ${det}

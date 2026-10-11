@@ -521,6 +521,7 @@ async function planCard() {
   const body = st.body;
   const lat = st.place.lat, lon = st.place.lon;
   const zone = body.querySelector('.am-plan');
+  if (!zone) return;
   zone.innerHTML = `<div class="muted" style="padding:12px 4px">${esc(t('exploreReading'))}</div>`;
   const d = await A.api.get(`/v2/playtime?near=${lat.toFixed(5)},${lon.toFixed(5)}`, 18000);
   if (!body.isConnected || !st) return;

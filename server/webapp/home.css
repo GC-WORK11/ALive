@@ -352,3 +352,24 @@ body[data-top="home"] #chrome { display: none; }
 
 /* the consent choice page carries a ghost where Next sat (RN nextGhost) */
 .onb-nextghost { height: 56px; padding: 0 28px; }
+
+/* ── pick mode — consent='picked' with no point yet: the map IS the
+   picker, so the surface goes transparent + inert and only the hint
+   card stays clickable (RN: the pick phase is map + one card). ── */
+.hs-pickcard { display: none; }
+.hs.hs-picking { background: transparent; pointer-events: none; }
+.hs-picking .hs-mood, .hs-picking .hs-scroll, .hs-picking .hs-ctabar,
+.hs-picking .hs-head { display: none; }
+.hs-picking .hs-pickcard {
+  display: block; position: absolute; left: 14px; right: 14px;
+  bottom: calc(16px + var(--sab)); z-index: 5;
+  background: var(--surface); border-radius: 20px;
+  box-shadow: var(--sh-sheet); padding: 16px 18px calc(16px + 4px);
+  pointer-events: auto;
+}
+.hs-picktxt { font-size: 15px; color: var(--ink); margin-bottom: 12px; }
+.hs-pickgps {
+  display: block; width: 100%; padding: 13px; border: 0; border-radius: 14px;
+  background: var(--accent); color: #fff; font-size: 15px; font-weight: 500;
+  cursor: pointer;
+}

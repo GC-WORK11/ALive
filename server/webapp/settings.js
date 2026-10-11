@@ -176,7 +176,8 @@ const storeBody = () =>
 
 function settingsHtml() {
   const s = getSettings();
-  const veh = s.vehicle || A.store.get('vehicle');
+  const vehRec = A.store.get('whereto.vehicle');
+  const veh = s.vehicle || (vehRec && (typeof vehRec === 'string' ? vehRec : vehRec.cls));
   const vehLabel = veh ? t(VEHICLE_LABEL[veh] || 'vehicleQ1') : t('notSet');
   const denied = notifPerm() === 'denied';
   return `
