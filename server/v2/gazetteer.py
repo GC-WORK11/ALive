@@ -171,7 +171,45 @@ coimbatore madurai vijayawada visakhapatnam gwalior jabalpur mysuru
 mysore dehradun shimla ranchi raipur bhubaneswar cuttack agartala
 imphal gangtok aizawl itanagar kohima dimapur siliguri asansol
 durgapur agra mathura vrindavan haridwar rishikesh nainital mussoorie
-london dubai singapore bangkok kathmandu colombo dhaka karachi lahore
+gorakhpur gorkhpur muzaffarpur bareilly moradabad aligarh saharanpur
+jhansi faizabad ayodhya firozabad ghazipur ballia azamgarh deoria
+basti gonda barabanki sitapur hardoi shahjahanpur rampur etawah
+mainpuri kannauj farrukhabad unnao sultanpur pratapgarh jaunpur
+mirzapur bijnor amroha sambhal chandausi hathras etah kasganj badaun
+rewa satna katni sagar damoh khajuraho tikamgarh panna morena bhind
+guna shivpuri datia chhindwara seoni balaghat betul hoshangabad
+khandwa khargone burhanpur ratlam ujjain dewas mandsaur shajapur
+rajgarh vidisha sehore raisen dhanbad bokaro jamshedpur hazaribagh
+giridih koderma deoghar dumka sahibganj pakur godda kharagpur
+purulia bankura bardhaman burdwan hooghly nadia murshidabad malda
+jalpaiguri darjeeling kalimpong bhagalpur gaya nawada jehanabad
+sheikhpura lakhisarai jamui begusarai khagaria samastipur darbhanga
+madhubani supaul araria kishanganj purnia katihar madhepura saharsa
+sitamarhi sheohar motihari bettiah chhapra siwan gopalganj vaishali
+hajipur nellore tirupati kurnool anantapur kadapa ongole guntur
+rajahmundry kakinada eluru warangal karimnagar nizamabad khammam
+nalgonda adilabad belagavi hubli dharwad mangalore udupi shimoga
+tumkur bellary hospet bidar gulbarga kalaburagi raichur kolar
+chitradurga davangere hassan mandya madikeri salem erode tirunelveli
+tuticorin thoothukudi trichy tiruchirappalli thanjavur vellore
+kanchipuram cuddalore villupuram nagercoil kanyakumari karur
+dindigul pudukkottai namakkal krishnagiri dharmapuri kollam
+alappuzha pathanamthitta kottayam thrissur palakkad malappuram
+kozhikode calicut kannur kasaragod ernakulam panaji margao mapusa
+shirdi nanded solapur kolhapur sangli satara ratnagiri amravati
+akola yavatmal wardha chandrapur gondia bhandara buldhana washim
+hingoli parbhani jalna beed latur osmanabad dhule jalgaon nandurbar
+bhavnagar jamnagar junagadh porbandar amreli surendranagar morbi
+gandhidham bhuj ankleshwar bharuch navsari valsad vapi silvassa
+daman gandhinagar mehsana palanpur himatnagar nadiad anand godhra
+dahod kota bundi baran jhalawar chittorgarh bhilwara rajsamand
+banswara dungarpur sikar churu jhunjhunu nagaur pali barmer
+jaisalmer bikaner hanumangarh dholpur karauli ajmer beawar
+kishangarh makrana london dubai dhabi singapore bangkok kathmandu
+colombo dhaka karachi lahore paris berlin tokyo beijing shanghai
+toronto sydney melbourne amsterdam vienna zurich geneva frankfurt
+munich hamburg madrid barcelona rome milan venice istanbul cairo
+riyadh jeddah doha muscat manama
 """.split())
 
 # Delhi NCR + towns the field actually reaches — a name containing one

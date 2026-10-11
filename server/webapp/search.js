@@ -155,6 +155,7 @@ function score(row, ctx) {
   else if (row.dist != null) prox = Math.max(0.2, 1 / (1 + row.dist / 60000));
   else prox = 0.4;
   let s = 1.7 * sim + 0.9 * (lead ? 1 : 0) + 0.9 * prox;
+  if (row.mrank >= 3) s -= 1.4;   /* engine's 'other' verdict — demoted rows stay honest, never lead */
   if (lead && sim < 0.75) s += (0.75 - sim) * 1.7;      /* entity-name floor */
   if (numMismatch(ctx.qToks, row)) s -= 0.6;
   if (ctx.anchorToks.length) {
@@ -201,6 +202,10 @@ async function engineSearch(q, bias) {
     name: r.name, sub: r.subtitle || r.kind || '',
     kind: r.kind, lat: r.lat, lon: r.lon,
     dist: r.distance_m, source: 'delhi index',
+    /* engine's own verdict — 'other' covers partial matches AND the
+       far-city corpus artifacts the server demotes; honor it so a
+       contradiction never rides distance to the top */
+    mrank: r.match_rank,
   }));
 }
 
