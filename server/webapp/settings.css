@@ -1,0 +1,131 @@
+/* settings.css — pixel twin of SettingsScreen.tsx. Values are the RN
+   styles translated 1:1 (rows h56 px16 py12 gap12, card r20, hairlines
+   inside cards, switches line→accent). */
+
+.st-root, .st-scrim {
+  --s2: #F3F2EC;      /* V2T.surface2 */
+  --hairc: #E3E0D7;   /* V2T.hairline */
+  --linec: #ECE9E2;   /* V2T.line */
+  --danger: #A83D30;  /* V2T.breath3 */
+}
+
+/* scrim + pane (RN: backdrop scrim, root paper pane mt insets+8 r24 top) */
+.st-scrim { position: absolute; inset: 0; background: rgba(22,24,29,.28); }
+.st-root {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  top: calc(var(--sat, 0px) + 8px);
+  background: var(--paper);
+  border-radius: 24px 24px 0 0;
+  box-shadow: var(--sh-sheet);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* header: back chevron 44 + title 17 semi */
+.st-head { display: flex; align-items: center; padding: 14px 8px 8px; flex: 0 0 auto; }
+.st-back {
+  width: 44px; height: 44px; border: 0; background: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: var(--ink);
+}
+.st-backchev { transform: rotate(180deg); }
+.st-title { color: var(--ink); font-size: 17px; font-weight: 600; }
+
+/* scroll body: px16 pb insets+24 */
+.st-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px calc(var(--sab, 0px) + 24px); }
+
+.st-seclabel {
+  color: var(--ink); font-size: 15px; font-weight: 600;
+  margin: 24px 0 10px 4px;
+}
+.st-card {
+  background: var(--surface); border-radius: 20px;
+  box-shadow: var(--sh-card);
+  margin-top: 8px; overflow: hidden;
+}
+.st-card:first-child { margin-top: 8px; }
+.st-root .st-card:first-child { margin-top: 8px; }
+
+/* rows */
+.st-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 12px 16px; min-height: 56px;
+  border: 0; background: none; text-align: left;
+  font-family: var(--font); cursor: pointer; color: var(--ink);
+}
+.st-row:active { background: rgba(255,255,255,.55); }
+.st-row.off { cursor: default; }
+.st-rowmid { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.st-rowlabel { font-size: 15px; color: var(--ink); font-weight: 500; }
+.st-hint { font-size: 13px; color: var(--ink3); margin-top: 2px; line-height: 17px; font-weight: 400; }
+.st-value { font-size: 15px; color: var(--ink3); }
+.st-action { font-size: 15px; color: var(--accent); }
+.st-danger { color: var(--danger); }
+.st-rowic { color: var(--ink2); flex: 0 0 auto; }
+.st-hair { height: .5px; background: var(--hairc); margin: 0 16px; }
+
+/* vehicle well */
+.st-vehwell {
+  width: 40px; height: 40px; border-radius: 13px; background: var(--accent-wash);
+  display: flex; align-items: center; justify-content: center; color: var(--accent-ink);
+  flex: 0 0 auto;
+}
+
+/* language segment — ink fill on the picked */
+.st-segwrap {
+  display: flex; border-radius: 999px; background: var(--s2); padding: 3px;
+}
+.st-seg {
+  border: 0; cursor: pointer; border-radius: 999px; background: none;
+  padding: 0 16px; min-height: 40px;
+  color: var(--ink2); font-family: var(--font); font-size: 13px; font-weight: 500;
+}
+.st-seg.on { background: var(--ink); color: var(--paper); }
+
+/* switch — track line→accent, disabled-on keeps translucent accent */
+.st-sw {
+  width: 48px; height: 28px; border-radius: 14px; border: 0; padding: 0;
+  background: var(--linec); cursor: pointer; position: relative; flex: 0 0 auto;
+  transition: background .18s;
+}
+.st-swthumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 22px; height: 22px; border-radius: 11px; background: var(--surface);
+  box-shadow: 0 1px 3px rgba(22,24,29,.25);
+  transition: transform .18s;
+}
+.st-sw.on { background: var(--accent); }
+.st-sw.on .st-swthumb { transform: translateX(20px); }
+.st-sw.dison { background: rgba(53,97,75,.40); }
+.st-row.off .st-rowlabel, .st-row.off .st-hint { opacity: .55; }
+
+/* explain + expander bodies */
+.st-explain { padding: 0 14px 12px; margin-top: -4px; font-size: 13px; color: var(--ink2); line-height: 18px; }
+.st-explainstatus { color: var(--ink3); margin-top: 6px; }
+.st-exprow .st-expchev { color: var(--ink4); transition: transform .2s; }
+.st-exprow .st-expchev.open { transform: rotate(90deg); }
+.st-expbody { padding: 0 14px 12px; }
+.st-bullet { display: flex; gap: 8px; padding: 4px 0; }
+.st-bdot { width: 5px; height: 5px; border-radius: 2.5px; background: var(--ink3); margin-top: 7px; flex: 0 0 auto; }
+.st-btxt { flex: 1; font-size: 13px; color: var(--ink2); line-height: 18px; }
+.st-bodytxt { font-size: 13px; color: var(--ink2); line-height: 19px; }
+.st-nearest { margin-top: 8px; color: var(--accent); }
+
+/* rate Alive */
+.st-ratestars { display: flex; gap: 12px; padding: 6px 0; }
+.st-star { border: 0; background: none; padding: 0; cursor: pointer; color: var(--ink4); }
+.st-star.on { color: #C7A34F; }
+.st-rateinput {
+  width: 100%; border: 0; background: var(--s2); border-radius: 13px;
+  padding: 9px 12px; font-family: var(--font); font-size: 15px; color: var(--ink);
+  min-height: 44px; margin-top: 4px; box-sizing: border-box;
+}
+.st-ratefoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.st-ratehint { flex: 1; font-size: 13px; color: var(--ink3); }
+.st-ratehint.err { color: var(--danger); }
+.st-ratesend {
+  border: 0; cursor: pointer; background: var(--s2); border-radius: 999px;
+  padding: 0 18px; min-height: 40px;
+  color: var(--accent-ink); font-family: var(--font); font-size: 15px;
+}
+.st-ratedone { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: var(--accent); }
+
+.ic { display: inline-block; vertical-align: middle; }
