@@ -1,195 +1,334 @@
-# Alive
+<div align="center">
 
-**A personal PM2.5 dosimeter for Delhi — no hardware.** Your lungs' ledger: the app reconstructs what you breathed from a live modelled concentration field, so every trip prices in two numbers maps don't show — the smoke you will inhale, and the smoke your ride puts into the air — before you leave, live while you travel, and as a receipt when you arrive. The phone measures nothing itself, and only consented, anonymized **k≥3 aggregates** ever leave it.
+<img src="docs/assets/banner.svg" width="100%" alt="alive: what did this air do to me, and what should I do next?">
 
-Built for the AWS × WeMakeDevs Environmental Hacks hackathon, Track 01 (Air), Oct 8–11 2026. Delhi-only by design. MIT — see [`LICENSE`](LICENSE).
+<br>
 
-**This repo is public — clone it with zero credentials:** `git clone https://github.com/GC-WORK11/ALive.git`. Agents and reviewers: start at [`docs/handover/HANDOVER.md`](docs/handover/HANDOVER.md) for the access model, repo map, and handoff protocol. Secrets live outside git; `server/.env.example` lists what a local run needs.
+**Live, street-level air for the exact spot you're standing on in Delhi-NCR.<br>Routes priced in smoke, petrol and minutes. Real GPS navigation. No login.**
 
-## See it live
+<br>
 
-- **Web demo (no install, plain HTTP):** [alive108-….elb.ap-south-1.amazonaws.com](http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com) — the landing demo at `/`, then `/city`, `/community`, `/admin` (the engine room sits behind a real sign-in since Oct 7: operator token → `POST /v2/admin/login` → HMAC-signed HttpOnly session cookie; guests land on a gate card). `GET /health` is public and reports the running `build_sha`, field age, and per-source status.
-- **Android:** the demo build is a sideloaded APK (universal, debug-signed, cleartext HTTP → prod) shipped with the submission; the build recipe is `docs/demo-day.md` → "Release APK", and `Mobile/` below builds it from source. **iOS:** simulator-only (no Apple developer account; see Status).
+[![Live app](https://img.shields.io/badge/live-delhi--is--alive.vercel.app-16181B?style=for-the-badge)](https://delhi-is-alive.vercel.app)
+![AWS](https://img.shields.io/badge/AWS-ECS%20Fargate%20%2B%20CloudFront-FF9900?style=for-the-badge&logo=amazonwebservices&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![MapLibre](https://img.shields.io/badge/MapLibre%20GL-4.7-396CB2?style=for-the-badge&logo=maplibre&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-6E93AE?style=for-the-badge)
 
-## Try it — public, GET-only
+**[Open the live app](https://delhi-is-alive.vercel.app)** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [The air field](#the-air-field) &nbsp;·&nbsp; [Route modes](#three-ways-to-go) &nbsp;·&nbsp; [AWS](#how-alive-uses-aws) &nbsp;·&nbsp; [Run it](#run-it-locally)
 
-```bash
-NLB=http://alive108-2699c171ddded465.elb.ap-south-1.amazonaws.com
+</div>
 
-curl -s $NLB/health                              # engine, edges priced, field age, per-source status
-curl -s "$NLB/aqi?lat=28.6315&lon=77.2167"       # PM2.5 + σ band + calibration + fire modifier
-curl -s $NLB/v2/city                             # Delhi's air now + per-hour outlook
-curl -s $NLB/v2/city/moves                       # the privacy floor on the wire: min_k 3
-curl -s "$NLB/v2/archive"                        # the served field's own recorded history
+<br>
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/screens/03b-home-address-blurred.jpg" width="240" alt="Home"><br><sub><b>Air where you stand</b><br>AQI, PM2.5 and PM10 for your exact point</sub></td>
+    <td align="center" width="33%"><img src="docs/screens/06-modes.jpg" width="240" alt="Modes"><br><sub><b>Three ways to go</b><br>Health Maxer · Petrol + Health · Time + Health</sub></td>
+    <td align="center" width="33%"><img src="docs/screens/08-routes-live-traffic.jpg" width="240" alt="Routes"><br><sub><b>Every route, priced honestly</b><br>live ETA · µg breathed · litres of petrol</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screens/09-journey-navigation.jpg" width="240" alt="Navigation"><br><sub><b>Real GPS navigation</b><br>turns, reroutes, a receipt at the end</sub></td>
+    <td align="center"><img src="docs/screens/11-air-tap-india-gate.jpg" width="240" alt="Air around me"><br><sub><b>Air Around Me</b><br>streets coloured by live air, tap anywhere</sub></td>
+    <td align="center"><img src="docs/screens/12-purest-places.jpg" width="240" alt="Purest places"><br><sub><b>Purest places</b><br>the cleanest named spots near you, and any hotel's air</sub></td>
+  </tr>
+</table>
+
+<br>
+
+## Why
+
+Delhi's AQI is a city number. It's on the news, it's on every weather app, and it tells you nothing about **you**: what you breathed on the way to work, whether the other road was cleaner, or whether 7 am or 4 pm is the better hour for a walk.
+
+Nobody can choose Delhi's air. But everyone chooses a road, a time and a place, every day. ALive turns the live air over Delhi-NCR into those choices, for one person, at one point, right now.
+
+## What it does
+
+| | |
+|---|---|
+| **Air where you stand** | AQI, PM2.5 and PM10 at your exact point, in CPCB bands, with how old the reading is. Your address and DIGIPIN stay blurred until you tap them. |
+| **Where To** | One From/To box. Suggestions appear while you type, from a 240,000-place Delhi index plus Ola Maps and Mappls, deep enough for a bakery in a lane or a house number. |
+| **Three ways to go** | Health Maxer, Petrol + Health, Time + Health. Each card shows the live ETA, micrograms you'll breathe, litres of petrol and the jam delay. |
+| **Live journey** | Real GPS through `watchPosition`. If you stop, it stops. Off the line for more than 10 seconds, it reroutes. The receipt shows your intake, where you got stuck and the smokiest stretch. |
+| **Air Around Me** | A detailed map with every street coloured by the live field. Tap any point for its AQI and the best time of day to be out there. |
+| **Purest places and stays** | The cleanest named places near you or across NCR. Search any hotel for its air now and its best and worst hours. |
+| **Operator dashboard** | Users, journeys, modes, vehicles, smoke avoided and route concentration. Anonymous counts only. |
+
+## Architecture
+
+```mermaid
+flowchart TB
+    UI["Your phone or laptop<br/>ALive web app · MapLibre GL · GPS"]
+    OFM["OpenFreeMap<br/>map tiles"]
+    VC["Vercel<br/>static app + Analytics"]
+    CF["Amazon CloudFront<br/>HTTPS"]
+
+    subgraph AWS["AWS · ap-south-1 Mumbai"]
+        NLB["Network Load Balancer"]
+        SM[("Secrets Manager<br/>provider keys")]
+        subgraph ECS["ECS Fargate · FastAPI · Python 3.12"]
+            API["/v2 API"]
+            FIELD["Air field engine"]
+            SRCH["Search"]
+            PLAN["Route + mode engine"]
+        end
+        S3[("Amazon S3<br/>field snapshots · archive")]
+        DDB[("DynamoDB<br/>anonymous counters")]
+    end
+
+    subgraph SRC["Live sources"]
+        AIR["CPCB · DPCC<br/>OpenAQ · WAQI"]
+        MET["Open-Meteo<br/>CAMS model · wind"]
+        MAPS["Ola Maps<br/>Mappls"]
+        OSRM["OSRM<br/>OpenStreetMap roads"]
+        TT["TomTom<br/>live traffic"]
+    end
+
+    UI --> VC --> CF --> NLB --> API
+    UI -. tiles .-> OFM
+    SM -. keys at task start .-> API
+    API --> DDB
+    API --> FIELD & SRCH & PLAN
+    FIELD --> S3
+    FIELD --> AIR & MET
+    SRCH --> MAPS
+    PLAN --> OSRM & TT
+
+    classDef aws fill:#FFF4E5,stroke:#FF9900,color:#1A1A1A
+    classDef src fill:#EEF3F7,stroke:#6E93AE,color:#1A1A1A
+    classDef dev fill:#F7F4EC,stroke:#C7A34F,color:#1A1A1A
+    class NLB,API,FIELD,SRCH,PLAN,S3,DDB,SM aws
+    class AIR,MET,MAPS,TT,OSRM src
+    class UI,OFM,VC,CF dev
 ```
 
-## What it is
+The browser talks to one origin. Vercel serves the app's files and forwards every API path to CloudFront, which sits in front of a Network Load Balancer and the Fargate tasks. Map tiles come straight from OpenFreeMap. Provider keys never reach the browser: the API calls Ola Maps, Mappls and TomTom on the app's behalf, with per-provider daily budgets and caching.
 
-You type FROM → TO. Candidates draw as equals, then the winner settles with a verdict pill naming *why* (e.g. "cleanest · N% less than fastest" — the server's own reason line). The server returns real options — road modes via a router, metro/bus via GTFS — each with an ETA, an estimated inhaled-PM2.5 **dose band**, and an estimated **emission band** for the vehicle class you declared. During the trip the app ticks both counters at 1 Hz off a route strip the server hands it (no per-second network); on arrival the receipt lands in an on-device ledger. Both numbers are always bands with a stated basis, never point truth.
+## How a trip gets planned
 
-On the demo OD (India Gate → Huda City Centre, 24.7 km) the same minutes read **car-AC ~7.4 µg vs on-foot ~255 µg — a ~34.5× spread** the map you use today never shows. It drifts with the field (31–45× across ODs this week) and matches published Delhi measurements (walking ≈28× metro per km inhaled). The field also names *why* in plain words: `GET /v2/why` serves a `cause_note` composed only from measured fields (belt fires · carry wind · ventilation · the recorded trend — "measured, not reported"), rendered on `/city`'s parali-watch tile and the app's air card.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as You
+    participant A as ALive app
+    participant S as API on Fargate
+    participant P as Ola Maps · Mappls
+    participant R as OSRM
+    participant T as TomTom
+    participant F as Air field
 
-## Privacy, in three lines
-
-1. **No accounts** — the app is fully usable with sharing off.
-2. A donated trip is trimmed 300 m at both ends, thinned to ~100 m, rounded to ~11 m, folded into H3 cells, and the device token is SHA-256'd **before anything can touch a store or a log** — no per-trip record exists server-side.
-3. Nothing publishes below **k=3 distinct devices in 72 h** — the suppression counter itself is public at `/v2/city/moves` (`min_k: 3`).
-
-[`PRIVACY.md`](PRIVACY.md) has the full transform chain + how to verify it; [`SECURITY.md`](SECURITY.md) covers the threat model (and `docs/lanes/pentest-report.md` is the self-run pentest).
-
-## How it works
-
-```
-┌─ Android / iOS app (Expo, MapLibre) ─────────────────────────────┐
-│ T0 search — bundled Delhi gazetteer (124,311 rows), on-device    │
-│ light bilingual map — hi/en basemap, housenumbers/POIs           │
-│ live trip — dose + emission counters tick locally at 1 Hz off    │
-│             the route strip; no per-second network               │
-└──────────────┬───────────────────────────────────────────────────┘
-               │ HTTP (NLB :80 — no TLS terminator today)
-┌──────────────▼────────────── AWS ap-south-1 ─────────────────────┐
-│ NLB → FastAPI on ECS Fargate                                     │
-│                                                                  │
-│  /v2/search  alive_core C++ index over the OSM-NCR corpus        │
-│              fuzzy typos · kind+place compounds (·hospital near  │
-│              saket·) · Hinglish · sector-depth · aliases         │
-│              T2: Amazon Location Suggest   [needs API key]        │
-│  /v2/reverse gazetteer-first ≤150 m → honest 404 dropped_pin     │
-│  /v2/plan    options: ETA + dose band + emission band + reason   │
-│              + least-inhalation engine rows (below)              │
-│  /v2/strip   field sampled along a route → the live counters     │
-│  /v2/trip    anonymous trip summary in (no user table)           │
-│  /v2/ledger  per-device dose/emission history (token-keyed)      │
-│  /depart · /decide · /v2/day · /v2/reach · /v2/outlook · /v2/why │
-│  /v2/city · /v2/districts · /v2/city/moves · /v2/skill · /fires  │
-│  /v2/archive · /aqi · /grid · /reports · /admin                  │
-│                                                                  │
-│  alive_core: C++20 pybind11 module — search index, field         │
-│  sampling, dose + emission integrators, and PathEngine:          │
-│  an edge-state A* over a 1.07M-edge Delhi-NCR road graph,        │
-│  edge cost = length × local PM2.5 (the live field raster,        │
-│  repriced every ≤10 min — 903k edges), enforcing 230 OSM         │
-│  turn-ban tuples + 3,428 per-way access overrides, returning     │
-│  corridor-diverse alternatives with engine_dose_ug on the wire.  │
-│  A pure-Python twin (alive_core_ref.py) is the fallback: if      │
-│  the C++ import fails the API still serves, just slower; both    │
-│  engines are asserted bit-identical in tests.                    │
-└──┬──────────────────────────────────┬────────────────────────────┘
-   │ every 15 min (in-app ingest loop) │ aggregates only
-   ▼                                  ▼
-┌───────────────────────────┐  ┌────────────────────────────┐
-│ air index (airindex.py)   │  │ DynamoDB alive108-agg      │
-│ CAMS grid + NASA FIRMS    │  │ trips / km / µg / g per    │
-│ fires + stations* + wind/ │  │ mode-day; corridor cells   │
-│ BLH → QC → Kalman →       │  │ TTL 30 d. No user rows.    │
-│ kriging ±σ → snapshot→S3  │  └────────────────────────────┘
-└───────────────────────────┘
-  *stations live: 52 instruments via the WAQI + DPCC feeds right now
-   (drifts 52–54 with feed health; count on `/health.sources.stations`
-   — OpenAQ stays a dormant keyed path).
+    U->>A: type "cyber hub"
+    par instant
+        A->>S: GET /v2/ac
+        S-->>A: local index rows
+    and providers
+        A->>S: GET /v2/p/ac
+        S->>P: autocomplete + geocode
+        S-->>A: provider rows
+    end
+    A-->>U: one merged, ranked list
+    U->>A: pick a mode and a vehicle
+    A->>S: POST /v2/plan
+    S->>R: alternative roads
+    S->>T: live travel time + jams on each road
+    S->>F: PM2.5 along every road
+    S-->>A: cards with live ETA, µg inhaled, litres, jam delay
+    U->>A: Start
+    loop every GPS fix
+        A->>A: progress, next turn, off-route check
+        opt off the line by 60 m for 10 s
+            A->>S: POST /v2/reroute
+        end
+    end
+    A-->>U: receipt: intake, jammed stretches, smokiest stretch
 ```
 
-Also live: a self-hosted Delhi basemap (22.7 MB pmtiles from Geofabrik OSM, z0–14, `GET /tiles/health`), and a decade climatology from OpenAQ's public S3 archive (125 stations) that backs the "vs typical October" line.
+## The air field
 
-## Measured numbers
+```mermaid
+flowchart LR
+    subgraph IN["Rebuilt every 15 minutes"]
+        direction TB
+        ST["Ground monitors<br/>CPCB · DPCC · OpenAQ · WAQI"]
+        MD["CAMS model grid<br/>via Open-Meteo"]
+        WD["Wind speed + direction<br/>Open-Meteo"]
+    end
+    ST --> KR["Kriging on station-minus-model residuals<br/>a value and an uncertainty per cell"]
+    MD --> KR
+    WD --> IDW["Wind-aware weighting<br/>upwind up to 1.45× · downwind 0.55×"]
+    KR --> FLD[("Live field<br/>PM2.5 · PM10")]
+    IDW --> FLD
+    FLD --> O1["AQI at your point<br/>CPCB formula"]
+    FLD --> O2["Street colours<br/>Air Around Me"]
+    FLD --> O3["Dose along routes"]
+    FLD --> O4["Next-24-hour outlook<br/>best and worst hour"]
+    FLD --> ARC[("S3 snapshots<br/>+ hourly archive")]
 
-Everything below traces to a file in this repo or a live endpoint. Where a row says "bench", the protocol and both builds are in `docs/plan/bench-results.md`.
+    classDef out fill:#F7F4EC,stroke:#C7A34F,color:#1A1A1A
+    class O1,O2,O3,O4 out
+```
 
-| What | Number | Source |
+- **Ground truth beats the model.** Monitor readings from CPCB, DPCC, OpenAQ and WAQI are weighted above the CAMS background grid.
+- **Smoke moves with the wind.** A monitor upwind of you counts for more than one downwind, scaled by wind speed. In calm air the weighting is even.
+- **Uncertainty is kept, not hidden.** Kriging gives every cell a value and a spread, and the spread travels downstream as the dose band.
+- **One field, one scale.** Home, Air Around Me, routes and the planning card all read the same field and the same CPCB AQI scale.
+
+## Three ways to go
+
+```mermaid
+flowchart TD
+    C["Real candidate roads<br/>each with live ETA · µg dose · litres"] --> HM["Health Maxer<br/>lowest dose, no compromise"]
+    C --> G{"Clean-air guard<br/>dose ≤ 1.15 × the cleanest road"}
+    G --> PH["Petrol + Health<br/>least fuel inside the guard"]
+    G --> TH["Time + Health<br/>fastest live ETA inside the guard"]
+    HM & PH & TH --> W["The card names its reason<br/>least smoke · least fuel · fastest now"]
+
+    classDef mode fill:#F7F4EC,stroke:#C7A34F,color:#1A1A1A
+    class HM,PH,TH mode
+```
+
+| Number on the card | Where it comes from |
+|---|---|
+| **µg breathed** | PM2.5 sampled along each segment × minutes on it × minute ventilation for that way of travelling, adjusted for the vehicle's micro-environment |
+| **Litres** | Vehicle class and fuel, the road's speeds, and idling in jams. No prices, only fuel. |
+| **Live ETA** | TomTom's live travel time on that exact road, with Ola Maps as a fallback. The same road shows the same time in every mode. |
+| **Jam delay** | Live time minus free-flow time, with the jammed sections drawn on the map |
+
+If one road is the cleanest, the fastest and the lightest on fuel, all three modes pick it and say so. ALive never invents a difference to make the modes look distinct.
+
+## Search
+
+```mermaid
+flowchart LR
+    K["keystroke"] --> L["/v2/ac · local index<br/>240,027 Delhi + 19,004 NCR places"]
+    K --> P["/v2/p/ac · Ola Maps + Mappls"]
+    P --> B["Mappls names geocoded<br/>through Ola for coordinates"]
+    K -. pause or Enter .-> D["/v2/search · deep tier"]
+    L & B & D --> M["merge · de-duplicate · junk filter · rank<br/>name match · locality · category · distance"]
+    M --> R["rows paint as they arrive"]
+```
+
+The local index answers first, so the list is never blank while you type. Provider rows join as they land. Ranking follows general rules: exact name, the locality you typed, the kind of place, and distance. Index rows with a far-away city's name at a Delhi point, like a "Hotel Shimla" pinned on Lodhi Road, are filtered out by those rules too.
+
+## Tech stack
+
+| Layer | Built with |
+|---|---|
+| **Web app** | Vanilla JavaScript, HTML, CSS · MapLibre GL JS 4.7 · OpenFreeMap Positron basemap · Vercel Analytics |
+| **API** | Python 3.12 · FastAPI · Uvicorn · httpx · NumPy · H3 · boto3 |
+| **Native core** | `alive_core` in C++ via pybind11: search index, dose and emission kernels, with a pure-Python reference fallback |
+| **Routing** | OSRM on OpenStreetMap roads · TomTom live traffic · Ola Maps fallback |
+| **Places** | 240,027-place Delhi gazetteer · 19,004 NCR places from GeoNames · Ola Maps · Mappls |
+| **Air** | CPCB · DPCC · OpenAQ · WAQI · CAMS via Open-Meteo · Open-Meteo wind |
+| **Location codes** | India Post DIGIPIN, computed on the device |
+| **Cloud** | ECS Fargate · Network Load Balancer · CloudFront · CodeBuild · ECR · S3 · DynamoDB · Secrets Manager |
+
+## How ALive uses AWS
+
+Everything runs in **ap-south-1 (Mumbai)**.
+
+| Service | What it does in ALive |
+|---|---|
+| **ECS Fargate** | Runs the FastAPI container: the API, the air field engine, search and the route engine. No servers to manage. |
+| **Network Load Balancer** | Fronts the Fargate tasks |
+| **CloudFront** | HTTPS and cache rules in front of the API. Vercel forwards every API path here. |
+| **CodeBuild** | Builds the Docker image from `server/` on every deploy |
+| **ECR** | Stores the images, tagged by commit SHA |
+| **Secrets Manager** | Ola Maps, Mappls, TomTom, OpenAQ and WAQI keys plus the operator token, injected when a task starts |
+| **S3** | Air field snapshots and the hourly archive |
+| **DynamoDB** | The anonymous counters behind the operator dashboard |
+
+```mermaid
+flowchart LR
+    subgraph API["API release"]
+        direction LR
+        DS["scripts/deploy.sh"] --> CB["AWS CodeBuild<br/>server/buildspec.yml"]
+        CB --> IMG["Docker multi-stage build<br/>C++ core + FastAPI"]
+        IMG --> ECR[("Amazon ECR<br/>tag = commit SHA")]
+        ECR --> SVC["ECS Fargate<br/>rolling update"]
+        SVC --> H["/health reports build_sha"]
+    end
+    subgraph WEB["Web release"]
+        direction LR
+        VD["vercel deploy · web/edge"] --> VE["Vercel<br/>static /app + API rewrite"]
+    end
+```
+
+## Privacy
+
+| Stays on your phone | Sent only with the request that needs it | Counted anonymously |
 |---|---|---|
-| Search index (T1), C++ vs Python | p50 0.189 ms vs 16.623 ms → **~88× p50** (~100× p95), build 45 ms vs 142 ms | `docs/plan/bench-results.md` |
-| Field lookups + dose integration | ~6.8× lookups (174,618 vs 25,849/s); **~13× dose p50** (46.0 µs vs 607.3 µs) | `docs/plan/bench-results.md` |
-| Emission integrator | ~3.3× p50 (11.2 µs vs 37.3 µs) | `docs/plan/bench-results.md` |
-| Search corpus | 124,311 bundled gazetteer rows (`Mobile/assets/delhi-gazetteer.json`); 97,447 OSM-NCR corpus entries (incl. 16,949 real address rows) | `server/data/corpus/STATS.md` |
-| Search acceptance | 67/67 fixed queries in top-3 (name, typo, compound, sector, alias) | `server/data/corpus/STATS.md`, `tests/search_queries.txt` |
-| Search latency | C++ index p50 0.189 ms / p95 0.723 ms on the benched 26,545-row corpus; re-measured p50 0.320 ms / p95 1.228 ms on the 120,351-entry index (same harness) | `docs/plan/bench-results.md` |
-| Field leave-one-out vs live instruments | MAE 8.8 µg/m³, bias +0.2, n=70 WAQI+DPCC instruments (krige refit per held-out station) — served on the wire | `GET /aqi → calibration` |
-| Field vs station archive (3,550 pairs, 85 stations) | MAE 22.0 µg/m³, bias +15.5 µg (+51.6%) — **over-reads in clean post-monsoon air**; ±2σ coverage 95.2% measured vs 95.4% nominal | `server/data/field_validation.md` |
-| Path engine | 1,070,459 edges / 819,846 nodes; 903,058 edges priced per reweight; 230 turn bans + 3,428 access overrides | `GET /health → routing` |
-| Live instruments | 52 stations via WAQI + DPCC (verified Oct-7 ~11:00 UTC on `698cf808`; accepted drift band 52–54, 24 in a DPCC stall) | `GET /health → sources.stations` |
-| Mode exposure ratios | walking ≈28×, rickshaw ≈5× the metro per km inhaled PM2.5 — published Delhi measurements | `docs/plan/10-claims-ledger.md`, `server/exposure.py` header |
-| Cigarette equivalence | 316 µg PM2.5 ≈ 1 cigarette (Berkeley Earth) — OFF by default; opt-in toggle, always "≈" | `docs/plan/10-claims-ledger.md` |
+| Name, saved places, trips and receipts, settings | The point you ask about: to read its air, name its street, find places, or plan a route | Journeys, modes, vehicles, micrograms avoided, age group, area |
 
-C++ result parity is asserted bit-exact against the Python reference in `server/tests/`.
+- No login and no account. Profile and trips live in the browser's local storage, and "Delete my data" clears them.
+- Telemetry is batched and rate-limited, and never carries names, coordinates, addresses, PINs or links.
+- The exact address and DIGIPIN on Home are blurred until you tap them, so a shared screen doesn't give away where you are.
 
-## What it does not claim
+## Honest by design
 
-This section is a feature, not a disclaimer.
+- Every number on screen traces back to a monitor, a route, a traffic reading or a calculation on those.
+- A missing value is said out loud ("no live traffic reading", "thin read") and never filled with a zero.
+- Freshness comes from the reading's own timestamp: "updated 3 min ago".
+- If a route starts or ends away from the point you picked, the card says by how much.
+- Without WebGL the map shows a plain note instead of a blank box.
 
-- **Phones measure nothing.** The app traverses a model field; it never says "your phone measured the air." User traversals adjust *dose estimates*, never the underlying field.
-- **Emissions are class-level estimates.** "Vehicles like yours (2016 petrol car, BS-IV): ~1.1–1.6 kg CO₂" — a band from published factors, never "your car emitted 42.0 g."
-- **Plaintext HTTP edge, one task.** NLB is TCP:80 only — no TLS terminator today (a domain + ACM cert away; flagged owner decision, in `docs/lanes/pentest-report.md`). One Fargate task, one region: honest capacity is ~8–15 concurrent active users — a demo room, not the internet.
-- **Stations: WAQI + DPCC are live; OpenAQ/CPCB-keyed still pending.** 52 instruments carry the field today (drifting 52–54 with feed health); OpenAQ needs `OPENAQ_API_KEY`, and no CPCB public JSON endpoint is reachable from the deployment network (`server/data/field_validation.md`).
-- **Amazon Location is optional.** With `ALIVE_LOCATION_KEY` you get T2 suggestions, traffic-aware routes, and Amazon reverse-geocode. Without it the app still works: bundled gazetteer + C++ search, public OSRM demo routing, gazetteer-first reverse.
-- **The field is honest about its own error.** It over-reads in clean air (+51.6% bias on the validated window); the calibration and σ bands are served next to the data, not hidden.
-- **The community layer is young.** 44 real dev donations from 24 contributors so far — the k≥3 suppression that keeps them honest also keeps the public corridor table sparse. We say so.
-- **No outcome claims.** We can count "N trips switched to a lower-smoke option" — a countable behaviour — but not "Delhi got cleaner because of ALive."
+## API
 
-## Why AWS (Track 01)
+| Endpoint | What it returns |
+|---|---|
+| `GET /health` | Running `build_sha`, field age, per-source status |
+| `GET /aqi?lat=&lon=` | PM2.5, PM10 and AQI at a point |
+| `GET /v2/ac` | Instant suggestions from the local index |
+| `GET /v2/p/ac` | Suggestions from Ola Maps and Mappls |
+| `GET /v2/p/reverse` | Street address for a point |
+| `POST /v2/plan` | Routes for a mode and a vehicle: live ETA, dose, fuel, jams |
+| `POST /v2/reroute` | A fresh route when you leave the line |
+| `GET /v2/strip` | The field sampled along a route |
+| `GET /v2/day` | Best and worst hours for a point |
+| `GET /v2/purest` | The cleanest named places nearby |
+| `GET /v2/stays` | Hotels with their air |
+| `POST /v2/tally` | Anonymous counters |
 
-What's real, not decorative: the deploy pipeline is CodeBuild → ECR → Fargate behind an NLB on an Elastic IP in `ap-south-1` — compute in the same region as the air it measures. DynamoDB holds the aggregate-only donation store (`alive108-agg`, TTL 30 d), S3 holds field snapshots + the hourly served-field archive + community snapshots, Secrets Manager holds every key (none in the repo — the secrets-history audit is `docs/lanes/repo-hygiene-report.md`). The EventBridge schedule stubs in `infra/schedules/` are honestly **disabled** scaffolding — the in-app loop owns the 15-min rebuild. Runs at ~$46/mo on Fargate Spot.
-
-## Run it yourself
-
-Server (Python ≥3.11):
+## Run it locally
 
 ```bash
-cd server
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
-.venv/bin/python -m uvicorn main:app --port 8080
+git clone https://github.com/GC-WORK11/ALive.git
+cd ALive/server
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env            # every key is optional
+uvicorn main:app --port 8080    # then open http://localhost:8080/app/
 ```
 
-Tests — the offline unit suite needs no credentials; C++-parity tests skip cleanly if the extension isn't built (`brew install eigen` + `bash core/build_ext.sh` builds it; `core/build312/` is gitignored):
+Without `OLA_API_KEY`, `MAPPLS_API_KEY` and `TOMTOM_API_KEY`, search runs on the local index and routes run without live traffic, and the app says so on every card. Tests: `PYTHONPATH=. python -m pytest -q tests`.
 
-```bash
-cd server
-.venv/bin/python -m pytest tests/                      # offline
-.venv/bin/python test_api.py --base http://localhost:8080   # hits real upstreams
+<details>
+<summary><b>Repository layout</b></summary>
+
+```text
+server/          FastAPI app: air field, ingest, routing, exposure, emissions
+  webapp/        the web app (vanilla JS + MapLibre)
+  v2/            search, providers, plan, modes, trip, city, explore
+  core/          alive_core C++ (pybind11): search index, dose kernels
+  data/          Delhi gazetteer, NCR places, aliases
+  tests/         pytest suite
+web/edge/        Vercel config: static app + API rewrite to CloudFront
+infra/           provisioning, schedules, CloudWatch dashboard
+scripts/         deploy and smoke checks
+Mobile/          the earlier Expo (React Native) app
+docs/            design notes and reports
 ```
 
-Mobile (Expo SDK 57, npm — `package-lock.json` is the lockfile):
+</details>
 
-```bash
-cd Mobile
-npm install
-npx expo start        # dev server; npx expo lint · npx tsc --noEmit to check
-```
+## Known limits
 
-The demo APK is a release build with the prod endpoint baked at bundle time (`EXPO_PUBLIC_API_URL=http://alive108-…elb.ap-south-1.amazonaws.com`, optionally `EXPO_PUBLIC_TILES_URL=http://65.2.28.40/tiles/tilejson.json` for the self-hosted basemap), then `cd android && ./gradlew assembleRelease` — debug-signed sideload, cleartext HTTP by necessity (prod is :80). That's the shipped demo configuration, not a release channel.
+- Search can still rank two places with the same name in the wrong order.
+- Outside monitor coverage the app marks a reading as thin rather than guess.
+- Real-road navigation needs far more kilometres of testing than a hackathon allows.
 
-Search corpus (downloads Geofabrik OSM, builds the corpus, emits the mobile gazetteer, scores the 67-query acceptance list into `STATS.md`):
+## Credits
 
-```bash
-./tools/setup-corpus.sh
-```
+Air data from **CPCB** and **DPCC**, **OpenAQ**, **WAQI**, and **Copernicus CAMS** via **Open-Meteo**. Places, routes and traffic from **Ola Maps**, **Mappls**, **TomTom** and **OSRM**. Map data © **OpenStreetMap** contributors, tiles by **OpenFreeMap**. NCR places from **GeoNames** (CC BY 4.0). Location codes by **India Post DIGIPIN**.
 
-AWS infra + deploy (one-time / drift repair; `--dry-run` prints every command):
-
-```bash
-./infra/provision.sh --dry-run
-AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… ./scripts/deploy.sh
-```
-
-## Status
-
-| Phase | State | Notes |
-|---|---|---|
-| 0 · Foundations + AWS | ✔ built | NLB + ECS Fargate Spot + ECR + DynamoDB + Secrets Manager live; ~$46/mo; EventBridge scaffolding disabled by design |
-| 1 · Instant search | ✔ built | C++ index over 120k rows, fuzzy/compounds/Hinglish/sectors/aliases, 67/67 acceptance, p50 <1 ms engine |
-| 2 · Map + shell | ✔ built | bilingual (hi/en) basemap, housenumber/POI tiers, sidebar + design tokens |
-| 3 · Plan: breath + smoke-out | ✔ built | `/v2/plan` options + least-inhalation engine rows + corridor alternatives + legality; `engine_dose_ug` on the wire |
-| 4 · Live trip | ✔ built | `/v2/strip` + `/v2/trip`, turn nav chrome, voice cues (Android-verified; iOS sim cold-launch SIGSEGV residual killed — 12/30→0/30 drive-bys via the Promise JS-thread hop, `docs/lanes/ios-residual-report.md`), reroute served, cinematic route chooser with verdict pill (`e2ff634`) |
-| 5 · Air index + city + admin | ✔ built | krige field + σ bands, ingest workers, rollup, NCR choropleth, species layers, corridors CO₂/100 m, PUC calibration, `cause_note` parali-watch line; 52 stations live via WAQI + DPCC; `/admin` behind real sign-in (`b563da2`) |
-| 6 · Polish + proof + submission | ◐ in progress | benchmarks above; videos shipped; store signing on owner |
-
-**Only the owner can unblock:** a wider station key (OpenAQ would add instruments; data.gov.in is TCP-refused even from ap-south-1), the Amazon Location spend cap/key, a release-signing keystore (the shipped APK is debug-signed and sideloads fine), a domain+ACM cert for TLS, real-phone Delhi test drives, and an Apple developer account (iOS stays simulator-only).
-
-**Hackathon note.** Event rules require repo history inside the Oct 8–11 window: `scripts/public-repo.sh` squashes this tree to one baseline commit on the public repo; later commits land inside the window. The full audit trail — every verification, bench, and lane report — ships inside `docs/` either way.
-
-## Docs
-
-The plan folder is the source of truth; `docs/plan/10-claims-ledger.md` governs every number this repo shows. Full map: [`docs/README.md`](docs/README.md) — `docs/plan/` (engineering plan, benches, runbook, living `handoff.md`), `docs/lanes/` (~200 dated audit reports and briefs — evidence, not prose), `docs/submission/` (hackathon writeup + checklist), `docs/privacy/` (claim → enforcement → test table).
-
-## Layout
-
-`server/` — FastAPI dose engine + `server/core/` C++ (`alive_core`: search index, field/dose/emission integrators, PathEngine) + `server/v2/` API · `Mobile/` — Expo app · `Bridge/` — shared wire contract · `scripts/` `infra/` `tools/` — deploy, provisioning, corpus · `tests/search_queries.txt` — the fixed acceptance list · `docs/plan/` — the plan.
+Built for the **AWS × WeMakeDevs Environmental Hacks 2026**. Released under the [MIT License](LICENSE).

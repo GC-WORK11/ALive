@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-label="alive: personal air exposure for Delhi-NCR">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FBFAF6"/>
+      <stop offset="1" stop-color="#EFEADF"/>
+    </linearGradient>
+    <radialGradient id="haze" cx="0.83" cy="0.36" r="0.55">
+      <stop offset="0" stop-color="#C7A34F" stop-opacity="0.30"/>
+      <stop offset="0.6" stop-color="#CF8A50" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#CF8A50" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="frame"><rect width="1280" height="420" rx="28"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1280" height="420" fill="url(#bg)"/>
+    <rect width="1280" height="420" fill="url(#haze)"/>
+    <g fill="none" stroke-width="1.6">
+      <circle cx="1060" cy="150" r="56" stroke="#C7A34F" stroke-opacity="0.55"/>
+      <circle cx="1060" cy="150" r="104" stroke="#C7A34F" stroke-opacity="0.38"/>
+      <circle cx="1060" cy="150" r="158" stroke="#CF8A50" stroke-opacity="0.26"/>
+      <circle cx="1060" cy="150" r="218" stroke="#C05F3A" stroke-opacity="0.16"/>
+      <circle cx="1060" cy="150" r="284" stroke="#A83D30" stroke-opacity="0.10"/>
+    </g>
+    <circle cx="1060" cy="150" r="26" fill="#16181B" fill-opacity="0.10"/>
+    <circle cx="1060" cy="150" r="11" fill="#16181B"/>
+    <circle cx="1060" cy="150" r="4.5" fill="#FBFAF6"/>
+    <text x="78" y="186" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="136" font-weight="700" letter-spacing="-5" fill="#16181B">alive</text>
+    <text x="84" y="246" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="31" font-weight="500" fill="#2E3136">What did this air do to me, and what should I do next?</text>
+    <text x="85" y="290" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" letter-spacing="3.4" fill="#7A7D83">PERSONAL AIR EXPOSURE  ·  DELHI-NCR  ·  LIVE</text>
+    <g font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#7A7D83">
+      <rect x="85" y="336" width="150" height="10" rx="5" fill="#6E93AE"/>
+      <rect x="243" y="336" width="150" height="10" rx="5" fill="#C7A34F"/>
+      <rect x="401" y="336" width="150" height="10" rx="5" fill="#CF8A50"/>
+      <rect x="559" y="336" width="150" height="10" rx="5" fill="#C05F3A"/>
+      <rect x="717" y="336" width="150" height="10" rx="5" fill="#A83D30"/>
+      <rect x="875" y="336" width="150" height="10" rx="5" fill="#6E2D28"/>
+      <text x="85" y="372">good</text>
+      <text x="243" y="372">satisfactory</text>
+      <text x="401" y="372">moderate</text>
+      <text x="559" y="372">poor</text>
+      <text x="717" y="372">very poor</text>
+      <text x="875" y="372">severe</text>
+    </g>
+  </g>
+</svg>
