@@ -121,3 +121,32 @@ auto-cdc1fa9fa4cf47a58cdefe87a47cb86c "keep cooking" (user asked it disabled —
 - Verified on prod :268: `sitaram diwan chand paharganj`→Sita Ram Dewan Chand #1; `pawan bakery shahdara`→real Shahdara bakeries; `a2 block rohini`→real rows; `neelanchal dham`→honest empty (verified unmappable in EVERY upstream — OSM/Overture/GeoNames/Wikidata/Nominatim/Photon).
 - acct2 verify-rounds all green: e2e3 (armed-pin 7/7), mobile3 (4 fixes ALIVE, zero new), one P2 fixed→Esc mid-arm now unarms via data-unarm on wt-pinx (1e4feec).
 - Deploys: :266=c93d8203, :267=c4c7daa2, :268=193fa5b7.
+
+## :271 round (anchorsink) — 06:40 UTC
+- anchorsink PATCHED → relayed via acct2-geo → PUSHED 9bf64497 → deployed :271
+- Prod-verified: jama masjid {shahdara,mustafabad}→in-locality; sector 28 faridabad→Fbd; anand vihar metro→real stn; delhi airport t1→T1-IGI. All land-wins hold (sikanderpur/chhatarpur/lotus/aiims/iskcon/sitaram).
+- Mechanisms: place-anchor resolution (container-pref), anchor-namesake echo+faith tier, 8.6km city-anchor radius caps, merge vouch (non-anchor coverage +≤2.5km), foreign geo-claim disqualify, infra rescan ≤30km.
+- Residuals (honest data gaps): sector 14/29 gurgaon + NSEZ no literal rows; hanuman/kali mustafabad blocked by junk CP anchor row; T3 no standalone row; sarai rohilla/bijwasan rows far off.
+- acct2 go-signals fired: geo sweep-4 (150q corpus on :271) + e2e regression#2.
+- deeppass lane launched (eff2a1d1): parallel Overpass probes, arm 3s→<1s, same search.py contract.
+- Video reshoot: all 8 scripts remapped to post-twin DOM (5-page onboarding, .wt-rrow/data-arm, locate action, plan-phase flow), 8 mp4s delivered to user after frame-review.
+
+## :272 round (escfix + deeppass + sweep-4/e2e2 reports) — 07:20 UTC
+- escfix (5bba3cb): Esc during live journey → .jn-close. deeppass (3d4cd13): T3 Overpass arm serial→per-query mirror race (3s worst→<1s typical; identical row sets; +6 race tests).
+- geo4 report (385f4a4): WRONG 28.0% on :271 vs 36.2% pre-anchorsink; worship 78.6%→34.5%; 2 regressions + residual list → geo5 lane (80cba95a) grinding.
+- e2e2 (ef51c15): 11/11 stages clean; all prior defects verified dead.
+- Owner feedback lanes launched: wlive (db8b2535, whereto inline From/To fields + first-letter typeahead — kill third composer), proven (a261f722, hero station/km/age provenance), acct2-mobile5 (390px overlap+cringe sweep incl. the 'black PM2.5 card' hunt).
+- Videos: 8 feature mp4s reshot on :271 post-twin DOM, frame-verified, delivered.
+
+## :272→:273 round — owner critique + mobile5 fixes
+- Owner: third-composer kill (wlive), inline From/To + first-letter typeahead, "is this really my air" provenance (proven), kill "black PM2.5/locality card" = .am-read frost slab (mobile5 P0: dead app.css rule top+bottom → 760px stretch), kill profseg toggle strip (done — dea8019), deeper index (gazmerge), real icons (icons lane).
+- mobile5 fixes committed 1b6a587 (patch relay to geo): dead .am-read block deleted, bottom:auto, amr-x 40px pad, sheet-title solid, belt-copy dedupe (why.py "holding still"), :has() attrib hide.
+- Lanes live: wlive db8b2535, proven a261f722, geo5 80cba95a, icons 7d243577, gazmerge 6eca8a9e, acct2-mobile5 sweeping done (report 4bd14ac).
+- :274 LIVE (3a7f2000): wlive+proven+icons+mobile5+profseg all verified on prod. mobile6 sweep: everything PASS, one P2 ghost-x fixed (1a11f6b, relayed). Videos reshot: 02-home-v2, 04-whereto-v2 delivered to owner.
+- Remaining build lanes: geo5 (80cba95a), gazmerge (6eca8a9e). Testers: mobile6 done → may re-arm for future sweeps.
+
+## :275→:276 (Sat PM)
+- :275 aa6836e8-ish/da79d4cc — gazmerge 240,027-row gazetteer + 96k generated aliases deployed. Verified: sarvodaya fbd, sant nagar, gokalpur now resolve/anchor.
+- :276 aa6836e8 — geo5 b2a0af9: ward echo deferral, _far_literal gates (sheetla sink dead), _anchor_corrupt fixes, coverage gate (yatharth/felix requeries), kind-miss suppression, sarai-rohilla station-token fix, overpass-arm requery deadline. Verified on prod: sheetla→in-Burari, sector150→noida rows, patel nagar station, yatharth.
+- All 8 demo videos reshot caption-free (v3 mp4s delivered); drv.js cap() is now a no-op.
+- All lanes delivered+merged; fleet idle. Prod = demo build :276.
