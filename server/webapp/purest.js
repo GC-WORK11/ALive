@@ -329,7 +329,8 @@ async function loadAreas() {
 }
 
 async function loadStays() {
-  const a = state.anchor;
+  const a = state && state.anchor;
+  if (!a) return;
   const d = await A.api.get(`/v2/stays?lat=${a.lat.toFixed(5)}&lon=${a.lon.toFixed(5)}`, 18000);
   if (!state || a !== state.anchor) return;
   if (!d || !Array.isArray(d.stays) || !d.stays.length) {
@@ -409,7 +410,7 @@ function openPicker() {
     rows.innerHTML = `<div class="muted" style="padding:10px 6px">searching…</div>`;
     deb = setTimeout(async () => {
       const my = ++seq;
-      const res = await A.search.search(q, state.anchor || A.geo.pos || A.DELHI);
+      const res = await A.search.search(q, (state && state.anchor) || A.geo.pos || A.DELHI);
       if (my !== seq) return;
       draw(res, res.length ? '' : 'nothing found — try a landmark, a block, a sector');
     }, 260);
