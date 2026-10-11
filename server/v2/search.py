@@ -473,7 +473,7 @@ async def search(q: str = Query(min_length=1, max_length=200),
 # - fires ONLY when the local tiers are thin (<3 hits, best hit >2 km,
 #   or a resolvable locality token the top rows never mention)
 # - hard 3 s fuse across all probes (each attempt gets what's left);
-#   overpass-api.de first, overpass.kumi.systems on fast failure
+#   every probe races all mirrors at once — first answer wins
 # - every row traces to a real OSM element; unnamed elements get
 #   tag-derived labels, never the query's name
 # - fallback rows carry anchor provenance in the subtitle
@@ -1250,10 +1250,52 @@ async def _op_post_one(ql: str, ep: str, deadline: float) -> tuple:
             timeout=min(_OP_FUSE_S, remain))
         if r.status_code != 200:
             return [], "error"
-        els = r.json().get("elements", [])
+        body = r.json()
+        els = body.get("elements", [])
+        # a 200 with no rows but a runtime remark ('timed out in',
+        # rate-limit) is a degraded mirror, not a real negative — it
+        # must not win its race over a healthy sibling
+        if not els and "remark" in body:
+            return [], "error"
         return els, "ok" if els else "empty"
     except Exception:
         return [], "error"
+
+
+async def _op_race(ql: str, deadline: float) -> tuple:
+    """One QL body raced across every mirror at once — the first
+    definitive answer (ok or empty) wins and its slower siblings are
+    cancelled; a mirror that errors just drops out of its own race and
+    the rest keep running inside the same fuse window."""
+    tasks = [asyncio.ensure_future(_op_post_one(ql, ep, deadline))
+             for ep in _OVERPASS_ENDPOINTS]
+    pending, last = set(tasks), "error"
+    try:
+        while pending:
+            remain = deadline - time.monotonic()
+            if remain <= 0:
+                last = "timeout"
+                break
+            done, pending = await asyncio.wait(
+                pending, timeout=remain,
+                return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                last = "timeout"
+                break
+            for t in done:
+                if t.cancelled():
+                    continue
+                try:
+                    els, st = t.result()
+                except Exception:
+                    els, st = [], "error"
+                if st in ("ok", "empty"):
+                    return els, st
+                last = st
+        return [], last
+    finally:
+        for t in tasks:
+            t.cancel()
 
 
 _OSM_KIND_KEYS = ("shop", "amenity", "craft", "tourism", "leisure",
@@ -1419,26 +1461,21 @@ async def _overpass_arm(q: str, qn: str, blat: float, blon: float,
     if hit and time.time() - hit[0] < _OP_CACHE_TTL_S \
             and hit[2] in ("ok", "empty"):
         return hit[1], gaz_rows, hit[2]
-    # hedged fan-out inside one fuse window: each probe hits two
-    # mirrors at once — a hung primary can't eat the failover's budget
-    probes = [(ql, ep) for ql in (anchored_ql, wide_ql) if ql
-              for ep in _OVERPASS_ENDPOINTS[:2]]
-    tasks = [asyncio.ensure_future(_op_post_one(ql, ep, deadline))
-             for ql, ep in probes]
-    done, pending = await asyncio.wait(tasks, timeout=_OP_FUSE_S)
-    for t in pending:
-        t.cancel()
+    # hedged fan-out inside one fuse window: each distinct probe races
+    # every mirror at once and keeps only the first definitive answer —
+    # the arm's cost is the SLOWEST QUERY's fastest mirror, not the
+    # slowest request, so a single hung endpoint can't eat the window
+    races = await asyncio.gather(
+        *(_op_race(ql, deadline)
+          for ql in (anchored_ql, wide_ql) if ql),
+        return_exceptions=True)
     elements, statuses = [], []
-    for t in tasks:
-        if t in done and not t.cancelled():
-            try:
-                els, st = t.result()
-            except Exception:
-                els, st = [], "error"
-            elements += els
-            statuses.append(st)
+    for out in races:
+        els, st = out if isinstance(out, tuple) else ([], "error")
+        elements += els
+        statuses.append(st)
     if not elements:
-        status = ("timeout" if pending else
+        status = ("timeout" if "timeout" in statuses else
                   (statuses[0] if statuses else "empty"))
         rows = []
     else:
