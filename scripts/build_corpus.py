@@ -1204,6 +1204,20 @@ _BLOCK_PREFIX = re.compile(
 _BLOCK_SUFFIX = re.compile(
     r"^([a-zA-Z0-9]{1,3})[\s\-]*(?:block|pocket|pkt)\s*[,;]\s*(.+?)\s*$",
     re.IGNORECASE)
+# "Rohini Sector 17 A-2" / "Noida Sector 62 P-1" — a numbered sector
+# carrying a trailing letter/digit sub-designator.  The plain sector
+# pattern swallows the sub-designator, so this must run FIRST.
+_SECT_SUB = re.compile(
+    r"^(.+?)[\s,]+" + _KIND + r"[\s\-–]*([0-9]{1,3})\s+"
+    r"([a-zA-Z][\-–]?[0-9]{1,2}[a-zA-Z]?|[0-9]{1,2}[\-–]?[a-zA-Z]|[a-zA-Z])"
+    r"\s*$", re.IGNORECASE)
+
+def _fused(desig: str) -> str | None:
+    """'A-2' -> 'a2' — the fused form users type ('a2 block rohini').
+    Only for mixed letter+digit designators; a bare 'a' fuses nothing."""
+    f = re.sub(r"[^a-z0-9]", "", desig.lower())
+    return f if len(f) >= 2 and re.search(r"[a-z]", f) \
+        and re.search(r"[0-9]", f) else None
 
 _LOCALITY_TOPS = {"place", "boundary", "addr", "landuse", "amenity",
                   "office", "leisure", "tourism"}
@@ -1268,6 +1282,25 @@ def synth_sector_entries(entries: dict) -> list:
         forms = [e["display"], *e.get("aliases", [])]
         for s in forms:
             s = s.strip()
+            m = _SECT_SUB.match(s)
+            if m:
+                loc = " ".join(m.group(1).split())
+                num, sub = m.group(2), m.group(3).upper()
+                if _loc_ok(normalize(loc), locnames):
+                    kind = kind_of(s)
+                    parent = f"{loc} {kind} {num.upper()}"
+                    note(parent, kind, [s], e["lat"], e["lon"], src)
+                    blk = re.sub(r"[\-–]", "", sub)
+                    canon = f"{blk} Block, {parent}"
+                    fused = _fused(blk) or ""
+                    note(canon, "Block",
+                         [s, f"{blk} Block {parent}",
+                          f"{fused} block {parent}" if fused else "",
+                          f"{fused} {parent}" if fused else "",
+                          f"{parent} {blk} Block",
+                          f"{parent} Block {blk}"],
+                         e["lat"], e["lon"], src)
+                    continue
             m = _SECT_PREFIX.match(s)
             if m:
                 loc = " ".join((m.group(1) or m.group(3)).split())
@@ -1291,8 +1324,11 @@ def synth_sector_entries(entries: dict) -> list:
             if m and _loc_ok(normalize(m.group(2)), locnames):
                 blk, loc = m.group(1).upper(), " ".join(m.group(2).split())
                 canon = f"{blk} Block, {loc}"
+                fused = _fused(blk) or ""
                 note(canon, "Block",
-                     [s, f"{loc} {blk} Block", f"{loc} Block {blk}"],
+                     [s, f"{loc} {blk} Block", f"{loc} Block {blk}",
+                      f"{fused} block {loc}" if fused else "",
+                      f"{fused} {loc}" if fused else ""],
                      e["lat"], e["lon"], src)
 
     out = []

@@ -197,6 +197,9 @@
     "del": [
       "delhi"
     ],
+    "dewan": [
+      "diwan"
+    ],
     "dhola": [
       "dhaula"
     ],
@@ -205,6 +208,10 @@
     ],
     "dilshadgarden": [
       "dilshad garden"
+    ],
+    "diwan": [
+      "diwan",
+      "dewan"
     ],
     "dli": [
       "old delhi railway station"
@@ -600,6 +607,10 @@
     "ndmc": [
       "new delhi municipal council"
     ],
+    "neelanchal": [
+      "neelanchal",
+      "nilanchal"
+    ],
     "nehruplace": [
       "nehru place"
     ],
@@ -617,6 +628,9 @@
     ],
     "nift": [
       "national institute of fashion technology"
+    ],
+    "nilanchal": [
+      "neelanchal"
     ],
     "nizammudin": [
       "nizamuddin"
@@ -674,6 +688,13 @@
     ],
     "paschimvihar": [
       "paschim vihar"
+    ],
+    "pavan": [
+      "pawan"
+    ],
+    "pawan": [
+      "pawan",
+      "pavan"
     ],
     "patelnagar": [
       "patel nagar"
@@ -821,6 +842,9 @@
     ],
     "satyaniketan": [
       "satya niketan"
+    ],
+    "sitaram": [
+      "sita ram"
     ],
     "sch": [
       "school"

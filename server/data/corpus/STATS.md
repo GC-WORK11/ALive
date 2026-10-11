@@ -1,46 +1,46 @@
 # Delhi-NCR corpus -- STATS
 
-- built: 2026-10-08 14:18:45 UTC
+- built: 2026-10-11 04:54:42 UTC
 - source: `remerge(committed+aux)`
 - script: `scripts/build_corpus.py` (pyosmium)
 - extraction bbox: lon 76.68-78.02, lat 28.08-29.07
 - strict NCR bbox (flag-only): lon 76.75-77.95, lat 28.15-28.98
 - mode: **remerge-aux** — OSM PBF pass skipped; base = previous committed corpus rows
-- **entries emitted: 344,923**
+- **entries emitted: 345,001**
 
 ## Entries per source (rows may carry >1 source after dedupe)
 
 | source | entries |
 |---|---|
-| overture | 244,762 |
-| osm | 90,729 |
-| wikidata | 7,262 |
+| overture | 244,766 |
+| osm | 90,801 |
+| wikidata | 7,254 |
 | geonames | 6,247 |
-| synthetic | 1,064 |
+| synthetic | 1,058 |
 
 ## Entries per top-level category
 
 | category | count |
 |---|---|
-| overture | 240,927 |
-| addr | 22,847 |
-| highway | 19,344 |
-| amenity | 13,792 |
-| shop | 9,027 |
-| locality | 4,723 |
-| building | 4,351 |
-| place | 4,060 |
+| overture | 241,069 |
+| addr | 22,845 |
+| highway | 19,371 |
+| amenity | 13,810 |
+| shop | 9,030 |
+| locality | 4,716 |
+| building | 4,354 |
+| place | 4,038 |
 | landuse | 3,297 |
-| hotel | 2,627 |
+| hotel | 2,584 |
 | railway | 2,289 |
 | public_transport | 2,157 |
-| leisure | 2,111 |
+| leisure | 2,112 |
+| office | 1,822 |
 | boundary | 1,821 |
-| office | 1,821 |
-| station | 1,456 |
+| station | 1,452 |
 | tourism | 1,360 |
-| misc | 844 |
-| synthetic | 738 |
+| misc | 846 |
+| synthetic | 748 |
 | canal | 533 |
 | barrier | 488 |
 | healthcare | 466 |
@@ -51,34 +51,34 @@
 | historic | 233 |
 | waterway | 225 |
 | natural | 221 |
-| school | 207 |
+| school | 193 |
 | man_made | 179 |
-| village | 174 |
+| village | 161 |
 | junction | 158 |
-| college | 148 |
-| monument | 114 |
+| college | 141 |
+| indoor | 121 |
+| monument | 113 |
 | stream | 112 |
-| indoor | 108 |
-| university | 99 |
-| water | 80 |
+| university | 96 |
 | geonames | 71 |
-| hospital | 61 |
-| park | 58 |
+| water | 71 |
+| park | 56 |
+| hospital | 53 |
 | entrance | 49 |
-| temple | 39 |
-| mosque | 37 |
+| temple | 38 |
+| mosque | 36 |
 | club | 35 |
 | forest | 31 |
 | museum | 29 |
-| mall | 28 |
-| street | 28 |
+| street | 27 |
+| mall | 26 |
 | town | 26 |
 | aeroway | 22 |
 | city | 22 |
 | institute | 20 |
-| tehsil | 11 |
-| church | 10 |
+| tehsil | 10 |
 | airport | 9 |
+| church | 9 |
 | bridge | 8 |
 | cemetery | 8 |
 | market | 8 |
@@ -97,8 +97,8 @@
 
 ## Flags
 
-- entries outside strict NCR bbox (Noida / Ghaziabad / fringe NCR — kept in corpus): **12,547**
-- deduped (same normalized name + ~75 m cell, richest kept): 10,758
+- entries outside strict NCR bbox (Noida / Ghaziabad / fringe NCR — kept in corpus): **12,551**
+- deduped (same normalized name + ~75 m cell, richest kept): 10,926
 - untagged/empty display dropped: 0
 
 ## Artifacts
@@ -107,9 +107,9 @@
 |---|---|
 | `delhi-corpus.jsonl.gz` | 16.8 MB |
 | `delhi-corpus-sample.jsonl` (first 20,000) | 4.81 MB |
-- remerge: base 103,344 committed rows; dropped 0 overture-only + 263 synthetic rows before re-merge
-- aux/*.jsonl: 251,990 rows -> +240,841 new (11,149 deduped in); overture-places.jsonl:244,425r/+240,841, wikidata.jsonl:7,565r/+0
-- synthetic: 1,042 attested -> +738 rows (304 folded)
+- remerge: base 103,580 committed rows; dropped 240,673 overture-only + 724 synthetic rows before re-merge
+- aux/*.jsonl: 251,990 rows -> +240,673 new (11,317 deduped in); overture-places.jsonl.gz:244,425r/+240,673, wikidata.jsonl:7,565r/+0
+- synthetic: 1,049 attested -> +748 rows (301 folded)
 
 
 ## 88-query acceptance score (tests/search_queries.txt)
@@ -125,19 +125,19 @@ Simple Python index: normalized token + prefix match over display+aliases, top-3
 | haldiram chandni | Haldiram's, Chandni Chowk | HIT |  | Haldiram's - Omaxe Mall, Chandani Chowk (overture); Haldiram (amenity); Haldiram (amenity) |
 | dlf cyber hub | DLF CyberHub, Gurugram | HIT |  | DLF Cyber Hub (landuse); DLF Cyber Hub (tourism); Cyber Hub, DLF Cyber City (overture) |
 | chandni chok | Chandni Chowk | HIT |  | Chandni Chauk (locality); Chandni Chowk (overture); Chandni Chowk (tourism) |
-| cp | Connaught Place | HIT | yes | Connaught Place (overture); Connaught Place (locality); Connaught Place (district) |
+| cp | Connaught Place | HIT | yes | Connaught Place (place); Connaught Place (overture); Connaught Place (locality) |
 | gk 2 | Greater Kailash II | HIT |  | Greater Kailash 2 (overture); Gk2 Enclave (overture); Greater Kailash-2 Dominos (overture) |
-| sarojni nagar | Sarojini Nagar Market | HIT | yes | Sarojini Nagar (place); Sarojini Nagar (boundary); Sarojini Nagar (railway) |
+| sarojni nagar | Sarojini Nagar Market | HIT | yes | Sarojini Nagar (place); Sarojini Nagar (boundary); Sarojini Nagar (locality) |
 | aiims metro | AIIMS Metro Station | HIT |  | AIIMS Metro Station (overture); AIIMS metro station (metro); AIIMS Metro Gate No. 1 (railway) |
-| kashmere gate | Kashmere Gate / ISBT | HIT |  | Kashmere Gate (overture); Kashmere Gate (railway); Kashmere Gate (railway) |
+| kashmere gate | Kashmere Gate / ISBT | HIT |  | Kashmere Gate (railway); Kashmere Gate (place); Kashmere Gate (public_transport) |
 | india gate | India Gate | HIT |  | India Gate (overture); India Gate (overture); India Gate (monument) |
 | noida sec 18 | Noida Sector 18 | HIT |  | Noida Sec 18 (overture); Noida Sec-18 (overture); Noida Sector 18 (railway) |
-| hauz khas | Hauz Khas Village | HIT |  | Hauz Khas (overture); Hauz Khas (public_transport); Hauz Khas (locality) |
-| karol bag | Karol Bagh | HIT |  | KAROL BAGH (overture); Karol Bagh (public_transport); Karol Bagh (public_transport) |
+| hauz khas | Hauz Khas Village | HIT |  | Hauz Khas (place); Hauz Khas (locality); Hauz Khas (locality) |
+| karol bag | Karol Bagh | HIT |  | KAROL BAGH (overture); Karol Bagh (place); Karol Bagh (public_transport) |
 | dtu | Delhi Technological University (DTU), Bawana Road | HIT |  | Delhi Technological University (university); Delhi Technological University (amenity); Delhi Technological University (amenity) |
 | rajiv chowk gate 5 | Rajiv Chowk Metro Gate 5 | HIT |  | Rajiv Chowk Metro Gate No 5 (railway); Rajiv Chowk Metro Gate No 1 (railway); Rajiv Chowk Metro Gate No 2 (railway) |
 | saket pvr | PVR / Select Citywalk area, Saket | HIT |  | Chaayos - PVR Saket (overture); FabHotel PVR Saket (overture); Dominos, PVR Saket Complex (overture) |
-| connaught plce | Connaught Place | HIT |  | Connaught Place (overture); Connaught Place (locality); Connaught Place (district) |
+| connaught plce | Connaught Place | HIT |  | Connaught Place (place); Connaught Place (overture); Connaught Place (locality) |
 | nehru place | Nehru Place | HIT |  | Nehru Place (public_transport); Nehru Place (public_transport); Nehru Place (public_transport) |
 | vaishali metro | Vaishali Metro Station | HIT |  | Vaishali metro station (metro); Vaishali metro station (overture); Vaishali Metro Station Ghaziabad (overture) |
 | 559 udyog vihar | 559 Udyog Vihar Phase V Road | HIT |  | 559 Udyog Vihar Phase V Road (addr); 559 Block E, Mayur Vihar Phase 2 (addr); 559 Baba Amarnath Marg (addr) |
@@ -147,31 +147,31 @@ Simple Python index: normalized token + prefix match over display+aliases, top-3
 | 19 church road | 19 Church Road | HIT |  | 19 Church Road (addr); 19 Akashneem Marg (addr); 19 Gurdwara Road (addr) |
 | sector 62 noida | Sector 62, Noida | HIT |  | Sector 62 Noida (overture); Sector 62, Noida (place); Sector 62 (place) |
 | rohini sector 7 | Rohini Sector 7 | HIT |  | Rohini Sector 7 (synthetic); Rohini sector 7 (overture); Rohini Sector 7 and 8 (public_transport) |
-| nithari village | Nithari Village | HIT |  | Nithari Village (village); Nithari Village (city); Setu School, Shiv Mandir Gali Village Nithari Noida (overture) |
+| nithari village | Nithari Village | HIT |  | Nithari Village (city); Nithari Village (village); Setu School, Shiv Mandir Gali Village Nithari Noida (overture) |
 | chhapraula | Chhapraula | HIT |  | Chhapraula (place); Chhapraula (locality); Chhapraula (locality) |
 | sorkha village | Sorkha | HIT |  | Sorkha (overture); HDFC Bank Sector 116 (synthetic); HDFC Bank Sector 116 Sorkha branch (place) |
 | pari chowk | Pari Chowk, Greater Noida | HIT |  | PARI CHOWK (overture); Pari Chowk (public_transport); Pari Chowk (public_transport) |
 | akshardham temple | Akshardham Temple | HIT |  | Akshardham Temple (overture); Akshardham Temple (overture); Akshardham Temple Boundary (barrier) |
 | sarai kale khan | Sarai Kale Khan | HIT |  | Sarai Kale Khan (place); Sarai Kale Khan (railway); Sarai Kale Khan (public_transport) |
-| crossings republik | Crossings Republik | HIT |  | Crossings Republik (place); Crossings Republik (overture); Crossings Republik (place) |
+| crossings republik | Crossings Republik | HIT |  | Crossings Republik (place); Crossings Republik (place); Crossings Republik (overture) |
 | indirapuram | Indirapuram | HIT |  | Indirapuram (overture); Indirapuram (overture); Indirapuram (locality) |
 | beta 2 greater noida | Beta 2, Greater Noida | HIT |  | Beta 2 (landuse); Sector Beta 2, Greater Noida, Up (overture); Harshi PG & Hostel for Girls in Greater Noida, Beta-2nd (overture) |
-| purana qila | Purana Qila | HIT |  | Purana Qila (monument); Purana Qila (monument); Purana Qila (tourism) |
-| sarita vihar | Sarita Vihar | HIT |  | Sarita Vihar (railway); Sarita Vihar (place); Sarita Vihar (overture) |
-| chirag delhi | Chirag Delhi | HIT |  | Chirag Delhi (public_transport); Chirag Delhi (railway); Chirag Delhi (railway) |
-| dilshad garden | Dilshad Garden | HIT |  | Dilshad Garden (railway); Dilshad Garden (overture); Dilshad Garden (overture) |
+| purana qila | Purana Qila | HIT |  | Purana Qila (tourism); Purana Qila (monument); Purana Qila (monument) |
+| sarita vihar | Sarita Vihar | HIT |  | Sarita Vihar (overture); Sarita Vihar (locality); Sarita Vihar (railway) |
+| chirag delhi | Chirag Delhi | HIT |  | Chirag Delhi (place); Chirag Delhi (public_transport); Chirag Delhi (railway) |
+| dilshad garden | Dilshad Garden | HIT |  | Dilshad Garden (place); Dilshad Garden (park); Dilshad Garden (overture) |
 | mandawali | Mandawali | HIT |  | Mandawali (addr); Mandawli (overture); Mandawali Fazalpur (place) |
 | new friends colony | New Friends Colony | HIT |  | New Friends Colony (public_transport); New Friends Colony (public_transport); New Friends Colony (boundary) |
-| seelam pur | Seelampur | HIT |  | Seelam Pur (district); Seelampur (railway); Seelampur (public_transport) |
+| seelam pur | Seelampur | HIT |  | Seelam Pur (district); Seelampur (place); Seelampur (locality) |
 | hkv | Hauz Khas Village | HIT |  | Hauz Khas Village (overture); Hauz Khas Village (overture); Hauz Khas Village (landuse) |
 | ndls | New Delhi Railway Station | HIT |  | @ New Delhi Railway Station... (overture); New Delhi Railway Station (public_transport); New Delhi Railway Station (boundary) |
 | bhikaji | Bhikaji Cama Place | HIT |  | Bhikaji Cama Place (public_transport); Bhikaji Cama Place (railway); Bhikaji Cama Place (locality) |
 | srcc | Shri Ram College of Commerce | HIT |  | SRCC (overture); SRCC (overture); Shri Ram College of Commerce (overture) |
-| konnaught place | Connaught Place | HIT |  | Connaught Place (overture); Connaught Place (district); Connaught Place (locality) |
+| konnaught place | Connaught Place | HIT |  | Connaught Place (place); Connaught Place (overture); Connaught Place (district) |
 | chandi chowk | Chandni Chowk | MISS |  | Chandila Chowk (misc); Chandila Chowk (misc); Chandini Chowk (overture) |
 | lodhi gardan | Lodhi Garden | HIT |  | Lodhi Garden (public_transport); Lodhi Garden (overture); Lodhi Garden Gate (overture) |
 | hauz khas vilage | Hauz Khas | HIT |  | Hauz Khas Village (overture); Hauz Khas Village (overture); Hauz Khas Village (landuse) |
-| jamia nagr | Jamia Nagar | HIT |  | Jamia Nagar (overture); Jamia Nagar (place); Jamia Millia Islamia (amenity) |
+| jamia nagr | Jamia Nagar | HIT |  | Jamia Nagar (place); Jamia Nagar (overture); Jamia Millia Islamia (amenity) |
 | nebru place | Nehru Place | HIT |  | Nehru Place (public_transport); Nehru Place (public_transport); Nehru Place (public_transport) |
 | atm near cp | ATM | HIT | yes | Treebo Check In By Oran - Near Connaught Place (overture); Delhi - Connaught Place (Outer Circle) Branch ATM (overture); Delhi - Gurugram Sec 5 Nr Rlwy Stn Offsite ATM (overture) |
 | hospital near saket | hospital / Saket | HIT |  | DR MUKESH GARG (amenity); Max Superspeciality Hospital (amenity); Saroj Hospital (amenity) |
@@ -199,7 +199,7 @@ Simple Python index: normalized token + prefix match over display+aliases, top-3
 | e 47 greater kailash | Greater Kailash / D Block | HIT |  | Nature's Tattva (shop); E-110 Greater Kailash 2 (addr); E-142 (building) |
 | murthal dhaba | Murthal | HIT |  | Gulshan Dhaba Murthal (overture); Mannat Dhaba Dharuhera (overture); Mannat Dhaba Rohtak (overture) |
 | azadpur mandi | Azadpur | HIT |  | Azadpur Mandi Delhi (overture); Azadpur Mandi Office (office); Azadpur Fruit and Vegetable Market (boundary) |
-| sis ganj gurudwara | Sis Ganj | HIT |  | Gurdwara Sis Ganj Sahib (amenity); Gurdwara Sis Ganj Sahib (place); Gurdwara Sis Ganj Sahib (overture) |
+| sis ganj gurudwara | Sis Ganj | HIT |  | Gurdwara Sis Ganj Sahib (amenity); Gurdwara Sis Ganj Sahib (overture); Gurdwara Sis Ganj Sahib (place) |
 | t3 airport | Terminal | HIT |  | T3 Newdelhi International Airport (overture); Terminal 3 - Indira Gandhi International Airport (overture); New Delhi Airport. Terminal 3 (overture) |
 | gaffar market | Gaffar | HIT |  | Gaffar Market (landuse); Gaffar Market (amenity); Gaffar Market (overture) |
 | khari baoli | Khari Baoli | HIT |  | Khari Baoli (misc); Khari Baoli (market); Khari Baoli (overture) |
@@ -216,6 +216,6 @@ Simple Python index: normalized token + prefix match over display+aliases, top-3
 ## Mobile gazetteer emit
 
 - output: `server/data/corpus/delhi-gazetteer-150k.json` (19.9 MB)
-- bundled gazetteer kept: 132,932
-- new corpus rows added: 77,068 (skipped 124,166 name+75 m dupes)
+- bundled gazetteer kept: 210,000
+- new corpus rows added: 0 (skipped 201,206 name+75 m dupes)
 - **total: 210,000** (target 210,000)
