@@ -267,7 +267,17 @@ const S = {
   homeAirMeta: 'read at your location · nearest live monitor ~{k} km away',
   homeAirPlaceModel: 'read near {p} · no live monitors feeding the field right now',
   homeAirModel: 'read at your location · no live monitors feeding the field right now',
-  homeAirEdge: "closest live monitors cover Delhi's core — this is their nearest read",
+  homeAirPinModel: 'at your pin · no live monitors feeding the field right now',
+  homeAirLastModel: 'at your last fix · no live monitors feeding the field right now',
+  homeAirPinLead: 'at your pin',
+  homeAirLastLead: 'at your last fix',
+  homeAirFromStationAway: 'from {s} · {k} km away',
+  homeAirFromStation: 'from {s} {k} km',
+  homeAirFromKmAway: 'nearest live monitor ~{k} km away',
+  homeAirFromKm: 'nearest live monitor ~{k} km',
+  homeAirReadAge: 'read {m} min ago',
+  homeAirEdge: "outside the live field — the nearest edge's read, not the air where you are",
+  homeAirNowPin: 'the air at your pin',
   homeAirCityHint: "location is off or hasn't locked yet — turn it on for the air where you actually are",
   homeOutsideNow: 'outside ~{n} µg/m³ · {w}', homeWeek: '{n} µg this week',
   homeLinkMap: 'Air map', homeLinkCity: 'Delhi today', homeLinkTrips: 'Trips',
@@ -614,6 +624,30 @@ const quietBlock = (glyph, titleKey) => `
   <div class="hs-quiettitle">${esc(t(titleKey))}</div></div>`;
 
 /* ══ HERO ══ */
+/* the wire's own named monitor: /aqi serves field.stations[] = the live
+   instruments feeding the field; the one feeding this read is the
+   argmin under the server's own km constants (airfield._KY/_KX) — it
+   reproduces nearest_station_km exactly, so the name is cited, never
+   invented */
+const ST_KY = 110.6, ST_KX = 99.4;
+const nearestStationName = (aqi, lat, lon) => {
+  const sts = aqi && aqi.field && Array.isArray(aqi.field.stations) ? aqi.field.stations : null;
+  if (!sts || !isNum(lat) || !isNum(lon)) return null;
+  let name = null, bk = Infinity;
+  for (const s of sts) {
+    if (!s || !isNum(s.lat) || !isNum(s.lon)) continue;
+    const k = Math.hypot((s.lat - lat) * ST_KY, (s.lon - lon) * ST_KX);
+    if (k < bk) { bk = k; name = s.name; }
+  }
+  return typeof name === 'string' && name.trim() ? name : null;
+};
+/* 'Mandir Marg, Delhi, Delhi, India' → 'Mandir Marg' — the tail the
+   feed repeats on every instrument name is not part of the station */
+const stationLabel = (name) => {
+  const parts = String(name || '').split(',').map((p) => p.trim()).filter(Boolean);
+  while (parts.length > 1 && /^(new )?delhi$|^nct$|^ncr$|^india$/i.test(parts[parts.length - 1])) parts.pop();
+  return parts.join(', ');
+};
 function heroHtml(d) {
   const airNow = d.ambientUg ?? (d.series.find((v) => v != null) ?? null);
   const airSrc = d.ambientUg != null ? 'live' : (d.series.some((v) => v != null) ? 'forecast' : null);
@@ -622,7 +656,6 @@ function heroHtml(d) {
   const idx = counted ? (doseTierIdx(d.totalUg, d.budget) ?? 0) : airNowIdx;
   const ink = idx != null ? bandInkIdx(idx) : 'var(--ink)';
   const felt = idx != null ? t(feltKeyForBand(idx)) : null;
-  const airAgeLine = airSrc === 'live' ? fieldAgeLine(d.fieldAgeS, d.fieldStale) : null;
 
   let ref = null, ref2 = null;
   if (counted) {
@@ -635,19 +668,37 @@ function heroHtml(d) {
     const x = airNow / WHO_DAILY_UG;
     ref = x > 1.05 ? t('refWhoOver', { x: x >= 10 ? Math.round(x) : x.toFixed(1) }) : t('refWhoUnder');
   }
+  /* the instrument's citation — where the number was read, which named
+     monitor fed it, and how old the read is, as ONE provenance line.
+     The state names the position honestly: 'off' = the Delhi-centre
+     fallback answered (the number is the city read, never "your air"),
+     'pin' = the dropped point, 'stale' = the last fix still quoted
+     while a fresh lock is in flight */
+  const readMin = d.fieldAgeS != null && isFinite(d.fieldAgeS)
+    ? Math.max(0, Math.floor(d.fieldAgeS / 60)) : null;
   const provBase = !counted && airSrc === 'live' && d.meta != null
-    ? (d.meta.atGps === false ? t('homeAirCityHint')
+    ? (d.meta.state === 'off' ? t('homeAirCityHint')
       : d.meta.beyondEdge ? t('homeAirEdge')
-      : d.meta.km != null
-        ? (d.meta.place ? t('homeAirMetaPlace', { p: d.meta.place, k: d.meta.km }) : t('homeAirMeta', { k: d.meta.km }))
-        : (d.meta.place ? t('homeAirPlaceModel', { p: d.meta.place }) : t('homeAirModel')))
+      : [d.meta.state === 'pin' ? t('homeAirPinLead')
+          : d.meta.state === 'stale' ? t('homeAirLastLead') : null,
+        d.meta.station && d.meta.km != null
+          ? t(d.meta.state === 'live' ? 'homeAirFromStationAway' : 'homeAirFromStation',
+              { s: d.meta.station, k: d.meta.km })
+          : d.meta.km != null
+            ? t(d.meta.state === 'live' ? 'homeAirFromKmAway' : 'homeAirFromKm', { k: d.meta.km })
+            : t(d.meta.state === 'pin' ? 'homeAirPinModel'
+              : d.meta.state === 'stale' ? 'homeAirLastModel'
+              : d.meta.place ? 'homeAirPlaceModel' : 'homeAirModel', { p: d.meta.place })]
+        .filter(Boolean).join('  ·  '))
     : null;
-  const provLine = [provBase, counted ? null : airAgeLine].filter(Boolean).join('  ·  ');
+  const provLine = [provBase, counted || readMin == null ? null : t('homeAirReadAge', { m: readMin })]
+    .filter(Boolean).join('  ·  ');
 
   return `
     <div class="hs-eyebrow">${esc(counted ? t('homeBreathed')
       : airSrc === 'forecast' ? t('homeAirForecast')
-      : d.meta && d.meta.atGps === false ? t('homeAirNowCity') : t('homeAirNowLead'))}</div>
+      : d.meta && d.meta.state === 'off' ? t('homeAirNowCity')
+      : d.meta && d.meta.state === 'pin' ? t('homeAirNowPin') : t('homeAirNowLead'))}</div>
     ${counted ? `
       <div class="hs-heronumrow"><span class="hs-heronum" data-count="${doseUgRound(d.totalUg)}" style="color:${ink}">0</span><span class="hs-heroug">µg</span></div>`
     : airNow != null ? `
@@ -947,7 +998,20 @@ function heroData() {
   const s = getSettings();
   const aqi = cur.aqi;
   const pos = cur.pos || A.geo.pos;
-  const atGps = A.geo.consent === 'granted' && pos && !pos.picked;
+  /* which position the number was read at, named honestly:
+     pin    — a dropped point (consent 'picked' + map tap)
+     live   — GPS granted with a fix under 2 min old (app.js's own
+              re-lock gate is 120 s — same freshness bound)
+     stale  — GPS granted but the quoted fix is older — the read is
+              still at that fix while the silent re-lock is in flight
+     off    — no usable fix (consent unanswered, 'picked' with no drop
+              yet, or granted with no lock): the /aqi call fell back to
+              A.DELHI, so the number is the city read — the eyebrow and
+              the hint must say so and never "your air" */
+  const fixFresh = !!(pos && pos.t && (Date.now() - pos.t) < 120000);
+  const state = pos && pos.picked ? 'pin'
+    : (!pos || A.geo.consent !== 'granted') ? 'off'
+    : fixFresh ? 'live' : 'stale';
   const ambientUg = aqi && aqi.pm25 != null ? Math.round(aqi.pm25) : null;
   const dd = dayData();
   return {
@@ -961,7 +1025,8 @@ function heroData() {
     series: cur.day ? cur.day.series : [],
     meta: {
       km: aqi && aqi.nearest_station_km != null ? aqi.nearest_station_km : null,
-      atGps, usAqi: aqi ? aqi.us_aqi : null,
+      state, station: pos ? stationLabel(nearestStationName(aqi, pos.lat, pos.lon)) : null,
+      usAqi: aqi ? aqi.us_aqi : null,
       beyondEdge: aqi ? !!aqi.beyond_field_edge : false,
       place: cur.label || (pos && pos.label) || null,
     },
