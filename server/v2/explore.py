@@ -427,7 +427,9 @@ async def playtime(near: Optional[str] = None,
         word = "cleanest" if best["pm25_mid"] <= 60.0 else "least-bad"
         end = best["end_label"] or "on"
         delta = (f" — {cleaner:.0f} µg/m³ lighter than now"
-                 if cleaner is not None and cleaner > 0 else "")
+                 if cleaner is not None and cleaner >= 1.0
+                 else " — about the same as now"
+                 if cleaner is not None and cleaner > -1.0 else "")
         verdict = (f"{word} window {best['start_label']}-{end} "
                    f"{_day_word(best['start_day_offset'])}, ~"
                    f"{best['pm25_mid']:.0f} µg/m³ avg{delta}")

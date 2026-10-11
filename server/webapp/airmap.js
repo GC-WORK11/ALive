@@ -727,8 +727,8 @@ function citySection(data, moves, own) {
           <span class="dt-herounit">${esc(t('unitUg').split(' ')[0])}</span>
         </div>
         <div class="dt-herofelt" style="color:${bandInkIdx(bandI) ?? '#16181D'}">${esc(t('cityHeroAirFelt', { w: t(feltKeyForBand(bandIdx(pm.mid))) }))}</div>
-        <div class="dt-heroref num">${esc(t('cityHeroUnitUg'))}\n${pm.mid / WHO_DAILY_UG > 1.05
-          ? esc(t('refWhoOver', { x: pm.mid / WHO_DAILY_UG >= 10 ? Math.round(pm.mid / WHO_DAILY_UG) : (pm.mid / WHO_DAILY_UG).toFixed(1) }))
+        <div class="dt-heroref num">${esc(t('cityHeroUnitUg'))}\n${inhaled.mid / WHO_DAILY_UG > 1.05
+          ? esc(t('refWhoOver', { x: inhaled.mid / WHO_DAILY_UG >= 10 ? Math.round(inhaled.mid / WHO_DAILY_UG) : (inhaled.mid / WHO_DAILY_UG).toFixed(1) }))
           : esc(t('refWhoUnder'))} · ${esc(t('cityHeroAirNow', { n: Math.round(pm.mid) }))}</div>
         ${bandScale(bandI)}
         ${Math.round(inhaled.lo) > 0 ? `<div class="dt-herorange num">${esc(t('cityHeroRange', { lo: Math.round(inhaled.lo), hi: Math.round(inhaled.hi) }))}</div>` : ''}

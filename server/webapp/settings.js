@@ -85,7 +85,8 @@ const S = {
   settingsAlertsWindowsHint: "when the day's lightest hours open up + tomorrow's read each evening",
   settingsAlertsReflect: 'your day on the road',
   settingsAlertsReflectHint: "yesterday's trips, once a day — from your own ledger",
-  settingsAbout: 'About', settingsVersion: 'Version', settingsDevBuild: 'dev build',
+  settingsAbout: 'About', settingsVersion: 'Version',
+  settingsBuildLoading: 'reading…', settingsBuildNone: 'web app',
   settingsDataSources: 'air: satellite estimate + live stations when they connect',
   settingsHowNumbers: 'How numbers are estimated',
   settingsHowNumbersBody: "your breath number comes from a street-level air map — Delhi's monitoring stations + satellite weather, refreshed about every 15 minutes. it's always a range, never a fake-exact number. · 1 cigarette ≈ 316 µg of PM2.5 breathed in (the Berkeley Earth rule). · what your ride puts out comes from published tests on that kind of ride (ARAI / ICCT road measurements) — a range like 1.1–1.6 kg CO2. · your phone doesn't sense the air — it just moves through the map.",
@@ -246,7 +247,7 @@ function settingsHtml() {
     <div class="st-card">
       <div class="st-row">
         <span class="st-rowmid"><span class="st-rowlabel">${esc(t('settingsVersion'))}</span></span>
-        <span class="st-value">${esc(t('settingsDevBuild'))}</span>
+        <span class="st-value" id="st-build">${esc(t('settingsBuildLoading'))}</span>
       </div>
       ${hairline}
       <div class="st-row">${ic('wind', 20, 'st-rowic')}<span class="st-rowmid"><span class="st-bodytxt">${esc(t('settingsDataSources'))}</span></span></div>
@@ -282,6 +283,12 @@ A.screen('settings', {
         nearestTxt = j.nearest_station_km.toFixed(1);
         if (expandKey === 'numbers') rerender(body);
       }
+    });
+
+    /* the deployed build, live — never a stale 'dev build' label */
+    A.api.get('/health', 6000).then((h) => {
+      const el = body.querySelector('#st-build');
+      if (el) el.textContent = (h && h.build_sha) ? `web · ${String(h.build_sha).slice(0, 8)}` : t('settingsBuildNone');
     });
 
     elm.addEventListener('click', async (e) => {
