@@ -1,0 +1,99 @@
+/* Alive webapp — motion + glitch lane. ADDITIVE ONLY: this file is wired
+   in after every screen lane's css, so equal-specificity rules here win.
+   Owns choreography, compositor swaps, hit-area, and focus affordances —
+   never a screen's look. Screens opt into choreography with the
+   [data-sheet-anim] hook; motion.js tags the standard A.sheetChrome
+   sheets and .jr-sheet surfaces automatically. */
+
+:root {
+  /* one spring-ish curve for every surface move — the lane's single feel */
+  --motion-ease: cubic-bezier(.2, .9, .25, 1);
+  --motion-dur: .34s;
+}
+
+/* ── sheet choreography ────────────────────────────────────────────
+   enter/exit is transform+opacity only — never top/height. A promoted
+   layer keeps the slide on the compositor even when the mount frame
+   does heavy DOM work underneath. */
+[data-sheet-anim].sheet,
+[data-sheet-anim].jr-sheet {
+  will-change: transform;
+  backface-visibility: hidden;
+  transition: transform var(--motion-dur) var(--motion-ease),
+              opacity var(--motion-dur) var(--motion-ease);
+}
+/* hidden state: off-screen AND invisible — the old sheet stayed visible
+   at translateY(104%) if a frame caught it mid-flight */
+[data-sheet-anim].sheet:not(.on),
+[data-sheet-anim].jr-sheet:not(.on) { opacity: 0; }
+[data-sheet-anim].sheet.on,
+[data-sheet-anim].jr-sheet.on { opacity: 1; }
+/* while the finger owns the sheet, transitions must not fight it */
+[data-sheet-anim][data-drag] { transition: none; }
+
+/* the grab rail is a real control: a finger-sized invisible pad */
+[data-sheet-anim] .sheet-grab,
+[data-sheet-anim] .jr-grab { position: relative; touch-action: none; cursor: grab; }
+[data-sheet-anim] .sheet-grab::before,
+[data-sheet-anim] .jr-grab::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 140px; height: 44px; transform: translate(-50%, -50%);
+}
+[data-sheet-anim] .sheet-grab:active,
+[data-sheet-anim] .jr-grab:active { cursor: grabbing; }
+
+/* detent sheets must not grow while data lands — pin the detent so the
+   open animation is the only move (mobile only; desktop rail untouched) */
+@media (max-width: 719.98px) {
+  .am-host .sheet[data-sheet-anim] { height: 58%; }
+  .pm-host .sheet[data-sheet-anim] { height: 62%; }
+  /* armed pin-drop folds to a hint strip — never pin that */
+  .wt-armed .sheet[data-sheet-anim] { height: auto; }
+}
+
+/* journey ships its own top chrome (exit dot + destination pill); the
+   wordmark pill underneath collides with it — same rule the loc-chip
+   already uses off home */
+body[data-top="journey"] #mark { display: none; }
+
+/* ── compositor swaps ──────────────────────────────────────────────
+   .sk shimmer ran on background-position — a paint every frame.
+   Same look, moved to a translating overlay that lives on the GPU. */
+.sk { background: var(--surface2); overflow: hidden; position: relative; animation: none; }
+.sk::before {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 30%, var(--surface) 50%, transparent 70%);
+  animation: motion-sk 1.4s linear infinite;
+}
+@keyframes motion-sk { to { transform: translateX(100%); } }
+
+/* ── ≥40×40 effective hit zones ────────────────────────────────────
+   invisible ::after pads; the visual button stays the lane's size. */
+.back-btn, .x-btn, .jn-exit, .jr-x, .wt-swap, .am-x, .pm-x,
+.maplibregl-ctrl-group > button { position: relative; }
+.back-btn::after, .x-btn::after, .jn-exit::after, .jr-x::after {
+  content: ""; position: absolute; inset: -3px;        /* 36 → 42 */
+}
+.wt-swap::after { content: ""; position: absolute; inset: -5px; }   /* 30 → 40 */
+.am-x::after, .pm-x::after { content: ""; position: absolute; inset: -12px; }
+.maplibregl-ctrl-group > button::after { content: ""; position: absolute; inset: -6px; } /* 29 → 41 */
+/* attribution links are 14px-tall inline text — pad them to a finger's reach */
+.maplibregl-ctrl-attrib a { position: relative; }
+.maplibregl-ctrl-attrib a::after { content: ""; position: absolute; inset: -13px -4px; }
+/* the readout close links are inline-level — pad needs a block box */
+.am-x, .pm-x { position: relative; display: inline-block; }
+/* loc-chip reads ~33px tall — raise the row, visuals unchanged */
+#loc-chip { min-height: 40px; }
+.vchip { position: relative; }
+.vchip::after { content: ""; position: absolute; inset: -3px -2px; }
+
+/* ── focus + keyboard affordance ─────────────────────────────────── */
+:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; border-radius: 6px; }
+/* the field's own ring goes on the bar, not cramped inside the input */
+.searchbar:focus-within { outline: 2px solid var(--accent-ink); outline-offset: 2px; border-radius: var(--r-row); }
+.searchbar input:focus-visible { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sheet-anim].sheet, [data-sheet-anim].jr-sheet { transition-duration: .01ms; }
+  .sk::before { animation: none; }
+}
