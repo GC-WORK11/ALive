@@ -653,7 +653,7 @@ function bindSearch() {
   const xBtn = root.querySelector('[data-act="clear"]');
   if (xBtn) xBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (input) { input.value = ''; onQ(''); input.focus(); }
+    if (input) { input.value = ''; xBtn.hidden = true; onQ(''); input.focus(); }
   });
   root.querySelector('[data-act="locate"]').addEventListener('click', locateFill);
   root.querySelector('[data-act="map"]').addEventListener('click', armPinDrop);
