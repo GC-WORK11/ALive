@@ -603,7 +603,7 @@ async function chooseGps() {
   try {
     const pos = await A.geo.locate();
     CS.busy = false;
-    A.geo.consent = 'granted'; A.store.set('consent', 'granted'); A.store.set('onboarded', 1);
+    A.geo.consent = 'granted'; A.store.set('consent', 'granted'); A.store.set('consent_v', 2); A.store.set('onboarded', 1);
     cur.locErr = null; cur.picking = false;
     closeConsent();
     goHome();
@@ -616,7 +616,7 @@ async function chooseGps() {
   }
 }
 function choosePin() {
-  A.geo.consent = 'picked'; A.store.set('consent', 'picked'); A.store.set('onboarded', 1);
+  A.geo.consent = 'picked'; A.store.set('consent', 'picked'); A.store.set('consent_v', 2); A.store.set('onboarded', 1);
   cur.picking = true;
   closeConsent();
   goHome();
@@ -625,7 +625,7 @@ function choosePin() {
 function chooseLater() {
   A.store.set('onboarded', 1);
   const first = !A.geo.consent;
-  if (first) { A.geo.consent = 'later'; A.store.set('consent', 'later'); }
+  if (first) { A.geo.consent = 'later'; A.store.set('consent', 'later'); A.store.set('consent_v', 2); }
   closeConsent();
   if (first) A.toast(t('csLaterToast'));
   paint();
@@ -742,7 +742,7 @@ A.screen('home', {
       else if (a === 'pickgps') {
         if (!navigator.geolocation) { A.toast(t('csNoGeo')); return; }
         A.geo.locate().then((p) => {
-          A.geo.consent = 'granted'; A.store.set('consent', 'granted');
+          A.geo.consent = 'granted'; A.store.set('consent', 'granted'); A.store.set('consent_v', 2);
           cur.picking = false; cur.locErr = null;
           applyPos(p);
           A.map.puckMove(p.lat, p.lon, p.acc || null);
@@ -750,6 +750,11 @@ A.screen('home', {
       } else if (a === 'pickcancel') { cur.picking = false; paint(); }
     });
 
+    /* anyone whose answer came from an older build gets THIS popup once,
+       and an old saved position is dropped (it may be a coarse guess) */
+    if (A.geo.consent && A.store.get('consent_v') !== 2) {
+      A.geo.consent = null; A.store.del('consent'); A.store.del('pos'); A.geo.pos = null; cur.pos = null;
+    }
     /* returning users: a granted consent with no fix re-locks silently */
     if (A.geo.pos) { cur.pos = A.geo.pos; refreshAddr(cur.pos); }
     if (!A.geo.consent) {
