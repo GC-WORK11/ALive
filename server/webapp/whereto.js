@@ -138,6 +138,8 @@ const D = {
   hospital: 'M420-420v80q0 25 17.5 42.5T480-280q25 0 42.5-17.5T540-340v-80h80q25 0 42.5-17.5T680-480q0-25-17.5-42.5T620-540h-80v-80q0-25-17.5-42.5T480-680q-25 0-42.5 17.5T420-620v80h-80q-25 0-42.5 17.5T280-480q0 25 17.5 42.5T340-420h80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z',
   pharmacy: 'M204-120q-42 0-65.5-33T128-225l72-215-72-215q-13-39 10.5-72t65.5-33h424l41-113q7-20 25.5-28.5T733-903q20 7 28.5 25.5T763-839l-29 79h22q42 0 65.5 33t10.5 72l-72 215 72 215q13 39-10.5 72T756-120H204Zm236-160h80v-120h120v-80H520v-120h-80v120H320v80h120v120Zm-236 80h552l-80-240 80-240H204l80 240-80 240Zm276-240Z',
   shop: 'M240-80q-33 0-56.5-23.5T160-160v-480q0-33 23.5-56.5T240-720h80q0-66 47-113t113-47q66 0 113 47t47 113h80q33 0 56.5 23.5T800-640v480q0 33-23.5 56.5T720-80H240Zm0-80h480v-480h-80v80q0 17-11.5 28.5T600-520q-17 0-28.5-11.5T560-560v-80H400v80q0 17-11.5 28.5T360-520q-17 0-28.5-11.5T320-560v-80h-80v480Zm160-560h160q0-33-23.5-56.5T480-800q-33 0-56.5 23.5T400-560ZM240-160v-480 480Z',
+  restaurant: 'M280-600v-240q0-17 11.5-28.5T320-880q17 0 28.5 11.5T360-840v240h40v-240q0-17 11.5-28.5T440-880q17 0 28.5 11.5T480-840v240q0 56-34.5 98T360-446v326q0 17-11.5 28.5T320-80q-17 0-28.5-11.5T280-120v-326q-51-14-85.5-56T160-600v-240q0-17 11.5-28.5T200-880q17 0 28.5 11.5T240-840v240h40Zm400 200h-80q-17 0-28.5-11.5T560-440v-240q0-70 51.5-135T718-880q18 0 30 14t12 33v713q0 17-11.5 28.5T720-80q-17 0-28.5-11.5T680-120v-280Z',
+  city: 'M120-200v-400q0-33 23.5-56.5T200-680h160v-47q0-16 6-30.5t17-25.5l40-40q23-23 57-23t57 23l40 40q11 11 17 25.5t6 30.5v207h160q33 0 56.5 23.5T840-440v240q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200Zm80 0h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm240 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm240 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z',
   mall: 'M200-80q-33 0-56.5-23.5T120-160v-480q0-33 23.5-56.5T200-720h80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720h80q33 0 56.5 23.5T840-640v480q0 33-23.5 56.5T760-80H200Zm0-80h560v-480H200v480Zm160-560h240q0-50-35-85t-85-35q-50 0-85 35t-35 85ZM200-160v-480 480Zm279-240q74 0 134-49t59-110q0-17-11-29t-28-12q-14 0-25 9t-16 27q-11 38-43 61t-70 23q-38 0-70.5-23T366-564q-5-19-15-27.5t-24-8.5q-17 0-28.5 12T287-559q0 61 59 110t133 49Z',
   school: 'M242-249q-20-11-31-29.5T200-320v-192l-96-53q-11-6-16-15t-5-20q0-11 5-20t16-15l338-184q9-5 18.5-7.5T480-829q10 0 19.5 2.5T518-819l381 208q10 5 15.5 14.5T920-576v256q0 17-11.5 28.5T880-280q-17 0-28.5-11.5T840-320v-236l-80 44v192q0 23-11 41.5T718-249L518-141q-9 5-18.5 7.5T480-131q-10 0-19.5-2.5T442-141L242-249Zm238-203 274-148-274-148-274 148 274 148Zm0 241 200-108v-151l-161 89q-9 5-19 7.5t-20 2.5q-10 0-20-2.5t-19-7.5l-161-89v151l200 108Zm0-241Zm0 121Zm0 0Z',
   airport: 'M480-120 377-91q-14 4-25.5-4.5T340-118q0-12 3-19.5t8-11.5l69-51v-220l-291 86q-19 5-34-6t-15-31q0-15 5-25t14-15l321-189v-220q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v220l321 189q9 5 14 15t5 25q0 20-15 31t-34 6l-291-86v220l69 51q5 4 8 11.5t3 19.5q0 14-11.5 22.5T583-91l-103-29Z',
@@ -156,6 +158,7 @@ const D = {
   monument: 'M40-200v-47q0-16 6-30.5T63-303l57-57v-240l-57-57q-11-11-17-25.5T40-713v-87q0-17 11.5-28.5T80-840q17 0 28.5 11.5T120-800v40h80v-40q0-17 11.5-28.5T240-840q17 0 28.5 11.5T280-800v40h80v-40q0-17 11.5-28.5T400-840q17 0 28.5 11.5T440-800v87q0 16-6 30.5T417-657l-57 57v40h240v-40l-57-57q-11-11-17-25.5t-6-30.5v-87q0-17 11.5-28.5T560-840q17 0 28.5 11.5T600-800v40h80v-40q0-17 11.5-28.5T720-840q17 0 28.5 11.5T760-800v40h80v-40q0-17 11.5-28.5T880-840q17 0 28.5 11.5T920-800v87q0 16-6 30.5T897-657l-57 57v240l57 57q11 11 17 25.5t6 30.5v47q0 33-23.5 56.5T840-120H600q-17 0-28.5-11.5T560-160v-80q0-33-23.5-56.5T480-320q-33 0-56.5 23.5T400-240v80q0 17-11.5 28.5T360-120H120q-33 0-56.5-23.5T40-200Zm80 0h200v-40q0-66 47-113t113-47q66 0 113 47t47 113v40h200v-47l-80-80v-306l47-47H633l47 47v153H280v-153l47-47H153l47 47v306l-80 80v47Zm360-240Z',
   museum: 'M80-80v-80h80v-360h-26q-23 0-38.5-16T80-575q0-12 5.5-22t15.5-17l333-234q11-8 22.5-11.5T480-863q12 0 23.5 3.5T526-848l333 234q10 7 15.5 17.5T880-574q0 23-15.5 38.5T826-520h-26v360h80v80H80Zm640-80v-454L480-782 240-614v454h480ZM480-312q10 0 18.5-4.5T513-330l47-70v120q0 17 11.5 28.5T600-240q17 0 28.5-11.5T640-280v-207q0-14-9.5-23.5T607-520h-29q-8 0-15.5 4T550-505l-70 105-68-102q-5-8-14-13t-19-5h-19q-17 0-28.5 11.5T320-480v200q0 17-11.5 28.5T360-240q17 0 28.5-11.5T400-280v-120l47 70q6 9 14.5 13.5T480-312Zm240 152H240h480Z',
   rail: 'M208-80q-14 0-19-12t5-22l46-46h480l46 46q10 10 5 22t-19 12H208Zm72-120 40-40h-20q-58 0-99-41t-41-99v-260q0-129 92.5-204.5T480-920q135 0 227.5 75.5T800-640v260q0 58-41 99t-99 41h-20l40 40H280Zm20-120h360q25 0 42.5-17.5T720-380v-140H240v140q0 25 17.5 42.5T300-320Zm180-40q25 0 42.5-17.5T540-420q0-25-17.5-42.5T480-480q-25 0-42.5 17.5T420-420q0 25 17.5 42.5T480-360ZM240-600h480v-40q0-23-4.5-42.5T703-720H257q-8 18-12.5 37.5T240-640v40Zm89-200h302q-31-20-69.5-30T480-840q-43 0-81.5 10T329-800Zm151 280Zm0-280Z',
+  route: 'M360-120q-66 0-113-47t-47-113v-327q-35-13-57.5-43.5T120-720q0-50 35-85t85-35q50 0 85 35t35 85q0 39-22.5 69.5T280-607v327q0 33 23.5 56.5T360-200q33 0 56.5-23.5T440-280v-400q0-66 47-113t113-47q66 0 113 47t47 113v327q35 13 57.5 43.5T840-240q0 50-35 85t-85 35q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-327q0-33-23.5-56.5T600-760q-33 0-56.5 23.5T520-680v400q0 66-47 113t-113 47ZM240-680q17 0 28.5-11.5T280-720q0-17-11.5-28.5T240-760q-17 0-28.5 11.5T200-720q0 17 11.5 28.5T240-680Zm480 480q17 0 28.5-11.5T760-240q0-17-11.5-28.5T720-280q-17 0-28.5 11.5T680-240q0 17 11.5 28.5T720-200ZM240-720Zm480 480Z',
   flame: 'M480-80q-134 0-227-93t-93-227q0-113 67-217t184-182q22-15 45.5-1.5T480-760v52q0 34 23.5 57t57.5 23q17 0 32.5-7.5T621-657q8-10 20.5-12.5T665-664q63 45 99 115t36 149q0 134-93 227T480-80ZM240-400q0 52 21 98.5t60 81.5q-1-5-1-9v-9q0-32 12-60t35-51l113-111 113 111q23 23 35 51t12 60v9q0 4-1 9 39-35 60-81.5t21-98.5q0-50-18.5-94.5T648-574q-20 13-42 19.5t-45 6.5q-62 0-107.5-41T401-690q-78 66-119.5 140.5T240-400Zm240 52-57 56q-11 11-17 25t-6 29q0 32 23.5 55t56.5 23q33 0 56.5-23t23.5-55q0-16-6-29.5T537-292l-57-56Z',
 };
 function icon(name, size, color, fill) {
@@ -167,24 +170,42 @@ function icon(name, size, color, fill) {
 const BACK_SVG = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="${INK2}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;display:block"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>`;
 const CHEV_SVG = (color, size) => `<svg viewBox="0 -960 960 960" width="${size}" height="${size}" fill="${color}" aria-hidden="true" style="flex:none;display:block"><path d="M504-480 348-636q-11-11-11-28t11-28q11-11 28-11t28 11l184 184q6 6 8.5 13t2.5 15q0 8-2.5 15t-8.5 13L404-268q-11 11-28 11t-28-11q-11-11-11-28t11-28l156-156Z"/></svg>`;
 
-/* categoryGlyph — same regex table as Mobile/src/search/CategoryIcon.tsx */
+/* categoryGlyph — Mobile/src/search/CategoryIcon.tsx table, widened for
+   web kind vocabulary (delhi-gazetteer 'c' values + OSM tag values).
+   First match wins — specific kinds before family catch-alls; the bare
+   station/road/locality rules sit last so 'police station', 'service
+   road', 'district court' still read as what they are, not their suffix. */
 const CAT_MAP = [
-  [/metro|subway/, 'metro'], [/train|railway|rail/, 'rail'], [/bus|transit/, 'bus'],
-  [/restaurant|cafe|food|eatery|dhaba|bakery|bar|pub/, 'restaurant'],
-  [/hospital|clinic|doctor|health|vet/, 'hospital'], [/pharmacy|chemist|medicine/, 'pharmacy'],
-  [/mall|shopping/, 'mall'], [/shop|market|store|bazaar|retail/, 'shop'],
-  [/school|college|university|education|institute/, 'school'],
-  [/airport|airfield|airstrip/, 'airport'], [/mosque|masjid|dargah/, 'mosque'],
-  [/church/, 'church'], [/worship|temple|gurudwara|gurdwara|shrine|mandir/, 'temple'],
-  [/atm/, 'atm'], [/bank|finance|credit/, 'bank'],
-  [/hotel|lodge|guest|resort|hostel|inn|stay/, 'hotel'],
+  [/metro|subway|rapid transit/, 'metro'], [/train|railway|rail/, 'rail'],
+  [/bus|transit|\bstops?\b/, 'bus'],
+  [/restaurant|cafe|food|eatery|dhaba|bakery|bake\b|\bbar\b|\bpub\b|canteen|kitchen|confection|sweets?\b|mithai|halwai|ice ?cream|biryani|kebab|tandoor|chaat|pizza|burger|sandwich|dosa|idli|momos?\b|juice|beverage|\bchai\b|coffee|snacks?\b|\btea\b|meals?\b|dining|diner\b|pastry|lounge\b/, 'restaurant'],
+  [/pharmacy|chemist|medical store|drugs?\b|medicine (shop|store)/, 'pharmacy'],
+  [/school|college|university|education|institute|kindergarten|playschool|pre ?school|elementary|academy|coaching|tuition|tutor|campus|day ?care|child ?care|creche|learning|montessori|training/, 'school'],
+  [/hospital|clinic|doctor|dentist|dental|health|veterin|vets?\b|\bcare\b|medical|medicine|surgery|surgical|dispensary|nursing|diagnostic|labs?\b|laborator|patholog|blood bank|physio|therap|rehab|wellness|hospice|pediatric|ortho|eye\b|vision|ayurved|homeopath|mental|psych|ambulance|maternity|fertility|dialysis/, 'hospital'],
+  [/mall|shopping/, 'mall'],
+  [/shop|market|\bmarts?\b|store|bazaar|mandi\b|retail|outlet|showroom|dealer|distributor|wholesale|grocery|kirana|provisions|general store|convenience|jewel|gold\b|shoes?\b|footwear|clothes?\b|clothing|fashion|apparel|cosmetic|optician|optical|tailor|embroidery|hairdresser|barber|salon|parlour|parlor|beauty|spa\b|florist|flowers?\b|gift\b|toys?\b|stationery|furniture|furnishing|decor|interior|appliance|laundry|dry clean|liquor|wine|alcohol|mobile\b|computer\b|electronics|paint\b|hardware|dairy|meat\b|butcher|chicken\b|mutton|fish\b|books?\b|bags?\b|emporium|boutique|studio|workshop|repair|arcade\b|plaza|pet\b|animal|greengrocer|houseware|tobacco|fabric|electrical|watches?\b/, 'shop'],
+  [/airport|airfield|airstrip/, 'airport'],
+  [/mosque|masjid|dargah|muslim|islamic|\bimam\b|namaaz|eidgah/, 'mosque'],
+  [/church|chapel|cathedral|christian|catholic|protestant|evangel/, 'church'],
+  [/worship|temple|gurudwara|gurdwara|shrine|mandir|synagogue|buddhist|jain|ashram|monastery|religious|\bsikh\b|pilgrim|spiritual/, 'temple'],
+  [/\batms?\b/, 'atm'], [/bank|financ|credit|nbfc|insurance/, 'bank'],
+  [/gov|court\b|courthouse|embassy|diplomatic|consulate|municipal|parliament|ministry|political|town hall|secretariat|bhavan\b|judicial|tribunal/, 'bank'],
+  [/hotel|lodge|lodging|guest|resort|hostel|\binns?\b|stay|motel|dharamshala|sarai|bed and breakfast|paying guest|\bpg\b|accommodation|villa\b|cottages?\b/, 'hotel'],
   [/cinema|movie|theater|theatre|multiplex/, 'cinema'],
-  [/stadium|arena|sports|playground|ground/, 'stadium'],
-  [/fuel|petrol|gas_station|charging/, 'fuel'], [/police|security/, 'police'],
-  [/gym|fitness/, 'gym'], [/office|business|cowork/, 'office'],
-  [/park|garden|forest|nature/, 'park'], [/museum|gallery/, 'museum'],
-  [/landmark|monument|historic|attraction|memorial|fort/, 'monument'],
-  [/address|housenumber|housename|residential/, 'home'], [/fire/, 'flame'],
+  [/stadium|arena|sports?\b|playground|\bground\b|pitch|venue|banquet|auditorium|convention|exhibition|\bfair\b/, 'stadium'],
+  [/fuel|petrol|gas station|gas_station|cng|diesel\b|charging|petrol pump|\bgas\b/, 'fuel'],
+  [/police|security|thana\b/, 'police'],
+  [/gym|fitness|yoga|boxing|martial|swimming|athletic|workout|akhada|akhara/, 'gym'],
+  [/office|business|cowork|company|firm\b|agency|consult|attorney|law\b|legal|advocate|solicitor|lawyer|property|real estate|estate agent|builder\b|developer\b|construction|trading|enterprise|corporation|corporate|association|organization|organis|federation|professional|printing|travels?\b|tours?\b|courier|cargo|logistics|packers?|movers?|architect|accountant|auditor|chartered|community|post office|ngo\b|\w+ services?\b/, 'office'],
+  [/\bparks?\b|garden|botanic|forest|jungle|nature|meadow|grove|picnic|zoo\b|wildlife|aviary|safari|golf/, 'park'],
+  [/museum|gallery|library|planetarium|archives/, 'museum'],
+  [/landmark|monument|historic|attraction|memorial|fort|heritage|ruins|palace|tomb|statue|qila\b|\bgates?\b|smarak|artwork|archaeolog/, 'monument'],
+  [/information|\binfo\b|tourist\b|visitor\b/, 'info'],
+  [/address|housenumber|housename|residence|dwelling|\bhouses?\b|\bflats?\b|bungalow|\bhut\b/, 'home'],
+  [/fire/, 'flame'],
+  [/\bstations?\b|\bhalt\b|platforms?\b|junctions?\b|terminus/, 'rail'],
+  [/road|street|avenue|boulevard|lane\b|marg\b|drive\b|\bpath\b|track\b|footway|footpath|cycleway|bridleway|pedestrian|living street|highway|motorway|trunk|expressway|flyover|bypass|bridge|chowk|roundabout|crossing|intersection|corridor|\blink\b|^service$|primary|secondary|tertiary|unclassified|\bnh\b|\bsh\b/, 'route'],
+  [/locality|suburb|neighbourhood|neighborhood|macrohood|microhood|quarter|district|borough|sector|colony|enclave|hamlet|village|township|\btowns?\b|\bcity\b|tehsil|division|residential|administrative|block\b|ward\b|zone\b|region|province|state\b|housing|society|building|commercial|industrial|factory|manufactur|warehouse|centre|center|apartments?|estate\b|pocket\b|phase\b/, 'city'],
 ];
 const catGlyph = (kind) => {
   const k = String(kind || '').toLowerCase().replace(/_/g, ' ');
