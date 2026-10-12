@@ -149,6 +149,36 @@ function basicNote() {
   n.textContent = 'Basic map — this browser has graphics acceleration off, so live road colours can\'t draw. Everything else still works.';
   el.appendChild(n);
 }
+/* raster providers for basic mode — tried in order; a browser/network
+   that drops one still gets a real map from the next */
+const BASIC_TILES = [
+  { url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors · tiles: Wikimedia' },
+  { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: '© OpenStreetMap contributors · tiles: Esri' },
+  { url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', sub: 'abc',
+    attribution: '© OpenStreetMap contributors · tiles: OSM-France' },
+];
+/* positioning-critical Leaflet CSS, inlined — if the CDN stylesheet is
+   the thing that's blocked, tiles and markers still land where they
+   should instead of piling at the corner */
+const BASIC_CSS =
+  '#map .leaflet-pane,#map .leaflet-tile,#map .leaflet-marker-icon,#map .leaflet-image-layer,#map .leaflet-layer,#map .leaflet-pane>svg{position:absolute;left:0;top:0}' +
+  '#map .leaflet-container{overflow:hidden;background:var(--surface2,#EDECE7)}' +
+  '#map .leaflet-tile{-webkit-user-select:none;user-select:none;visibility:hidden}' +
+  '#map .leaflet-tile-loaded{visibility:inherit}' +
+  '#map .leaflet-marker-icon,#map .leaflet-image-layer{display:block}' +
+  '#map .leaflet-pane{z-index:400}#map .leaflet-tile-pane{z-index:200}' +
+  '#map .leaflet-overlay-pane{z-index:400}#map .leaflet-marker-pane{z-index:600}' +
+  '#map .leaflet-top,#map .leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}' +
+  '#map .leaflet-bottom{bottom:0}#map .leaflet-right{right:0}' +
+  '#map .leaflet-control{position:relative;z-index:800;pointer-events:auto}' +
+  '#map .leaflet-bottom .leaflet-control{margin:10px}' +
+  '#map .leaflet-control-attribution{background:rgba(255,255,255,.7);font-size:10px;padding:1px 6px;color:#555}' +
+  '#map .leaflet-control-attribution a{color:#555}' +
+  '#map .leaflet-control-zoom a{display:block;width:34px;height:34px;line-height:34px;text-align:center;' +
+  'background:#fff;color:#4A4E57;border-radius:6px;box-shadow:0 1px 5px rgba(20,20,20,.18);margin-bottom:4px;' +
+  'text-decoration:none;font-size:19px;font-weight:600}';
 function initBasic() {
   basicMode = true;
   if (!document.getElementById('map')) { noMapNote(); return; }
@@ -157,18 +187,37 @@ function initBasic() {
     map = window.L.map('map', {
       center: [A.DELHI.lat, A.DELHI.lon], zoom: 11,
       minZoom: 9, maxZoom: 18, zoomControl: false,
+      attributionControl: true,
     });
     window.L.control.zoom({ position: 'bottomright' }).addTo(map);
-    window.L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap contributors · tiles: Wikimedia',
-    }).addTo(map);
+    /* tiles: count loads vs errors; a provider that draws nothing (or
+       mostly errors) within a few seconds is swapped for the next */
+    let bi = 0, tOk = 0, tErr = 0;
+    const addTiles = (i) => {
+      const s = BASIC_TILES[i];
+      if (!s) return;
+      tOk = 0; tErr = 0;
+      const tl = window.L.tileLayer(s.url, {
+        maxZoom: 19, subdomains: s.sub || 'abc', attribution: s.attribution,
+      });
+      tl.on('tileload', () => { tOk++; });
+      tl.on('tileerror', () => { tErr++; });
+      tl.addTo(map);
+      setTimeout(() => {
+        if (bi !== i) return;
+        if (tOk === 0 || tErr > tOk * 3) { bi = i + 1; tl.remove(); addTiles(bi); }
+      }, 8000);
+    };
+    addTiles(0);
     map.on('click', (e) => {
       document.dispatchEvent(new CustomEvent('alive:maptap', { detail: { lat: e.latlng.lat, lon: e.latlng.lng, point: e.containerPoint } }));
     });
     basicNote();
     markReady();
   };
+  const st = document.createElement('style');
+  st.textContent = BASIC_CSS;
+  document.head.appendChild(st);
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
