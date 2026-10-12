@@ -50,6 +50,9 @@ const T = {
   plan_outside_title: 'this trip sits outside Delhi NCR',
   plan_outside_body: 'Alive only measures the air inside Delhi NCR, so this trip can’t be counted honestly.',
   plan_outside_cta: 'change the trip',
+  locating: 'finding your spot…',
+  locFail: 'couldn’t get your location — pick a place, or tap the map',
+  recommendedTag: 'recommended', walkBit: '{d} walk',
   compare_doseNA: 'no air estimate', compare_fuelNA: 'fuel not known',
   breathed: 'breathed', traffic: 'traffic', otherWays: 'other ways to go',
   startJourney: 'Start', arriveAt: 'arrive {t}',
@@ -240,8 +243,17 @@ const fmtMins = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? 
 const doseTxt = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} µg`;
 const etaOf = (o) => (o && typeof o.live_eta_s === 'number' ? o.live_eta_s
   : o && typeof o.eta_s === 'number' ? o.eta_s
+  : o && typeof o.duration_s === 'number' ? o.duration_s
+  : o && typeof o.minutes === 'number' ? o.minutes * 60
   : o && typeof o.duration_min === 'number' ? o.duration_min * 60 : Infinity);
-const doseOf = (o) => (o && o.dose && typeof o.dose.mid === 'number' ? o.dose.mid : Infinity);
+const doseOf = (o) => {
+  const d = o && o.dose;
+  if (!d) return Infinity;
+  if (typeof d.mid === 'number') return d.mid;
+  /* no point estimate — the wire's own interval midpoint, not a guess */
+  if (typeof d.lo === 'number' && typeof d.hi === 'number') return (d.lo + d.hi) / 2;
+  return Infinity;
+};
 /* lane E: fuel_l (petrol/diesel litres; 0 = no engine / electric),
    CNG rows carry fuel_l=null + fuel_kg — compared as amounts, shown in
    their own unit, never as money */
@@ -480,18 +492,20 @@ function searchListHTML() {
 function rrowHtml(which) {
   const key = which === 'from' ? t('fromLabel') : t('fieldTo');
   const dot = which === 'to' ? ' to' : '';
+  const phOf = () => S[which] ? S[which].label
+    : (which === 'from' && S.locating ? t('locating')
+    : t(which === 'from' ? 'searchFromPlaceholder' : 'searchPlaceholder'));
   if (S.armed !== which) {
-    const v = S[which] ? S[which].label : (which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder'));
+    const locating = which === 'from' && !S[which] && S.locating;
     return `<button class="wt-rrow" type="button" data-arm="${which}">
       <i class="wt-rdot${dot}"></i><span class="wt-rkey">${key}</span>
-      <span class="wt-rval${S[which] ? '' : ' ph'}">${esc(v)}</span>
+      <span class="wt-rval${S[which] ? '' : ' ph'}"${locating ? ' style="animation:wtPulse 1.2s ease-in-out infinite alternate"' : ''}>${esc(phOf())}</span>
     </button>`;
   }
-  const ph = S[which] ? S[which].label : (which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder'));
   return `<div class="wt-rrow on edit" data-arm="${which}">
     <i class="wt-rdot${dot}"></i><span class="wt-rkey">${key}</span>
     <input class="wt-rin" type="text" autocapitalize="off" autocomplete="off" spellcheck="false"
-      enterkeyhint="search" aria-label="${which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder')}" placeholder="${esc(ph)}" value="${esc(S.q)}">
+      enterkeyhint="search" aria-label="${which === 'from' ? t('searchFromPlaceholder') : t('searchPlaceholder')}" placeholder="${esc(phOf())}" value="${esc(S.q)}">
     <button class="wt-bbtn wt-rx" type="button" data-act="clear" aria-label="clear" ${S.q ? '' : 'hidden'}>${icon('close', 15, INK3)}</button>
   </div>`;
 }
@@ -533,6 +547,13 @@ function bindSearch() {
     if (S.armed === b.dataset.arm) return;
     cancelLive();
     S.armed = b.dataset.arm; S.q = ''; S.results = null; S.final = true; S.saveFor = null;
+    /* a live fix stashed while the user was typing a custom From applies
+       when they leave the row without picking — 'Your location' stands */
+    if (S.armed !== 'from' && S._geoWait) {
+      const p = S._geoWait; S._geoWait = null;
+      applyGeoFrom(p);
+      if (S.phase !== 'search') return;
+    }
     renderSearch(true);
   }));
   const armedRow = root.querySelector('.wt-rrow.edit');
@@ -644,7 +665,13 @@ function onQ(v) {
   S.seq++;                       /* any answer still in flight is now stale */
   S.saveFor = null; S.slow = false;
   const len = v.trim().length;
-  if (len < 2) { S.results = null; S.final = true; paintList(); return; }
+  if (len < 2) {
+    S.results = null; S.final = true; paintList();
+    /* cleared the From box while a fix waited behind it — back to
+       'Your location', the default the row started from */
+    if (S._geoWait) { const p = S._geoWait; setTimeout(() => applyGeoFrom(p), 0); }
+    return;
+  }
   /* the previous answer narrows in place — only rows that still carry
      every typed word survive, so nothing on screen belongs to an old
      query and the list never blanks while the next answer is coming */
@@ -753,6 +780,9 @@ function pickRow(k) {
 function finish(place) {
   const which = S.armed;
   S[which] = { label: place.label || place.name, lat: place.lat, lon: place.lon };
+  /* a From the user typed or dropped themselves ends live auto-fill for
+     this visit — a late GPS fix must never stomp a deliberate pick */
+  if (which === 'from') { S.fromManual = true; S.locating = false; S._geoWait = null; }
   if (!place.noRecent) pushRecent({ name: place.name, sub: place.sub, lat: place.lat, lon: place.lon });
   A.store.set(K_LAST, { from: S.from, to: S.to });
   cancelLive();
@@ -774,14 +804,128 @@ function pushRecent(p) {
   S.recents = [p, ...S.recents.filter((r) => !samePlace(r, p))].slice(0, 8);
   A.store.set(K_RECENT, S.recents);
 }
+/* ── From = your live spot, by default ──────────────────────────────
+   The composer opens locating already running: a fresh cached fix (or
+   the picked spot) fills it at once, otherwise locate() runs under
+   'granted' consent while the row says 'finding your spot…'. A manual
+   pick ends auto-fill for the visit; a refusal or a dead sensor lands
+   as an honest empty row + one hint line, never an invented place. */
+/* rewrite only the from/to label wherever it is on screen — the search
+   rows and the trip row — never a full re-render while the user types */
+function relabelEnd(which) {
+  if (!S || !S.body) return;
+  const p = S[which];
+  const txt = p ? p.label
+    : (which === 'from' && S.locating ? t('locating')
+    : t(which === 'from' ? 'searchFromPlaceholder' : 'searchPlaceholder'));
+  const row = S.body.querySelector(`.wt-rrow[data-arm="${which}"]`);
+  if (row) {
+    const v = row.querySelector('.wt-rval');
+    if (v) {
+      v.textContent = txt;
+      v.classList.toggle('ph', !p);
+      v.style.animation = !p && which === 'from' && S.locating
+        ? 'wtPulse 1.2s ease-in-out infinite alternate' : '';
+    }
+    const inp = row.querySelector('.wt-rin');
+    if (inp) inp.placeholder = txt;
+  }
+  const tt = S.body.querySelector(`.wt-th[data-arm="${which}"] .wt-tt`);
+  if (tt) tt.textContent = p ? p.label
+    : t(which === 'from' ? 'searchFromPlaceholder' : 'searchPlaceholder');
+}
+function paintNotice() {
+  if (!S || !S.body) return;
+  const w = S.body.querySelector('.wt');
+  if (!w) return;
+  let n = w.querySelector('.wt-notice');
+  if (S.notice) {
+    if (!n) {
+      n = el('<div class="wt-notice"><span></span></div>');
+      const list = w.querySelector('.wt-list');
+      if (list) w.insertBefore(n, list); else w.appendChild(n);
+    }
+    n.querySelector('span').textContent = S.notice;
+  } else if (n) n.remove();
+}
+/* 'Your location' upgraded with the real locality once the reverse
+   geocoder answers — the pin-drop rename pattern */
+function geoLabel(which, pos) {
+  if (!S || !pos) return;
+  const lat = +pos.lat, lon = +pos.lon;
+  const p = S[which];
+  if (!p || p.lat !== lat || p.lon !== lon) return;
+  if (pos.label) { p.label = pos.label; relabelEnd(which); return; }
+  if (!A.search || typeof A.search.reverse !== 'function') return;
+  A.search.reverse(lat, lon).then((nm) => {
+    if (!S || !S[which] || S[which].lat !== lat || S[which].lon !== lon) return;
+    if (nm) { S[which].label = `${t('yourLocation')} — ${nm}`; relabelEnd(which); }
+  }).catch(() => {});
+}
+function applyGeoFrom(pos) {
+  if (!S || S.fromManual || !pos || !isFinite(+pos.lat) || !isFinite(+pos.lon)) return;
+  /* mid-typing a custom From — keep the fix on hold, it applies when the
+     row is left or the box cleared */
+  if (S.armed === 'from' && (S.q || '').trim()) { S._geoWait = pos; return; }
+  const moved = !S.from || Math.abs(S.from.lat - pos.lat) > 1e-5
+    || Math.abs(S.from.lon - pos.lon) > 1e-5;
+  S.locating = false; S._geoWait = null;
+  if (S._geoNoted) { S._geoNoted = false; S.notice = null; paintNotice(); }
+  S.from = { label: pos.label || t('yourLocation'), lat: +pos.lat, lon: +pos.lon, live: 1 };
+  geoLabel('from', pos);
+  relabelEnd('from');
+  if (moved) S.plans = {};          /* a moved start makes mode answers stale */
+  if (S.to && moved) afterBoth();
+}
+function geoFail() {
+  if (!S || S.from || S.fromManual) return;
+  S.locating = false; S._geoWait = null; S._geoNoted = true;
+  S.notice = t('locFail');
+  paintNotice();
+  relabelEnd('from');
+}
+function kickFromGeo() {
+  if (!A.geo || S.from) return;
+  const pos = A.geo.pos;
+  const fresh = !!(pos && pos.t && (Date.now() - pos.t) < 120000);
+  /* a fresh fix or a spot the user pinned themselves fills From at once;
+     a stale GPS fix still verifies below — it just can't show first */
+  if (pos && (fresh || pos.picked)) applyGeoFrom(pos);
+  if (!navigator.geolocation) { if (!S.from) geoFail(); return; }
+  if (A.geo.refine && A.geo.consent === 'granted') {
+    /* keep following the fix while the composer is open — a From that is
+       'Your location' moves when the fix does */
+    S._geoStop = A.geo.refine((p) => applyGeoFrom(p));
+  }
+  if (A.geo.consent === 'picked' || A.geo.consent === 'later') return;
+  /* the consent card's own fix lands through the event — covers a grant
+     that arrives after our locate() already failed or while the sheet
+     was still up */
+  if (!S._geoEvt) {
+    S._geoEvt = (e) => {
+      if (!S || S.fromManual) return;
+      if (e.detail) applyGeoFrom(e.detail);
+      else geoFail();
+    };
+    document.addEventListener('alive:location', S._geoEvt);
+  }
+  if (S.from) return;             /* cached fill already applied */
+  S.locating = true;
+  relabelEnd('from');
+  A.geo.locate()
+    .then((p) => applyGeoFrom(p))
+    .catch(() => { if (S && !S.from && !S.fromManual) geoFail(); });
+}
 async function locateFill() {
+  const which = S.armed;
   let pos = A.geo && A.geo.pos;
   if (!pos) {
     try { pos = await A.geo.locate(); } catch (e) { pos = null; }
   }
   if (!S || S.phase !== 'search') return;
-  if (!pos) { S.notice = 'couldn’t get your location — choose on the map instead'; renderSearch(true); return; }
+  if (!pos) { S.notice = t('locFail'); paintNotice(); return; }
   finish({ name: t('yourLocation'), lat: pos.lat, lon: pos.lon, noRecent: true });
+  geoLabel(which, pos);
 }
 /* armed pin-drop — fold the sheet into a hint strip; one map tap fills it */
 function armPinDrop() {
@@ -849,6 +993,7 @@ function showModes() {
   S.pseq++;
   clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
   renderModes();
+  pinEnds();                     /* the two ends on the map while a mode is picked */
 }
 /* once a mode's plan was fetched this trip, its card shows the pick's
    own numbers ("pick · 0.93 L · 17 min") — real answers, not promises */
@@ -858,9 +1003,9 @@ function modeSub(m) {
   const b = (j.mode_picks && j.mode_picks[m.id])
     || (Array.isArray(j.options) ? j.options.find((o) => o.mode_pick) : null);
   if (!b) return m.sub;
-  const es = num(b.live_eta_s) != null ? b.live_eta_s : num(b.eta_s);
+  const es = isFinite(etaOf(b)) ? etaOf(b) : null;
   const mins = es != null ? Math.max(1, Math.round(es / 60)) : null;
-  const dm = num(b.dose_mid), fl = fuelLead(b);
+  const dm = doseMidOf(b), fl = fuelLead(b);
   const parts = m.id === 'petrol_health' ? [fl, mins != null ? `${mins} min` : null]
     : m.id === 'time_health' ? [mins != null ? `${mins} min` : null, dm != null ? doseTxt(dm) : null]
     : [dm != null ? doseTxt(dm) : null, mins != null ? `${mins} min` : null];
@@ -905,6 +1050,7 @@ async function plan() {
   S.planning = true; S.planErr = null; S.plan = null; S.view = null; S.sel = 0; S.showOther = false;
   const seq = ++S.pseq;
   clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
+  clearTimeout(S._fitT); S._fitT = 0;   /* a queued fit belongs to the stale plan */
   renderPlan();
   pinEnds();
   const body = {
@@ -922,8 +1068,9 @@ async function plan() {
   if (j.error === 'outside') { S.planErr = 'outside'; renderPlan(); return; }
   if (!Array.isArray(j.options) || !j.options.length) { S.planErr = j.error === 'failed' ? 'failed' : 'noroutes'; renderPlan(); return; }
   S.plan = j;
+  S.plan.options = expandAlts(j.options, j);
   S.plans[S.mode] = j;             /* the modes screen annotates with each fetched pick */
-  S.view = buildView(j.options);
+  S.view = buildView(S.plan.options);
   S.sel = S.view.pickI >= 0 ? S.view.pickI : (S.view.prim[0] ? S.view.prim[0].i : 0);
   if (S.view.otherPickI >= 0) S.showOther = true;   /* the server's pick is another ride — show it */
   S.partial = Array.isArray(j.degraded) && j.degraded.length ? j.degraded : null;
@@ -978,6 +1125,26 @@ function collapse(group, pickI, mode) {
   }
   return out;
 }
+/* a lane may add `alternatives` — extra corridors nested under a row or
+   at the top level. Only route-shaped entries (geometry + an eta) join
+   the picker, labelled '· alt'; anything else is skipped, absent is fine */
+function expandAlts(opts, plan) {
+  const out = [];
+  const push = (a, parent) => {
+    if (!a || typeof a !== 'object' || Array.isArray(a)) return;
+    const g = a.geometry || a.route_geojson;
+    if (!g || !isFinite(etaOf(a))) return;
+    out.push({ ...a,
+      mode: a.mode || (parent && parent.mode) || 'car',
+      label: a.label || `${baseLabel(parent || a)} · alt` });
+  };
+  for (const o of opts || []) {
+    out.push(o);
+    (Array.isArray(o && o.alternatives) ? o.alternatives : []).forEach((a) => push(a, o));
+  }
+  (Array.isArray(plan && plan.alternatives) ? plan.alternatives : []).forEach((a) => push(a, null));
+  return out;
+}
 function buildView(opts) {
   const all = opts.map((o, i) => ({ o, i }));
   const tv = S.tripVeh && S.tripVeh.cls;
@@ -1012,6 +1179,10 @@ function buildView(opts) {
   return { prim: distinct, other, pickI, otherPickI: flagged ? -1 : serverPickI };
 }
 const baseLabel = (o) => String(o.label || '').split(' · ')[0].trim() || t('vehicle_' + famOf(o));
+/* mode_picks refs carry dose_mid; options carry dose.{mid} — one read for both */
+const doseMidOf = (x) => x ? (num(x.dose_mid) != null ? num(x.dose_mid)
+  : (x.dose && num(x.dose.mid) != null ? num(x.dose.mid)
+  : (isFinite(doseOf(x)) ? doseOf(x) : null))) : null;
 /* the number each mode leads its cards with — its own metric */
 const PK_TAG = { health_max: 'the cleanest pick', petrol_health: 'the petrol pick', time_health: 'the fastest pick' };
 const PK_WORD = { health_max: 'the cleanest', petrol_health: 'the thriftiest', time_health: 'the fastest' };
@@ -1032,12 +1203,12 @@ function vsLine(o) {
   if (!pk || S.plan.one_pick) return '';
   const segs = [];
   const sameRow = (r) => r && r.route_id === o.route_id;
-  const myDose = num(o.dose && o.dose.mid), myEta = etaOf(o), myFuel = fuelOf(o);
+  const myDose = isFinite(doseOf(o)) ? doseOf(o) : null, myEta = etaOf(o), myFuel = fuelOf(o);
   const refDose = pk.health_max, refFuel = pk.petrol_health, refTime = pk.time_health;
   const doseSeg = (ref, word) => {
     if (!ref) return null;
     if (sameRow(ref)) return `also ${word}`;
-    const rd = num(ref.dose_mid);
+    const rd = doseMidOf(ref);
     if (myDose == null || rd == null || rd <= 0) return null;
     const p = Math.round((myDose - rd) / rd * 100);
     if (Math.abs(p) < 3) return `about the same smoke as ${word}`;
@@ -1046,7 +1217,7 @@ function vsLine(o) {
   const etaSeg = (ref, word) => {
     if (!ref) return null;
     if (sameRow(ref)) return `also ${word}`;
-    const re = num(ref.live_eta_s) != null ? ref.live_eta_s : num(ref.eta_s);
+    const re = isFinite(etaOf(ref)) ? etaOf(ref) : null;
     if (!isFinite(myEta) || re == null) return null;
     const d = Math.round((myEta - re) / 60);
     if (d === 0) return `same time as ${word}`;
@@ -1089,16 +1260,31 @@ function vsLine(o) {
   return segs.filter(Boolean).slice(0, 2).join(' · ');
 }
 /* a row that is one of the OTHER modes' picks gets a small tag —
-   cross-mode comparison on the card itself */
+   cross-mode comparison on the card itself; the doc-06 ranked winner
+   carries 'recommended' when no mode claims it */
 function otherPickTag(o) {
   const pk = S.plan && S.plan.mode_picks;
-  if (!pk) return '';
-  for (const m of MODES) {
-    if (m.id === S.mode) continue;
-    const r = pk[m.id];
-    if (r && r.route_id === o.route_id) return PK_TAG[m.id];
+  if (pk) {
+    for (const m of MODES) {
+      if (m.id === S.mode) continue;
+      const r = pk[m.id];
+      if (r && r.route_id === o.route_id) return PK_TAG[m.id];
+    }
   }
-  return '';
+  return o.recommended === true ? t('recommendedTag') : '';
+}
+/* o.delta — the server's own "vs the route you'd have taken" numbers:
+   air_ug/air_pct (negative = breathes less), min_added, band_drop.
+   Shown only when the server computed it — never reconstructed. */
+function deltaLine(o) {
+  const d = o && o.delta;
+  if (!d || d.basis === 'self') return '';
+  const p = num(d.air_pct), m = num(d.min_added);
+  const vs = d.vs_label ? ` vs ${String(d.vs_label).split(' · ')[0].trim()}` : '';
+  const bits = [];
+  if (p != null && Math.abs(p) >= 3) bits.push(`${p > 0 ? '+' : '−'}${Math.abs(Math.round(p))}% smoke`);
+  if (m != null && Math.abs(m) >= 0.9) bits.push(`${m > 0 ? '+' : '−'}${Math.abs(Math.round(m))} min`);
+  return bits.length ? bits.join(' · ') + vs : '';
 }
 const ROADISH = /^[A-Z0-9]/;
 function viaOf(o) {
@@ -1176,10 +1362,21 @@ function optionCard(o, i, other) {
     lead = airHtml;
     rest = [timeHtml, traf, fuelChip(fBits[0])].filter(Boolean);
   }
-  const meta = [baseLabel(o), o.distance_km != null ? `${o.distance_km} ${t('unitsKm')}` : null, viaOf(o)].filter(Boolean).join(' · ');
+  /* legs detail when the wire carries it (transit rows): walk distance
+     + how many times the ride changes */
+  const nTr = num(o.transfers) != null ? num(o.transfers) : num(o.stations && o.stations.transfers);
+  const meta = [baseLabel(o),
+    o.distance_km != null ? `${o.distance_km} ${t('unitsKm')}` : null,
+    viaOf(o),
+    num(o.walk_m) != null && o.walk_m >= 50 ? t('walkBit', { d: fmtDist(o.walk_m / 1000) }) : null,
+    nTr != null && nTr > 0 ? `${nTr} change${nTr > 1 ? 's' : ''}` : null,
+    num(o.emissions && o.emissions.co2_kg) != null && o.emissions.co2_kg > 0
+      ? `${amt(o.emissions.co2_kg)} kg CO₂` : null,
+  ].filter(Boolean).join(' · ');
   const why = o.why ? String(o.why).trim() : '';
   const vs = pick && !other ? vsLine(o) : '';
-  const tag = !pick && !other ? otherPickTag(o) : '';
+  const tag = !pick ? otherPickTag(o) : '';
+  const dl = vs ? '' : deltaLine(o);
   /* honest edge note: the router snapped a far point to the coverage
      edge — the line on the map really does start/end short. Say so on
      the card, never let '15 km' read as a 25 km trip. */
@@ -1196,6 +1393,7 @@ function optionCard(o, i, other) {
       <span class="wt-otop">${lead}</span>
       ${rest.length ? `<span class="wt-oext">${rest.join('<span class="wt-osep">·</span>')}</span>` : ''}
       ${vs ? `<span class="wt-ovs">${esc(vs)}</span>` : ''}
+      ${dl ? `<span class="wt-ovs">${esc(dl)}</span>` : ''}
       ${why ? `<span class="wt-owhy">${esc(why)}</span>` : ''}
       <span class="wt-ometa">${esc(meta)}</span>
       ${gapLine ? `<span class="wt-ogap">${esc(gapLine)}</span>` : ''}
@@ -1316,8 +1514,9 @@ function trafficLayer(on) {
 }
 function pinEnds() {
   if (!A.map || !A.map.pin) return;
-  if (S.from) A.map.pin('wt-a', S.from.lon, S.from.lat, '<i class="wt-pa"></i>', 'wt-endpin');
-  if (S.to) A.map.pin('wt-b', S.to.lon, S.to.lat, '<i class="wt-pb"></i>', 'wt-endpin');
+  const ok = (p) => p && isFinite(+p.lon) && isFinite(+p.lat);
+  if (ok(S.from)) A.map.pin('wt-a', +S.from.lon, +S.from.lat, '<i class="wt-pa"></i>', 'wt-endpin');
+  if (ok(S.to)) A.map.pin('wt-b', +S.to.lon, +S.to.lat, '<i class="wt-pb"></i>', 'wt-endpin');
 }
 function clearJams() {
   if (!S || !A.map) return;
@@ -1328,7 +1527,7 @@ function paintJams(o) {
   clearJams();
   const jams = o && Array.isArray(o.jams) ? o.jams : [];
   jams.slice(0, 10).forEach((j, k) => {
-    if (!j || j.lat == null || j.lon == null) return;
+    if (!j || !isFinite(+j.lat) || !isFinite(+j.lon)) return;
     const ds = Number(j.delay_s);
     if (!(ds >= 30)) return;
     const id = `wt-jam${k}`;
@@ -1342,6 +1541,51 @@ function clearMapExtras() {
   A.map.unpin('wt-a'); A.map.unpin('wt-b');
   trafficLayer(false);
 }
+/* the padding that lands the route inside the VISIBLE map: on desktop
+   the sheet is a right rail (460px, top 38% when halved) so the camera
+   must come off the right edge; on phones the sheet is bottom-anchored
+   and only its height matters */
+function fitPad() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const sh = S.el && S.el.querySelector('.sheet');
+  const r = sh ? sh.getBoundingClientRect() : null;
+  if (w >= 720) {
+    return { top: 56, left: 40, right: Math.round((r ? r.width : 460) + 40), bottom: 60 };
+  }
+  const shH = r && r.height ? r.height : Math.round(h * 0.62);
+  return { top: 76, left: 32, right: 32, bottom: Math.round(Math.min(shH, h * 0.7) + 18) };
+}
+/* fit, after the map is ready, in BOTH engines: MapLibre takes the
+   padding object as-is; Leaflet wants paddingTopLeft/BottomRight —
+   A.map.fit's scalar-only pad would NaN on an object, so basic mode
+   drives flyToBounds itself */
+function fitRoute(g) {
+  if (!g || !A.map || !A.map.ready) return;
+  const p = fitPad();
+  A.map.ready((m) => {
+    const coords = g && g.type === 'Feature' ? g.geometry.coordinates
+      : g && g.type === 'LineString' ? g.coordinates : g;
+    if (!coords || !coords.length) return;
+    const basic = A.map.basemap === 'leaflet';
+    try {
+      if (basic && window.L && typeof m.flyToBounds === 'function') {
+        m.flyToBounds(window.L.latLngBounds(coords.map((c) => [c[1], c[0]])), {
+          paddingTopLeft: window.L.point(p.left, p.top),
+          paddingBottomRight: window.L.point(p.right, p.bottom),
+          duration: 0.85,
+        });
+        return;
+      }
+      if (!basic && window.maplibregl && typeof m.fitBounds === 'function') {
+        const b = coords.reduce((bb, c) => bb.extend(c),
+          new window.maplibregl.LngLatBounds(coords[0], coords[0]));
+        m.fitBounds(b, { padding: p, duration: 850, essential: true });
+        return;
+      }
+    } catch (e) { /* fall through to the shared fit */ }
+    A.map.fit(g, basic ? Math.max(p.top, p.right, p.bottom, p.left) : p);
+  });
+}
 function paintRoutes(fit) {
   if (!S || !S.plan || !S.view || !A.map) return;
   const opts = S.plan.options;
@@ -1350,36 +1594,66 @@ function paintRoutes(fit) {
   show.add(S.sel);
   for (const id of S.paintedIds || []) if (!show.has(id)) A.map.hideRoute(`wt${id}`);
   const order = [...show].filter((i) => i !== S.sel).concat([S.sel]);
+  const wasSegs = new Set(S.segIds || []), segIds = [];
   for (const i of order) {
     const o = opts[i];
     const g = o && (o.geometry || o.route_geojson);
     if (!g) continue;
     const picked = i === S.sel;
-    A.map.showRoute(`wt${i}`, g, null);
+    /* the picked ride carries its band strip (the server's per-stretch
+       PM2.5); the rest sit quiet. The 4th arg is the map lane's opts bag
+       ({ghost}) — the current (id, g, segments) signature ignores it, so
+       the quiet paint below still does the de-emphasis either way */
+    const segs = picked && Array.isArray(o.segments) && o.segments.length ? o.segments : null;
+    /* MapLibre only updates the base line when segments go away — a stale
+       '-segs-line' would keep colouring the old pick. Drop the route and
+       redraw clean (Leaflet already re-creates on every showRoute). */
+    if (!segs && wasSegs.has(i)) A.map.hideRoute(`wt${i}`);
+    A.map.showRoute(`wt${i}`, g, segs, picked ? null : { ghost: true });
+    if (segs) segIds.push(i);
     A.map.ready((m) => {
-      const line = `route-wt${i}-line`, cas = `route-wt${i}-casing`;
-      if (m.getLayer(line)) {
+      const line = `route-wt${i}-line`, cas = `route-wt${i}-casing`, sl = `route-wt${i}-segs-line`;
+      if (m.getLayer && m.getLayer(line)) {
         m.setPaintProperty(line, 'line-color', picked ? ACCENT : MAP_QUIET);
-        m.setPaintProperty(line, 'line-opacity', picked ? 1 : 0.55);
-        m.setPaintProperty(line, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 3.5 : 2, 14, picked ? 7 : 3.5]);
+        m.setPaintProperty(line, 'line-opacity', picked ? 1 : 0.5);
+        m.setPaintProperty(line, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 4 : 1.8, 14, picked ? 7.5 : 3]);
       }
-      if (m.getLayer(cas)) {
+      if (m.getLayer && m.getLayer(cas)) {
         m.setPaintProperty(cas, 'line-color', picked ? PAPER : MAP_QUIET);
         m.setPaintProperty(cas, 'line-opacity', picked ? 1 : 0);
-        m.setPaintProperty(cas, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 6 : 2.5, 14, picked ? 11 : 4]);
+        m.setPaintProperty(cas, 'line-width', ['interpolate', ['linear'], ['zoom'], 9, picked ? 7 : 2.5, 14, picked ? 12 : 4]);
       }
-      if (picked) { try { if (m.getLayer(cas)) m.moveLayer(cas); if (m.getLayer(line)) m.moveLayer(line); } catch (e) { /* order is cosmetic */ } }
+      if (m.getLayer && m.getLayer(sl)) {
+        m.setPaintProperty(sl, 'line-opacity', picked ? 0.95 : 0.35);
+      }
+      /* the strip rides above the plain line — move it last or the base
+         colour covers the band paint */
+      if (picked) {
+        try {
+          if (m.getLayer(cas)) m.moveLayer(cas);
+          if (m.getLayer(line)) m.moveLayer(line);
+          if (m.getLayer(sl)) m.moveLayer(sl);
+        } catch (e) { /* order is cosmetic */ }
+      }
     });
   }
+  S.segIds = segIds;
   S.paintedIds = [...show];
   pinEnds();
   paintJams(opts[S.sel]);
   trafficLayer(true);
-  const g = opts[S.sel] && (opts[S.sel].geometry || opts[S.sel].route_geojson);
+  /* fit on the picked route's line; a row with no geometry still centers
+     the trip — the two end pins carry the framing */
+  let g = opts[S.sel] && (opts[S.sel].geometry || opts[S.sel].route_geojson);
+  if (!g && S.from && S.to) g = [[+S.from.lon, +S.from.lat], [+S.to.lon, +S.to.lat]];
   if (g && fit !== false) {
-    const sh = S.el.querySelector('.sheet');
-    const h = sh ? sh.getBoundingClientRect().height : 360;
-    A.map.fit(g, { top: 76, left: 32, right: 32, bottom: Math.round(Math.min(h, window.innerHeight * 0.7) + 18) });
+    /* paints and re-renders land in bursts — one fit per burst, on the
+       last geometry, once the sheet's slide has had a beat to settle */
+    clearTimeout(S._fitT);
+    S._fitT = setTimeout(() => {
+      S._fitT = 0;
+      if (S && S.phase === 'plan' && A.current() === 'whereto') fitRoute(g);
+    }, 140);
   }
 }
 
@@ -1537,25 +1811,28 @@ A.screen('whereto', {
       phase: 'search', armed: 'to', armedPin: null,
       from: null, to: null, q: '', results: null, final: true, seq: 0, cur: null, retired: [], guard: 0,
       saveFor: null, notice: null,
+      locating: false, _geoWait: null, _geoNoted: false, fromManual: false,
+      _geoStop: null, _geoEvt: null, _fitT: 0,
       saved: loadJ(K_SAVED, {}) || {},
       recents: (loadJ(K_RECENT, []) || []).map((r) => ({ name: r.name || r.label, sub: r.sub, lat: r.lat, lon: r.lon })).filter((r) => r.name != null && r.name !== 'dropped pin' && r.name !== t('yourLocation')),
       veh: loadJ(K_VEH, null),
       mode: MODES.some((m) => m.id === m0) ? m0 : 'health_max',
       modeChosen: false, vehChosen: false, tripVeh: null,
       plan: null, view: null, planning: false, planErr: null, sel: 0, pseq: 0, partial: null, plans: {},
-      showOther: false, paintedIds: [], jamIds: [], trafficOn: false,
+      showOther: false, paintedIds: [], segIds: [], jamIds: [], trafficOn: false,
       wiz: null, _tapOff: null, _anim: null,
     };
     if (S.veh && !S.veh.cls) S.veh = null;
     S.tripVeh = S.veh;
     params = params || {};
-    /* From = your location by default; To starts empty — a fresh "where to?" */
-    if (params.from) S.from = params.from;
-    else if (A.geo && A.geo.pos) S.from = { label: t('yourLocation'), lat: A.geo.pos.lat, lon: A.geo.pos.lon, live: 1 };
+    /* From = your live spot by default; To starts empty — "where to?".
+       A caller-passed From counts as deliberate (manual) for auto-fill. */
+    if (params.from) { S.from = params.from; S.fromManual = true; }
     if (params.to) S.to = params.to;
     S.armed = params.arm || 'to';
     if (S.from && S.to) showModes();
     else renderSearch(true);
+    kickFromGeo();                 /* locating starts the moment the composer opens */
     A.map.setFieldVisible(false);
     return () => {
       disarmPin();
@@ -1564,6 +1841,11 @@ A.screen('whereto', {
       clearMapExtras();
       document.querySelectorAll('.wt-pinbar').forEach((x) => x.remove());
       A.map.hideAllRoutes();
+      if (S) {
+        clearTimeout(S._fitT); S._fitT = 0;
+        if (S._geoStop) { try { S._geoStop(); } catch (e) {} S._geoStop = null; }
+        if (S._geoEvt) { document.removeEventListener('alive:location', S._geoEvt); S._geoEvt = null; }
+      }
       S = null;
     };
   },
