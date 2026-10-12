@@ -1154,7 +1154,7 @@ function mountComposer(el) {
 function unmountComposer() {
   if (!sc) return;
   scCancel();
-  document.removeEventListener('keydown', sc.onDocKey, true);
+  window.removeEventListener('keydown', sc.onDocKey, true);
   sc.wrap.remove();
   sc = null;
 }
