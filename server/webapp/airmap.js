@@ -120,6 +120,11 @@ const S = {
   spotNearest: 'nearest monitor ~{n} km', spotNearestEst: 'an estimate — nearest monitor ~{n} km',
   spotAqi: 'AQI',
   citySpeciesCity: 'other things in delhi\'s air',
+  scPh: 'name a place in delhi — a park, a block, a market',
+  scNone: 'nothing found — try a landmark, a block, a sector',
+  scSearching: 'searching…', scSlow: 'this is taking long — try a shorter name',
+  scNoExact: 'no exact match — closest places', scRecent: 'recent places',
+  scSearchA11y: 'search the air at a place',
 };
 const t = (k, vars) => { let s = S[k] ?? k; if (vars) for (const [a, v] of Object.entries(vars)) s = s.replaceAll(`{${a}}`, String(v)); return s; };
 
@@ -297,6 +302,7 @@ function paintRead(read, place) {
           <span class="amr-dot" style="background:${bandColorIdx(read.band) ?? '#6E7278'}"></span>
           <span class="amr-num num" style="color:${ink}">${read.aqi}${read.over ? '+' : ''}<span class="amr-unit"> ${esc(t('spotAqi'))}</span><span class="amr-band" style="color:${ink}"> — ${esc(t(BAND_KEYS[read.band]))}</span></span>
           ${read.pm25 != null ? `<span class="amr-pm num"><b>PM2.5</b> ${Math.round(read.pm25)}</span>` : ''}
+          ${read.pm10 != null ? `<span class="amr-pm num"><b>PM10</b> ${Math.round(read.pm10)}</span>` : ''}
         </div>
         <button class="amr-x" type="button" aria-label="${esc(t('a11yClear'))}">${icon('close', '#6E7278', 12)}</button>
       </div>
@@ -871,6 +877,288 @@ function flyToSpot(pos, zoom) {
   A.map.fly(pos.lat, pos.lon, zoom, wide ? {} : { offset: [0, -Math.round(window.innerHeight * 0.29)] });
 }
 
+/* ── the search composer — the Where To row's twin, floating over the
+   map: progressive /v2/ac + /v2/p/ac suggestions via A.search.live (the
+   picker's own cascade when it's absent). A pick is exactly a map tap:
+   the map flies there, the AQI pin drops, the readout answers and the
+   go-out card re-reads that spot. The ✕ returns to the live location.
+   Nothing here needs WebGL — fly/pin are no-ops on a dead map while the
+   readout and the card still answer. */
+let sc = null;
+const SC_NORM = (s) => String(s == null ? '' : s).toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const SC_WORD = /[a-z0-9]+/g;
+const SC_STOP = new Set(['the', 'of', 'to', 'in', 'at', 'near', 'and', 'a', 'an', 'on', 'opp', 'opposite', 'behind', 'by']);
+const scToks = (q) => (SC_NORM(q).match(SC_WORD) || []).filter((w) => !SC_STOP.has(w));
+const scRowKey = (r) => `${r.name || ''}|${(+r.lat || 0).toFixed(4)}|${(+r.lon || 0).toFixed(4)}`;
+function scMatches(r, toks) {
+  if (!toks.length) return true;
+  const words = SC_NORM(`${r.name} ${r.sub || ''}`).match(SC_WORD) || [];
+  return toks.every((tk) => words.some((w) => w.startsWith(tk)));
+}
+const scDist = (m) => m == null ? '' : m < 1000 ? `${Math.max(50, Math.round(m / 50) * 50)} m`
+  : m < 10000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 1000)} km`;
+/* whereto's matchSpans: bold the words the query touched, dim the rest */
+function scSpans(title, q) {
+  const toks = scToks(q).filter((w) => w.length >= 2);
+  if (!toks.length) return esc(title);
+  const n = SC_NORM(title);
+  let html = '', i = 0;
+  for (const m of n.matchAll(SC_WORD)) {
+    if (m.index > i) html += esc(title.slice(i, m.index));
+    const word = m[0];
+    const hit = toks.some((tk) => word.startsWith(tk) || tk.startsWith(word));
+    const seg = esc(title.slice(m.index, m.index + word.length));
+    html += hit ? `<b>${seg}</b>` : `<span class="am-sdim">${seg}</span>`;
+    i = m.index + word.length;
+  }
+  html += esc(title.slice(i));
+  return html;
+}
+const scKindGlyph = (kind) => {
+  const k = String(kind || '').toLowerCase();
+  if (/metro|subway|rail|station/.test(k)) return 'metro';
+  if (/bus|transit/.test(k)) return 'bus';
+  return 'pin';
+};
+const scBias = () => (A.geo && A.geo.pos) || A.DELHI;
+const scRecents = () => (A.store.get(PICK_KEY + '.recent', []) || [])
+  .filter((r) => r && isFinite(+r.lat) && isFinite(+r.lon) && (r.label || r.name));
+function scPushRecent(place) {
+  const rs = scRecents().filter((r) =>
+    `${SC_NORM(r.label || '')}|${(+r.lat).toFixed(3)}` !== `${SC_NORM(place.label || '')}|${(+place.lat).toFixed(3)}`);
+  rs.unshift({ lat: place.lat, lon: place.lon, label: place.label });
+  A.store.set(PICK_KEY + '.recent', rs.slice(0, 6));
+}
+function scClean(list) {
+  const out = [], seen = new Set();
+  for (const r of (Array.isArray(list) ? list : [])) {
+    if (!r || !isFinite(+r.lat) || !isFinite(+r.lon)) continue;
+    const name = String(r.name || r.label || '').trim();
+    if (!name) continue;
+    const sub = r.sub || r.subtitle || '';
+    const row = { ...r, name, lat: +r.lat, lon: +r.lon,
+      sub: /^[a-z_]+:[a-z_ ]+$/i.test(sub) ? '' : sub,
+      dist: r.dist ?? r.distance_m ?? null };
+    const k = scRowKey(row);
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(row);
+  }
+  return out;
+}
+/* near-first combining — whereto's rule: same-name rows keep their tier
+   position and sort nearest-first inside it */
+function scNearFirst(rows) {
+  const groups = new Map(), order = [];
+  for (const r of rows) {
+    const k = SC_NORM(r.name || '').replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!groups.has(k)) { groups.set(k, []); order.push(k); }
+    groups.get(k).push(r);
+  }
+  const out = [];
+  for (const k of order) out.push(...groups.get(k).sort((a, b) => (a.dist ?? 9e12) - (b.dist ?? 9e12)));
+  return out;
+}
+function scRowHtml(r, i) {
+  return `<button class="am-srow" type="button" data-i="${i}">
+    <span class="am-sgb">${icon(r._recent ? 'clock' : scKindGlyph(r.kind || r.rawKind || r.sub), '#4A4E57', 18)}</span>
+    <span class="am-srt"><span class="am-srt-t">${scSpans(r.name, sc.q)}</span>
+      ${r.sub ? `<span class="am-srt-s">${esc(r.sub)}</span>` : ''}</span>
+    ${r.dist != null ? `<span class="am-sdist">${esc(scDist(r.dist))}</span>` : ''}
+  </button>`;
+}
+function scBindRows() {
+  sc.list.querySelectorAll('.am-srow').forEach((b) => {
+    b.addEventListener('pointerdown', (e) => e.preventDefault());   // row taps never steal the input's focus
+    b.addEventListener('click', () => { const r = sc.rows[+b.dataset.i]; if (r) scPick(r); });
+  });
+}
+function scShowList() { sc.open = true; sc.list.hidden = false; }
+function scHideList() { sc.open = false; sc.list.hidden = true; }
+function scPaint() {
+  if (!sc) return;
+  const qt = sc.q.trim();
+  let h = '';
+  if (qt.length < 2) {
+    const bias = scBias();
+    sc.rows = scRecents().slice(0, 6).map((r) => ({ name: r.label || r.name, sub: '',
+      lat: +r.lat, lon: +r.lon, dist: bias ? distM(bias, { lat: +r.lat, lon: +r.lon }) : null, _recent: true }));
+    if (!sc.rows.length) { scHideList(); return; }
+    h += `<div class="am-ssec">${esc(t('scRecent'))}</div>`;
+    h += sc.rows.map((r, i) => scRowHtml(r, i)).join('');
+  } else {
+    const searching = !sc.final;
+    if (searching) h += `<div class="am-sprog" role="progressbar" aria-label="${esc(t('scSearching'))}"><i></i></div>`;
+    /* honest closeness: the settled answer holds nothing carrying every
+       typed word — say so above the nearest guesses */
+    if (sc.final && sc.rows.length && !sc.rows.some((r) => scMatches(r, scToks(qt))))
+      h += `<div class="am-ssec">${esc(t('scNoExact'))}</div>`;
+    h += sc.rows.map((r, i) => scRowHtml(r, i)).join('');
+    if (!sc.rows.length)
+      h += `<div class="am-squiet">${esc(sc.slow ? t('scSlow') : searching ? t('scSearching') : t('scNone'))}</div>`;
+  }
+  sc.list.innerHTML = h;
+  scBindRows();
+}
+function scCancel() {
+  if (!sc) return;
+  clearTimeout(sc.timer);
+  if (sc.guard) { clearTimeout(sc.guard); sc.guard = 0; }
+  if (sc.cur) { try { sc.cur(); } catch (e) { /* already done */ } sc.cur = null; }
+}
+function onScQ(v) {
+  sc.q = v;
+  sc.x.hidden = !v && !sc.picked;
+  sc.seq++;
+  sc.slow = false;
+  if (v.trim().length < 2) { sc.rows = []; sc.final = true; scPaint(); if (sc.rows.length) scShowList(); return; }
+  /* the last answer narrows in place — only rows still carrying every
+     typed word survive while the next answer is on its way */
+  if (sc.rows.length) sc.rows = sc.rows.filter((r) => scMatches(r, scToks(v)));
+  sc.final = false;
+  scPaint();
+  scShowList();
+  clearTimeout(sc.timer);
+  sc.timer = setTimeout(() => scRun(v), 90);
+}
+function scRun(v, opts) {
+  if (!sc) return;
+  const seq = ++sc.seq;
+  const bias = scBias();
+  const live_ = () => sc && seq === sc.seq && v === sc.q && st && A.current() === 'airmap';
+  const apply = (rows, meta) => {
+    if (!sc || !st || A.current() !== 'airmap') return;
+    const fin = !meta || meta.final !== false;
+    if (!live_()) return;
+    let clean = scNearFirst(scClean(rows));
+    if (!fin) clean = clean.filter((r) => scMatches(r, scToks(v)));
+    if (clean.length || fin) sc.rows = clean.slice(0, 10);
+    if (fin) { sc.final = true; sc.slow = false; if (sc.guard) { clearTimeout(sc.guard); sc.guard = 0; } }
+    scPaint();
+  };
+  sc.slow = false;
+  if (sc.guard) clearTimeout(sc.guard);
+  /* never a spinner that never ends: past 15 s the hint stops and an
+     honest "taking long" line shows (late rows still land) */
+  sc.guard = setTimeout(() => { if (live_() && !sc.final) { sc.final = true; sc.slow = true; sc.guard = 0; scPaint(); } }, 15000);
+  if (typeof A.search.live === 'function') {
+    try {
+      const c = A.search.live(v, bias, (rows, meta) => apply(rows, meta || { final: false }), opts || {});
+      sc.cur = typeof c === 'function' ? c : (c && typeof c.cancel === 'function' ? () => c.cancel() : null);
+      return;
+    } catch (e) { sc.cur = null; /* fall through to the one-shot cascade */ }
+  }
+  Promise.resolve(A.search.search(v, bias, opts || {}))
+    .then((rows) => apply(rows, { final: true }))
+    .catch(() => apply([], { final: true }));
+}
+function scPick(r) {
+  if (!r || !st) return;
+  scCancel();
+  sc.picked = true;
+  st.armed = false;
+  st.tapPlace = r.name;
+  st.place = { lat: +r.lat, lon: +r.lon, label: r.name };
+  A.store.set(PICK_KEY, st.place);
+  scPushRecent(st.place);
+  sc.input.value = r.name;
+  sc.x.hidden = false;
+  scHideList();
+  sc.input.blur();
+  /* a whole locality gets the wider frame, a point the street one */
+  const areaKind = /area|locality|suburb|neighbou?rhood|district|city|town|village|administrative|region|sector|colony|hamlet/i.test(`${r.kind || ''} ${r.rawKind || ''}`);
+  flyToSpot(st.place, areaKind ? 13.2 : 14.8);
+  tapRead(st.place.lat, st.place.lon);
+  planCard();
+  const lbl = st.body.querySelector('.am-place-label');
+  if (lbl) lbl.textContent = st.place.label;
+}
+function scReset() {
+  if (!sc || !st) return;
+  scCancel();
+  sc.q = ''; sc.rows = []; sc.final = true; sc.slow = false; sc.picked = false;
+  sc.input.value = ''; sc.x.hidden = true;
+  scHideList();
+  st.tapPlace = null;
+  if (st.readEl) st.readEl.hidden = true;
+  if (tapMarker) { tapMarker.remove(); tapMarker = null; }
+  const pos = spotPos();
+  st.place = pos ? { lat: pos.lat, lon: pos.lon, label: 'where you are' }
+    : { ...A.DELHI, label: 'central delhi' };
+  A.store.set(PICK_KEY, st.place);
+  if (pos) flyToSpot(pos, 14.2);
+  const lbl = st.body.querySelector('.am-place-label');
+  if (lbl) lbl.textContent = placeLabel();
+  planCard();
+}
+/* a real map tap supersedes the searched place — the composer stops
+   claiming a name the readout no longer describes */
+function scNoteTap() {
+  if (!sc || (!sc.picked && !sc.input.value)) return;
+  scCancel();
+  sc.picked = false; sc.q = ''; sc.rows = []; sc.final = true;
+  sc.input.value = ''; sc.x.hidden = true;
+  scHideList();
+}
+function mountComposer(el) {
+  const wrap = document.createElement('div');
+  wrap.className = 'am-scw';
+  wrap.innerHTML = `
+    <div class="am-sc">
+      <i class="am-sc-dot"></i>
+      <input class="am-sc-in" type="text" inputmode="search" enterkeyhint="search"
+        autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"
+        aria-label="${esc(t('scSearchA11y'))}" placeholder="${esc(t('scPh'))}">
+      <button class="am-sc-x" type="button" aria-label="${esc(t('a11yClear'))}" hidden>${icon('close', '#6E7278', 15)}</button>
+    </div>
+    <div class="am-slist" hidden></div>`;
+  el.appendChild(wrap);
+  sc = { wrap, input: wrap.querySelector('.am-sc-in'), x: wrap.querySelector('.am-sc-x'),
+    list: wrap.querySelector('.am-slist'), q: '', rows: [], final: true, slow: false,
+    seq: 0, cur: null, timer: 0, guard: 0, picked: false, open: false };
+  sc.input.addEventListener('input', () => { sc.picked = false; onScQ(sc.input.value); });
+  sc.input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      /* Go = take the top place row; nothing listed yet → look deeper now */
+      const first = sc.rows[0];
+      if (first) { scPick(first); return; }
+      if (sc.q.trim().length >= 2) { scCancel(); sc.final = false; scPaint(); scRun(sc.q, { enter: true }); }
+    }
+  });
+  /* Esc answers the composer before the sheet's own walk-back (motion.js
+     eats Escape at document-capture): while a pick stands it returns to
+     the live spot, while a search is live it clears just the text — an
+     idle composer lets the key fall through to the screen's own close. */
+  sc.onDocKey = (e) => {
+    if (e.key !== 'Escape' || !sc) return;
+    if (sc.picked) {
+      e.stopImmediatePropagation(); e.preventDefault();
+      scReset();
+      sc.input.blur();
+    } else if (sc.input.value || sc.open) {
+      e.stopImmediatePropagation(); e.preventDefault();
+      scCancel();
+      sc.q = ''; sc.rows = []; sc.final = true;
+      sc.input.value = ''; sc.x.hidden = true;
+      scHideList();
+      sc.input.blur();
+    }
+  };
+  window.addEventListener('keydown', sc.onDocKey, true);
+  sc.input.addEventListener('focus', () => { scPaint(); scShowList(); });
+  sc.input.addEventListener('blur', () => { setTimeout(() => { if (sc) scHideList(); }, 120); });
+  sc.x.addEventListener('pointerdown', (e) => e.preventDefault());
+  sc.x.addEventListener('click', (e) => { e.stopPropagation(); scReset(); sc.input.blur(); });
+}
+function unmountComposer() {
+  if (!sc) return;
+  scCancel();
+  document.removeEventListener('keydown', sc.onDocKey, true);
+  sc.wrap.remove();
+  sc = null;
+}
+
 /* ── the sheet render ─────────────────────────────────────────────── */
 function renderMain() {
   const body = st.body;
@@ -941,6 +1229,7 @@ A.screen('airmap', {
     setFieldVisible(true);
     st.chipEl = scaleChip();
     el.appendChild(st.chipEl);
+    mountComposer(el);
 
     /* the live dot — and the map opens on it, at street level */
     const pos0 = spotPos();
@@ -964,6 +1253,7 @@ A.screen('airmap', {
     const onTap = (e) => {
       if (A.current() !== 'airmap' || !st) return;
       st.tapPlace = null;
+      scNoteTap();
       A.search.reverse(e.detail.lat, e.detail.lon).then((n) => {
         if (st && n) {
           st.tapPlace = n;
@@ -1028,6 +1318,7 @@ A.screen('airmap', {
       A.geo.clearWatch(watchId);
       mo.disconnect();
       setFieldVisible(false);
+      unmountComposer();
       if (st.readEl) st.readEl.hidden = true;
       if (st.chipEl) st.chipEl.remove();
       if (tapMarker) { tapMarker.remove(); tapMarker = null; }
