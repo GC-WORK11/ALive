@@ -823,6 +823,11 @@ def _option(mode: str, label: str, geometry: dict, dist_km: float,
                     _coords[0], [origin[1], origin[0]])
             except Exception:
                 _ogap_m = 0.0
+            # measured gap on every option — the UI renders the honest
+            # 'route starts N km from your point' note whenever it is
+            # real, not only when every option is clipped
+            if _ogap_m > 300:
+                opt["from_gap_km"] = round(_ogap_m / 1000.0, 1)
             if _ogap_m > TRUNCATED_GAP_M:
                 opt["starts_at_origin"] = False
                 opt["origin_gap_km"] = round(_ogap_m / 1000.0, 1)
@@ -845,6 +850,8 @@ def _option(mode: str, label: str, geometry: dict, dist_km: float,
                     _coords[-1], [dest[1], dest[0]])
             except Exception:
                 _gap_m = 0.0
+            if _gap_m > 300:
+                opt["to_gap_km"] = round(_gap_m / 1000.0, 1)
             if _gap_m > TRUNCATED_GAP_M:
                 opt["reaches_destination"] = False
                 opt["truncated_gap_km"] = round(_gap_m / 1000.0, 1)

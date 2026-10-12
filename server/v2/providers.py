@@ -744,6 +744,23 @@ async def _resolve_coords(items: list, bias, budget_s: float,
             _C_RESOLVE.put(ck, hit)
         if not hit or hit.get("lat") is None:
             return
+        # name/address agreement: the geocode hit must share a non-generic
+        # token with the text we sent — the place's name OR its own
+        # address (a POI may legitimately resolve onto its street).
+        # "Panipat" may not land on a Gurugram / Sonipat row that merely
+        # sits at the claimed distance.
+        want = [_skel(t) for t in
+                _norm(it["name"] + " " + (it.get("_addr") or it["sub"])).split()
+                if len(t) >= 3 and t not in
+                ("delhi", "new", "india", "haryana", "uttar", "pradesh",
+                 "ncr", "state", "district", "near")]
+        if want:
+            hay = [_skel(w) for w in
+                   (_norm(hit.get("name") or "") + " " +
+                    _norm(hit.get("sub") or "")).split()]
+            if not any(any(h.startswith(t) or t.startswith(h) for h in hay)
+                       for t in want):
+                return
         d = haversine_m(bias[0], bias[1], hit["lat"], hit["lon"])
         claimed = it.get("distance_m")
         if claimed is not None:

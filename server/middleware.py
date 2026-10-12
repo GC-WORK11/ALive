@@ -171,7 +171,7 @@ class RateLimitMiddleware:
 
     def __init__(self, app, rate_per_s: float = 10.0, burst: float = 30.0,
                  path_overrides: Optional[dict] = None,
-                 exempt_prefixes: tuple = ("/health",),
+                 exempt_prefixes: tuple = ("/health", "/app/"),
                  max_keys: int = 20000):
         self.app = app
         self.rate = float(rate_per_s)
