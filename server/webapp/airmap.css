@@ -36,8 +36,54 @@
 .am-hthin { color: var(--ink3); font-size: 13px; margin-top: 8px }
 .am-why { margin: 2px 22px 0 }
 
-/* ── TapReadout — the tap's compact answer card, floating top-center */
-.am-read { position: fixed; top: calc(64px + var(--sat)); bottom: auto; left: 50%; transform: translateX(-50%);
+/* ── the search composer — the Where To row's twin, floating over the
+   map strip. One 44px bar under the mark; its list opens below it,
+   never past the sheet. */
+.am-scw { position: fixed; top: calc(56px + var(--sat)); left: 12px; right: 12px;
+  z-index: 42; display: flex; flex-direction: column; gap: 4px; max-width: 560px }
+.am-sc { display: flex; align-items: center; gap: 10px; height: 44px; flex: none;
+  padding: 0 0 0 13px; background: var(--surface2); border-radius: 13px;
+  box-shadow: var(--sh-card) }
+.am-sc-dot { width: 10px; height: 10px; border-radius: 5px; background: var(--accent); flex: none }
+.am-sc-in { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent;
+  outline: none; font-size: 16px; font-weight: 500; color: var(--ink); padding: 0 }
+.am-sc-in::placeholder { color: var(--ink3); font-weight: 400 }
+.am-sc-x { width: 44px; height: 44px; flex: none; display: flex;
+  align-items: center; justify-content: center }
+.am-sc-x svg { width: 18px; height: 18px; padding: 12px; box-sizing: content-box;
+  border-radius: 50% }
+.am-sc-x:active svg { transform: scale(.92); background: var(--ink10) }
+.am-slist { background: rgba(255,255,255,.94); backdrop-filter: blur(8px);
+  border-radius: 16px; box-shadow: var(--sh-float); border: .5px solid var(--hairc);
+  overflow-y: auto; overflow-x: hidden; padding: 4px;
+  max-height: calc(42vh - 70px - var(--sat)); -webkit-overflow-scrolling: touch }
+.am-slist[hidden] { display: none }
+.am-sprog { height: 2px; margin: 2px 12px 4px; border-radius: 1px; overflow: hidden;
+  background: var(--ink10) }
+.am-sprog i { display: block; width: 38%; height: 100%; border-radius: 1px;
+  background: var(--accent); animation: amProg 1.05s cubic-bezier(.4,0,.2,1) infinite;
+  will-change: transform }
+@keyframes amProg { from { transform: translateX(-105%) } to { transform: translateX(270%) } }
+.am-srow { display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 48px; padding: 6px 10px; text-align: left; border: 0;
+  border-radius: 12px; background: transparent; color: inherit }
+.am-srow:active { background: var(--surface2) }
+.am-sgb { width: 34px; height: 34px; border-radius: 11px; background: var(--surface2);
+  flex: none; display: flex; align-items: center; justify-content: center }
+.am-srt { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-right: 8px }
+.am-srt-t { font-size: 15px; font-weight: 500; color: var(--ink); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap }
+.am-srt-t b { font-weight: 600 }
+.am-sdim { color: var(--ink3); font-weight: 400 }
+.am-srt-s { font-size: 12.5px; color: var(--ink3); margin-top: 1px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap }
+.am-sdist { font-size: 12.5px; color: var(--ink3); flex: none; font-variant-numeric: tabular-nums }
+.am-squiet { padding: 13px 14px; font-size: 13.5px; color: var(--ink3); line-height: 1.4 }
+.am-ssec { font-size: 12px; font-weight: 500; color: var(--ink3); margin: 7px 12px 2px }
+
+/* ── TapReadout — the tap's compact answer card, floating top-center
+   under the composer bar */
+.am-read { position: fixed; top: calc(112px + var(--sat)); bottom: auto; left: 50%; transform: translateX(-50%);
   z-index: 40; background: rgba(255,255,255,.86); border-radius: 16px;
   border: .5px solid rgba(22,24,29,.06); box-shadow: 0 8px 22px rgba(59,52,35,.12);
   padding: 9px 7px 9px 12px; max-width: 320px; display: flex; flex-direction: column; gap: 3px; }
@@ -203,6 +249,8 @@
   .am-host .sheet { top: 0 }
   .am-chip { bottom: auto; top: 72px }
   .am-read { left: auto; right: 480px; transform: none }
+  .am-scw { right: 480px }
+  .am-slist { max-height: min(60vh, 440px) }
 }
 
 /* attribution is fully covered by the open sheet — hide it while covered */
