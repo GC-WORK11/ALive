@@ -21,8 +21,15 @@
    New: traffic(map, on), airRoads(on), sampleField(lat, lon),
    fieldInfo(), cpcbAqi(pm25, pm10) → number, cpcb(pm25, pm10) →
    {aqi, over, band, basis}, aqiBand(aqi), segBand(segment), BANDS.
-   showRoute segments may carry band as the CPCB word ('Very Poor') or
-   the 0-5 index — both paint. */
+   showRoute(id, geojson, opts) — opts may be null (picked style), a
+   bare segments array (older callers), or an object:
+     { segments: [...], ghost: true, label: '11 km · 24 min' }
+   ghost paints a muted dashed alternative under the picked route;
+   label pins a small chip on the route's midpoint. Segments may carry
+   band as the CPCB word ('Very Poor') or the 0-5 index — both paint.
+   fit(g, pad) — pad is a number or a box {top,left,right,bottom};
+   {sheetRight:px} adds clearance on the right for the desktop sheet
+   (a bare {sheetRight} object keeps the default padding elsewhere). */
 (() => {
 'use strict';
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
@@ -171,14 +178,16 @@ const BASIC_CSS =
   '#map .leaflet-pane{z-index:400}#map .leaflet-tile-pane{z-index:200}' +
   '#map .leaflet-overlay-pane{z-index:400}#map .leaflet-marker-pane{z-index:600}' +
   '#map .leaflet-top,#map .leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}' +
-  '#map .leaflet-bottom{bottom:0}#map .leaflet-right{right:0}' +
+  '#map .leaflet-top{top:0}#map .leaflet-bottom{bottom:0}' +
+  '#map .leaflet-left{left:0}#map .leaflet-right{right:0}' +
   '#map .leaflet-control{position:relative;z-index:800;pointer-events:auto}' +
   '#map .leaflet-bottom .leaflet-control{margin:10px}' +
   '#map .leaflet-control-attribution{background:rgba(255,255,255,.7);font-size:10px;padding:1px 6px;color:#555}' +
   '#map .leaflet-control-attribution a{color:#555}' +
   '#map .leaflet-control-zoom a{display:block;width:34px;height:34px;line-height:34px;text-align:center;' +
   'background:#fff;color:#4A4E57;border-radius:6px;box-shadow:0 1px 5px rgba(20,20,20,.18);margin-bottom:4px;' +
-  'text-decoration:none;font-size:19px;font-weight:600}';
+  'text-decoration:none;font-size:19px;font-weight:600}' +
+  '#map .leaflet-control-zoom a:last-child{margin-bottom:0}';
 function initBasic() {
   basicMode = true;
   if (!document.getElementById('map')) { noMapNote(); return; }
@@ -187,9 +196,18 @@ function initBasic() {
     map = window.L.map('map', {
       center: [A.DELHI.lat, A.DELHI.lon], zoom: 11,
       minZoom: 9, maxZoom: 18, zoomControl: false,
+      scrollWheelZoom: true,
       attributionControl: true,
     });
-    window.L.control.zoom({ position: 'bottomright' }).addTo(map);
+    /* bottom-LEFT: the screen sheet docks on the right (desktop) and
+       would cover a bottom-right control entirely */
+    window.L.control.zoom({ position: 'bottomleft' }).addTo(map);
+    /* callers like whereto.js style MapLibre layers through ready(m =>
+       m.getLayer('route-x-line')) — Leaflet's Map has no getLayer (only
+       LayerGroups do), so the call threw mid-loop and killed the rest
+       of the paint: routes half-drawn, no fit. A no-op returning
+       undefined turns every guard into a safe skip. */
+    map.getLayer = () => undefined;
     /* tiles: count loads vs errors; a provider that draws nothing (or
        mostly errors) within a few seconds is swapped for the next */
     let bi = 0, tOk = 0, tErr = 0;
@@ -236,21 +254,41 @@ function leafFieldVisible(v) {
   if (!v && map.hasLayer(fieldImg)) map.removeLayer(fieldImg);
 }
 const leafLL = (coords) => coords.map((c) => [c[1], c[0]]);
-function leafShowRoute(id, geojson, segments) {
+function leafShowRoute(id, geojson, opts) {
   onReady(() => {
     leafHideRoute(id);
-    const coords = geojson.coordinates || (geojson.geometry && geojson.geometry.coordinates) || [];
+    const o = normRouteOpts(opts);
+    const coords = routeCoords(geojson);
     if (!coords.length) return;
+    const ghost = !!o.ghost;
+    const ll = leafLL(coords);
     const g = window.L.layerGroup().addTo(map);
-    window.L.polyline(leafLL(coords), { color: '#ffffff', weight: 10, opacity: 0.55, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
-    window.L.polyline(leafLL(coords), { color: '#2A4D3B', weight: 5, opacity: 0.85, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+    const line = (pts, p) => window.L.polyline(pts,
+      { interactive: false, lineCap: 'round', lineJoin: 'round', ...p }).addTo(g);
+    /* the same stack the WebGL side draws: a faint rim so the casing
+       reads as an edge, the paper casing, the core, then each dose
+       band on its own halo — no more bare hairlines */
+    line(ll, { color: RT_EDGE, weight: ghost ? 8 : 11, opacity: ghost ? 0.3 : 0.42 });
+    line(ll, { color: ghost ? '#F0F1ED' : RT_PAPER, weight: ghost ? 6.5 : 9, opacity: ghost ? 0.8 : 0.95 });
+    line(ll, { color: ghost ? RT_GHOST : RT_INK, weight: ghost ? 3.4 : 4.6, opacity: ghost ? 0.85 : 0.95,
+      ...(ghost ? { dashArray: '7 7' } : {}) });
     const n = coords.length;
-    for (const s of segments || []) {
+    /* halos first, band strokes after — a later halo can't nick the
+       previous band's cap at a seam */
+    const bandSegs = (o.segments || []).map((s) => {
       const bi = segBandIdx(s);
-      if (bi == null) continue;
+      if (bi == null) return null;
       const a = Math.floor((s.start_frac ?? 0) * (n - 1));
       const b = Math.max(a + 1, Math.ceil((s.end_frac ?? 1) * (n - 1)));
-      window.L.polyline(leafLL(coords.slice(a, b + 1)), { color: BANDS[bi], weight: 5, opacity: 0.9, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+      return { bi, pts: leafLL(coords.slice(a, b + 1)) };
+    }).filter(Boolean);
+    for (const bs of bandSegs) line(bs.pts, { color: RT_PAPER, weight: 7, opacity: 0.9 });
+    for (const bs of bandSegs) line(bs.pts, { color: BANDS[bs.bi], weight: 4.6, opacity: 0.95 });
+    if (o.label) {
+      const mid = routeMidpoint(coords);
+      const ic = window.L.divIcon({ className: '',
+        html: `<div style="transform:translate(-50%,-50%)">${rtLabelHtml(o.label)}</div>` });
+      window.L.marker([mid[1], mid[0]], { icon: ic, interactive: false, keyboard: false }).addTo(g);
     }
     lfRoutes.set(id, g);
   });
@@ -280,12 +318,18 @@ function leafPuckMove(lat, lon, acc) {
 function leafFly(lat, lon, zoom) {
   onReady(() => map.flyTo([lat, lon], zoom ?? map.getZoom(), { duration: 0.9 }));
 }
-function leafFit(geojsonOrCoords, pad = 90) {
+function leafFit(geojsonOrCoords, pad) {
   onReady(() => {
     const g = geojsonOrCoords;
-    const coords = g.type === 'Feature' ? g.geometry.coordinates : g.type === 'LineString' ? g.coordinates : g;
-    if (!coords || !coords.length) return;
-    map.flyToBounds(window.L.latLngBounds(leafLL(coords)), { padding: window.L.point(pad, pad) });
+    const coords = (g && (g.type === 'Feature' ? g.geometry.coordinates : g.type === 'LineString' ? g.coordinates : g)) || [];
+    if (!coords.length) return;
+    /* the box callers pass ({top,left,right,bottom[,sheetRight]}) maps
+       onto Leaflet's two corner paddings — identical to the WebGL side */
+    const p = padBox(pad);
+    map.flyToBounds(window.L.latLngBounds(leafLL(coords)), {
+      paddingTopLeft: window.L.point(p.left, p.top),
+      paddingBottomRight: window.L.point(p.right, p.bottom),
+    });
   });
 }
 function leafTraffic(on) {
@@ -316,7 +360,9 @@ function init() {
     dragRotate: false, pitchWithRotate: false,
     touchZoomRotate: true,
   });
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+  /* bottom-LEFT — the app's screen sheet docks on the right (desktop)
+     and sits over a bottom-right control, making zoom unreachable */
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-left');
   map.touchZoomRotate.disableRotation();
   const guard = setTimeout(() => { if (!styleOk) fallBack('style timeout'); }, 9000);
   map.on('style.load', () => {
@@ -346,7 +392,13 @@ function init() {
   });
 }
 
-function onReady(cb) { ready ? cb(map) : queue.push(cb); }
+/* queued callbacks are error-isolated in markReady; a callback that
+   arrives after ready ran the same way — one caller's throw must not
+   kill the rest of its own paint loop */
+function onReady(cb) {
+  if (ready) { try { cb(map); } catch (err) { /* caller's bug — never blocks the rest */ } }
+  else queue.push(cb);
+}
 
 /* first road layer of the basemap — the tint sits under every street */
 function firstRoadLayer(m) {
@@ -682,33 +734,142 @@ function traffic(m, on) {
   });
 }
 
-/* ── route drawing: geojson line + per-segment band colors ───────── */
-function showRoute(id, geojson, segments) {
-  onReady((m) => {
-    const srcId = `route-${id}`;
-    if (m.getSource(srcId)) {
-      m.getSource(srcId).setData(geojson);
-      if (segments && segments.length) paintSegments(srcId, geojson, segments);
-      return;
+/* ── route drawing: a real stroke stack, not a bare line ───────────
+   Each route is up to four layers deep, bottom → top:
+     -edge    a faint wide rim — the casing reads as an outline on tiles
+     -casing  the paper underlay every stretch of the route rides on
+     -line    the picked forest core (or the muted ghost dash)
+     -segs    the dose-band ribbon on its own paper halo
+   The layer ids are a contract: whereto.js re-paints -line/-casing
+   when the selection changes, so those names never move. */
+const RT_INK = '#2A4D3B';        /* the picked forest                 */
+const RT_PAPER = '#FAFAF7';      /* casing — the sheet's paper white  */
+const RT_EDGE = '#AEB4AB';       /* faint rim under the casing        */
+const RT_GHOST = '#8A93A3';      /* alternatives — the quiet slate    */
+const routeOpts = new Map();     /* id → last opts (ghost flips rebuild) */
+const routeMarks = new Map();    /* id → midpoint label Marker        */
+/* the beforeId a route's stack was inserted under — getStyle().layers
+   is a stale cache for runtime layers, so the "right above -line" slot
+   can't be re-found by scanning; keep it from creation */
+const routeTop = new Map();      /* srcId → layer id (or undefined)   */
+
+/* third arg may be: null (picked), a bare segments array (older
+   callers), or {segments, ghost, label} — all normalise to an object */
+function normRouteOpts(o) {
+  if (o == null) return {};
+  if (Array.isArray(o)) return { segments: o };
+  return typeof o === 'object' ? o : {};
+}
+/* a Feature, a bare LineString, or a raw [lon,lat] list → coordinates */
+function routeCoords(g) {
+  if (!g) return [];
+  if (Array.isArray(g)) return g;
+  return g.coordinates || (g.geometry && g.geometry.coordinates) || [];
+}
+/* half the arc length, not half the vertex count — a tight hairpin's
+   midpoint still lands mid-ride */
+function routeMidpoint(coords) {
+  if (coords.length < 2) return coords[0];
+  let tot = 0;
+  const seg = [];
+  for (let i = 1; i < coords.length; i++) {
+    const d = Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1]);
+    seg.push(d); tot += d;
+  }
+  let half = tot / 2;
+  for (let i = 0; i < seg.length; i++) {
+    if (half <= seg[i] || i === seg.length - 1) {
+      const t = seg[i] ? half / seg[i] : 0;
+      return [coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t,
+        coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t];
     }
-    m.addSource(srcId, { type: 'geojson', data: geojson });
-    m.addLayer({
-      id: `${srcId}-line`, type: 'line', source: srcId,
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.4, 14, 6.4],
-        'line-color': '#2A4D3B', 'line-opacity': 0.85,
-      },
-    });
-    m.addLayer({
-      id: `${srcId}-casing`, type: 'line', source: srcId,
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 6.4, 14, 10.4],
-        'line-color': '#ffffff', 'line-opacity': 0.55,
-      },
-    }, `${srcId}-line`);
-    if (segments && segments.length) paintSegments(srcId, geojson, segments);
+    half -= seg[i];
+  }
+  return coords[coords.length - 1];
+}
+/* the distance·time chip — the same pill in both engines */
+const RT_LABEL_CSS = 'display:inline-block;padding:3px 9px;border-radius:11px;'
+  + 'background:rgba(250,250,247,.96);box-shadow:0 1px 5px rgba(20,20,20,.24);'
+  + 'color:#3E4440;font:600 11.5px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;'
+  + 'white-space:nowrap;pointer-events:none';
+function rtLabelHtml(text) {
+  const t = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return `<div style="${RT_LABEL_CSS}">${t}</div>`;
+}
+/* paint values live once — creation and restyle read the same table */
+function routePaints(o) {
+  const ghost = !!(o && o.ghost);
+  return {
+    edge: {
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, ghost ? 7.5 : 8.6, 14, ghost ? 11 : 13.6],
+      'line-color': RT_EDGE, 'line-opacity': ghost ? 0.3 : 0.42,
+    },
+    casing: {
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, ghost ? 5.8 : 6.8, 14, ghost ? 9.4 : 11],
+      'line-color': ghost ? '#F0F1ED' : RT_PAPER, 'line-opacity': ghost ? 0.85 : 0.95,
+    },
+    line: {
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, ghost ? 2.8 : 3.6, 14, ghost ? 5.2 : 6.6],
+      'line-color': ghost ? RT_GHOST : RT_INK, 'line-opacity': ghost ? 0.85 : 0.95,
+      ...(ghost ? { 'line-dasharray': [1.9, 1.5] } : {}),
+    },
+  };
+}
+function addRouteLayers(m, srcId, geojson, o) {
+  const p = routePaints(o);
+  const under = firstSymbol(m);   /* routes ride under street labels, over fills */
+  routeTop.set(srcId, under);
+  m.addSource(srcId, { type: 'geojson', data: geojson });
+  const caps = { 'line-cap': 'round', 'line-join': 'round' };
+  m.addLayer({ id: `${srcId}-edge`, type: 'line', source: srcId, layout: { ...caps }, paint: p.edge }, under);
+  m.addLayer({ id: `${srcId}-casing`, type: 'line', source: srcId, layout: { ...caps }, paint: p.casing }, under);
+  m.addLayer({ id: `${srcId}-line`, type: 'line', source: srcId, layout: { ...caps }, paint: p.line }, under);
+}
+function styleRoute(m, srcId, o) {
+  const p = routePaints(o);
+  for (const k of ['edge', 'casing', 'line']) {
+    const l = `${srcId}-${k}`;
+    if (!m.getLayer(l)) continue;
+    for (const [pk, pv] of Object.entries(p[k])) {
+      try { m.setPaintProperty(l, pk, pv); } catch (e) { /* a paint this build can't express — skip */ }
+    }
+  }
+}
+function routeLabel(id, geojson, text) {
+  const old = routeMarks.get(id);
+  if (old) { old.remove(); routeMarks.delete(id); }
+  if (text == null || text === '') return;
+  const coords = routeCoords(geojson);
+  if (!coords.length) return;
+  const el = document.createElement('div');
+  el.style.pointerEvents = 'none';
+  el.innerHTML = rtLabelHtml(text);
+  routeMarks.set(id, new maplibregl.Marker({ element: el }).setLngLat(routeMidpoint(coords)).addTo(map));
+}
+function removeRoute(m, id) {
+  [`route-${id}-segs-line`, `route-${id}-segs-halo`, `route-${id}-line`,
+    `route-${id}-casing`, `route-${id}-edge`].forEach((l) => { if (m.getLayer(l)) m.removeLayer(l); });
+  [`route-${id}-segs`, `route-${id}`].forEach((s) => { if (m.getSource(s)) m.removeSource(s); });
+  const mk = routeMarks.get(id);
+  if (mk) { mk.remove(); routeMarks.delete(id); }
+  routeTop.delete(`route-${id}`);
+}
+function showRoute(id, geojson, opts) {
+  const o = normRouteOpts(opts);
+  /* a raw [lon,lat] list counts as a route too */
+  const g = Array.isArray(geojson) ? { type: 'LineString', coordinates: geojson } : geojson;
+  onReady((m) => {
+    if (!g || !routeCoords(g).length) return;
+    const srcId = `route-${id}`;
+    /* dash is fixed at layer creation — a ghost flip rebuilds */
+    const prev = routeOpts.get(id);
+    if (prev && !!prev.ghost !== !!o.ghost) removeRoute(m, id);
+    routeOpts.set(id, o);
+    if (!m.getSource(srcId)) addRouteLayers(m, srcId, g, o);
+    else m.getSource(srcId).setData(g);
+    styleRoute(m, srcId, o);
+    paintSegments(srcId, g, o.segments);
+    routeLabel(id, g, o.label);
   });
 }
 
@@ -734,8 +895,14 @@ function segBandIdx(s) {
 }
 function paintSegments(srcId, geojson, segments) {
   onReady((m) => {
-    const coords = geojson.coordinates || (geojson.geometry && geojson.geometry.coordinates) || [];
-    if (!coords.length) return;
+    const segSrc = `${srcId}-segs`;
+    const coords = routeCoords(geojson);
+    /* no bands this show — the old ribbon comes down too */
+    if (!coords.length || !segments || !segments.length) {
+      [`${segSrc}-line`, `${segSrc}-halo`].forEach((l) => { if (m.getLayer(l)) m.removeLayer(l); });
+      if (m.getSource(segSrc)) m.removeSource(segSrc);
+      return;
+    }
     const n = coords.length;
     const feats = segments.map((s) => {
       const a = Math.floor((s.start_frac ?? 0) * (n - 1));
@@ -747,41 +914,53 @@ function paintSegments(srcId, geojson, segments) {
         geometry: { type: 'LineString', coordinates: coords.slice(a, b + 1) },
       };
     });
-    const segSrc = `${srcId}-segs`;
     const data = { type: 'FeatureCollection', features: feats };
     if (m.getSource(segSrc)) { m.getSource(segSrc).setData(data); return; }
     m.addSource(segSrc, { type: 'geojson', data });
     /* the coloured stretches sit right ABOVE the plain route line (the
        line would otherwise cover them in forest green); a stretch with
-       no read keeps the route's own colour */
-    const ls = m.getStyle().layers;
-    const k = ls.findIndex((l) => l.id === `${srcId}-line`);
-    const above = k >= 0 && k + 1 < ls.length ? ls[k + 1].id : undefined;
+       no read keeps the route's own colour. The paper halo underneath
+       is what lets a band read on light tiles. The layer above -line is
+       the symbol anchor recorded at creation — getStyle().layers can't
+       be trusted to list runtime layers yet */
+    const stored = routeTop.get(srcId);
+    let above = stored && m.getLayer(stored) ? stored : undefined;
+    if (above === undefined) {
+      const ls = m.getStyle().layers;
+      const k = ls.findIndex((l) => l.id === `${srcId}-line`);
+      above = k >= 0 && k + 1 < ls.length ? ls[k + 1].id : undefined;
+    }
+    m.addLayer({
+      id: `${segSrc}-halo`, type: 'line', source: segSrc,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 6.2, 14, 9.8],
+        'line-color': RT_PAPER, 'line-opacity': 0.9,
+      },
+    }, above);
     m.addLayer({
       id: `${segSrc}-line`, type: 'line', source: segSrc,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.4, 14, 6.4],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.6, 14, 6.6],
         'line-color': ['match', ['get', 'band'],
           0, BANDS[0], 1, BANDS[1], 2, BANDS[2],
-          3, BANDS[3], 4, BANDS[4], 5, BANDS[5], '#2A4D3B'],
-        'line-opacity': 0.9,
+          3, BANDS[3], 4, BANDS[4], 5, BANDS[5], RT_INK],
+        'line-opacity': 0.95,
       },
     }, above);
   });
 }
 
 function hideRoute(id) {
-  onReady((m) => {
-    [`route-${id}-segs-line`, `route-${id}-line`, `route-${id}-casing`].forEach((l) => { if (m.getLayer(l)) m.removeLayer(l); });
-    [`route-${id}-segs`, `route-${id}`].forEach((s) => { if (m.getSource(s)) m.removeSource(s); });
-  });
+  routeOpts.delete(id);
+  onReady((m) => removeRoute(m, id));
 }
 function hideAllRoutes() {
   onReady((m) => {
-    const ids = new Set();
+    const ids = new Set(routeOpts.keys());
     m.getStyle().layers.forEach((l) => {
-      const mm = l.id.match(/^route-(.+?)(-segs-line|-line|-casing)?$/);
+      const mm = l.id.match(/^route-(.+?)(-segs-line|-segs-halo|-edge|-line|-casing)?$/);
       if (mm) ids.add(mm[1]);
     });
     ids.forEach((id) => hideRoute(id));
@@ -821,13 +1000,28 @@ function puckRemove() { if (puck) { puck.remove(); puck = null; puckEl = null; }
 function fly(lat, lon, zoom, opts = {}) {
   onReady((m) => m.flyTo({ center: [lon, lat], zoom: zoom ?? m.getZoom(), duration: 900, essential: true, ...opts }));
 }
-function fit(geojsonOrCoords, pad = 90) {
+/* fit() padding — a number pads every side; a box may carry
+   {top,left,right,bottom} plus {sheetRight:px}, which is added to the
+   right edge for the desktop sheet that occludes it. A box with none
+   of the four sides keeps the default all around. */
+function padBox(pad, dflt = 90) {
+  if (pad == null) pad = dflt;
+  if (typeof pad === 'number' && isFinite(pad)) return { top: pad, left: pad, right: pad, bottom: pad };
+  const bare = pad.top == null && pad.left == null && pad.right == null && pad.bottom == null;
+  const b = bare ? dflt : 0;
+  return {
+    top: +pad.top || b, left: +pad.left || b, bottom: +pad.bottom || b,
+    right: (+pad.right || b) + (+pad.sheetRight || 0),
+  };
+}
+function fit(geojsonOrCoords, pad) {
   onReady((m) => {
     const coords = geojsonOrCoords.type === 'Feature'
       ? geojsonOrCoords.geometry.coordinates
       : geojsonOrCoords.type === 'LineString' ? geojsonOrCoords.coordinates : geojsonOrCoords;
+    if (!coords || !coords.length) return;
     const b = coords.reduce((bb, c) => bb.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
-    m.fitBounds(b, { padding: pad, duration: 850, essential: true });
+    m.fitBounds(b, { padding: padBox(pad), duration: 850, essential: true });
   });
 }
 function center() { return map && map.getCenter(); }
