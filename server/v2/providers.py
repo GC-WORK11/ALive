@@ -7,7 +7,9 @@ Mounted by v2/__init__.py, so every route lives under /v2/p/...
   GET  /v2/p/geocode?address&lat&lon   house-level: Ola geocode + Mappls geocode
   GET  /v2/p/reverse?lat&lon           {name,address,locality,city,source}
   GET  /v2/p/nearby?lat&lon&kind&radius_m
-  POST /v2/p/route_traffic {coords:[[lat,lon],...]}   TomTom live traffic on OUR line
+  POST /v2/p/route_traffic {coords:[[lat,lon],...], mode?, depart_at?,
+         fuel_l100?|kwh_100km?}     live traffic + route depth on OUR line:
+         jams, alternatives, tolls, speed limits, roads, progress, steps
   GET  /v2/p/flow_tile/{z}/{x}/{y}.png TomTom relative0 flow raster (204 when off)
   GET  /v2/p/incidents?bbox=minLon,minLat,maxLon,maxLat
   GET  /v2/p/status                    which providers are configured (booleans only)
@@ -57,6 +59,18 @@ Upstream shapes (verified Oct 11 against provider docs / official SDKs):
                name?, address_components[{long_name, types}], geometry}]
        GET  /places/v1/nearbysearch?layers=venue&types&location&radius&limit
             -> predictions[...] (geometry only when the API returns it)
+       POST /routing/v1/directions?origin&destination&mode&alternatives=true
+            &steps=true&overview=full&traffic_metadata=true&language=en
+            &route_preference=fastest
+            -> routes[{overview_polyline, travel_advisory, summary, bounds,
+               warnings, copyrights, legs[{distance, duration, readable_*,
+               start_address, end_address, start_location, end_location,
+               steps[{instructions, maneuver, distance, duration, readable_*,
+               start_location{lat,lng}, end_location{lat,lng},
+               bearing_before, bearing_after}]}]}]
+            travel_advisory: "fromIdx,toIdx,level|..." spans on the route's
+            own overview_polyline. modes verified live: driving, walking
+            (bike/auto accepted per docs).
 - Mappls (REST static key as access_token):
        GET  https://search.mappls.com/search/places/autosuggest/json?query&location
             -> suggestedLocations[{eLoc, placeName, placeAddress, type, distance,
@@ -72,12 +86,32 @@ Upstream shapes (verified Oct 11 against provider docs / official SDKs):
        their own name+address (and checked against Mappls' own distance);
        a hit that cannot be resolved is dropped, never guessed.
 - TomTom POST https://api.tomtom.com/routing/1/calculateRoute/{o}:{d}/json
-            ?traffic=true&sectionType=traffic&sectionType=importantRoadStretch
-            &computeTravelTimeFor=all  body {"supportingPoints":[{latitude,longitude}]}
-            -> routes[0].summary{travelTimeInSeconds, trafficDelayInSeconds,
-               noTrafficTravelTimeInSeconds, lengthInMeters}, legs[].points,
-               sections[{sectionType:"TRAFFIC", startPointIndex, endPointIndex,
-               delayInSeconds, magnitudeOfDelay, simpleCategory, effectiveSpeedInKmh}]
+            ?traffic=true&computeTravelTimeFor=all&maxAlternatives=3
+            &alternativeType=anyRoute&instructionsType=text&language=en-GB
+            &routeRepresentation=polyline&includeTollPaymentTypes=all
+            &extendedRouteRepresentation=distance&extendedRouteRepresentation=travelTime
+            &sectionType=traffic|importantRoadStretch|toll|tollVignette|urban|
+            tunnel|motorway|unpaved|lowEmissionZone|speedLimit|carpool|ferry|carTrain
+            [&departAt=ISO] [&vehicleEngineType&constantSpeedConsumption*]
+            body {"supportingPoints":[{latitude,longitude}]}
+            -> routes[].summary{travelTimeInSeconds, trafficDelayInSeconds,
+               noTrafficTravelTimeInSeconds, historicTrafficTravelTimeInSeconds,
+               liveTrafficIncidentsTravelTimeInSeconds, trafficLengthInMeters,
+               lengthInMeters, departureTime, arrivalTime, fuelConsumptionInLiters?,
+               batteryConsumptionInkWh?, deviationDistance?/deviationTime?},
+               legs[].points, legs[].guidance.instructions[] (NOT returned on
+               the current key/plan — verified live), sections[{sectionType:
+               TRAFFIC|TOLL|SPEED_LIMIT|URBAN|TUNNEL|MOTORWAY|UNPAVED|
+               LOW_EMISSION_ZONE|CARPOOL|FERRY|CAR_TRAIN|IMPORTANT_ROAD_STRETCH,
+               startPointIndex, endPointIndex, delayInSeconds, magnitudeOfDelay,
+               simpleCategory, effectiveSpeedInKmh, maxSpeedLimitInKmh,
+               tollPaymentTypes, streetName, roadNumbers}],
+               progress[{pointIndex, distanceInMeters, travelTimeInSeconds}]
+            Alternatives carry the same fields; section/point indices are per
+            route's own legs[].points.
+            Mappls route/route_adv: NOT available on the static REST key
+            (advancedmaps wants OAuth client creds; verified live "Client
+            Credentials Expired") — search.mappls.com endpoints only.
        GET  https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png
        GET  https://api.tomtom.com/traffic/services/5/incidentDetails?bbox&fields
             -> incidents[{geometry{type,coordinates}, properties{iconCategory,
@@ -134,6 +168,26 @@ gurdwara station airport stop stand petrol pump
 """.split())
 MAX_RESOLVE = 4                      # Mappls coord look-ups per request
 TT_MAX_PTS = 150                     # TomTom supportingPoints cap
+TT_MAX_ALTS = 3                      # maxAlternatives -> up to 3 extra routes
+# every sectionType the Routing API offers that can occur on an NCR motor
+# route; traffic + importantRoadStretch (jam delays + road names), the rest
+# are route feature flags / tolls / speed limits. `tollRoad` is deprecated
+# upstream (400s on newer backends) — `toll` + `tollVignette` replace it.
+TT_SECTION_TYPES = ("traffic", "importantRoadStretch", "toll", "tollVignette",
+                    "urban", "tunnel", "motorway", "unpaved", "lowEmissionZone",
+                    "speedLimit", "carpool", "ferry", "carTrain", "pedestrian",
+                    "country")
+# section types surfaced as route flags -> response "flags" key
+_TT_FLAG_SECTIONS = {"TOLL": "toll", "TOLL_VIGNETTE": "toll_vignette",
+                     "URBAN": "urban", "TUNNEL": "tunnel",
+                     "MOTORWAY": "motorway", "UNPAVED": "unpaved",
+                     "LOW_EMISSION_ZONE": "low_emission_zone",
+                     "CARPOOL": "carpool", "FERRY": "ferry",
+                     "CAR_TRAIN": "car_train", "PEDESTRIAN": "pedestrian",
+                     "COUNTRY": "country"}
+_TT_MODES = {"car", "motorcycle", "bus", "taxi", "van", "truck",
+             "bicycle", "pedestrian"}
+_DEPART_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
 TTL_AC = 600
 TTL_GEOCODE = 86400
@@ -621,6 +675,9 @@ def parse_ola_geocode(data, bias) -> list:
         nm = (g.get("name") or "").strip()
         first, rest = _split_desc(fa)
         name = nm or first
+        if name and not re.search(r"[a-zA-Z]", name) and rest:
+            # bare house number -> '237, Okhla Industrial Estate Phase 3'
+            name = f"{name}, {rest.split(',')[0].strip()}"
         loc = ((g.get("geometry") or {}).get("location")) or {}
         if not name:
             continue
@@ -695,8 +752,13 @@ def parse_mappls_geocode(data, bias) -> list:
         lead = (c.get("houseName") or c.get("poi") or c.get("street") or "").strip()
         if hn and lead:
             name = f"{hn}, {lead}"
+        elif hn and not lead:
+            # '237' alone is unreadable — anchor it to its locality/area
+            loc = (c.get("locality") or c.get("subLocality")
+                   or c.get("village") or "").strip()
+            name = f"{hn}, {loc}" if loc else hn
         else:
-            name = lead or hn or _split_desc(fa)[0]
+            name = lead or _split_desc(fa)[0]
         lvl = str(c.get("geocodeLevel") or "").lower()
         kind = ("address" if lvl in ("housenumber", "housename") else
                 "street" if lvl == "street" else
@@ -850,17 +912,20 @@ def _dup(a: dict, b: dict) -> bool:
     return _norm(a["sub"]) == _norm(b["sub"])
 
 
-def merge_results(groups: list, q: str = "", limit: int = 10) -> list:
+def merge_results(groups: list, q: str = "", limit: int = 10,
+                  drop_letterless: bool = True) -> list:
     """groups: provider lists in priority order (best provider first).
     Interleave by provider rank, sink weak text matches and far places,
-    de-dup by name + ~60 m (first seen wins, missing coords filled in)."""
+    de-dup by name + ~60 m (first seen wins, missing coords filled in).
+    drop_letterless=False lets geocode keep bare house-number answers
+    ('237, Okhla Phase 3' is exactly what the address query asked for)."""
     ranked = []
     for gi, items in enumerate(groups):
         for ri, it in enumerate(items or []):
             # a provider name with no letters is a pincode or a '00'
-            # house-name — never a place the user can pick
+            # house-name — never a place the user can pick in type-ahead
             _nm = _norm(it.get("name") or "")
-            if not re.search(r"[a-z]", _nm):
+            if drop_letterless and not re.search(r"[a-z]", _nm):
                 continue
             _nt = _nm.split()
             if len(_nt) == 1 and _nt[0] in _GENERIC_NAME_WORDS:
@@ -1145,9 +1210,10 @@ async def geocode(response: Response, address: str = Query("", max_length=300),
         left = GEOCODE_TOTAL_S - (time.monotonic() - t0)
         short = left < 0.3 and any(it["lat"] is None for it in groups["mappls"])
         groups["mappls"] = await _resolve_coords(groups["mappls"], bias, left, cap=2)
-    # house-level parse from Mappls first (when it could be placed), Ola next
+    # house-level parse from Mappls first (when it could be placed), Ola next;
+    # a bare house number IS the asked-for answer here — keep it
     merged = merge_results([groups.get("mappls", []), groups.get("ola", [])],
-                           q="", limit=limit)
+                           q="", limit=limit, drop_letterless=False)
     if not merged and errs and len(errs) == len(names):
         _cc(response, 0)
         return _failed("; ".join(f"{k} {v}" for k, v in errs.items()))
@@ -1186,8 +1252,15 @@ def parse_ola_reverse(data) -> Optional[dict]:
         city = city[: -len(" district")]
     if not name:
         return None
-    return {"name": name, "address": plain_sub(fa, "", 6),
-            "locality": locality, "city": city, "source": "ola"}
+    out = {"name": name, "address": plain_sub(fa, "", 6),
+           "locality": locality, "city": city, "source": "ola"}
+    pin = _comp(comps, "postal_code")
+    state = _comp(comps, "administrative_area_level_1")
+    if pin:
+        out["pincode"] = pin
+    if state:
+        out["state"] = state
+    return out
 
 
 def parse_mappls_reverse(data) -> Optional[dict]:
@@ -1214,8 +1287,20 @@ def parse_mappls_reverse(data) -> Optional[dict]:
         return None
     # Mappls appends "508 m from <poi>" prose to formatted_address — keep words
     addr = re.sub(r"\.?\s*\d+(\.\d+)?\s*m from [^,]*", "", fa)
-    return {"name": name, "address": plain_sub(addr, "", 6),
-            "locality": locality, "city": city, "source": "mappls"}
+    out = {"name": name, "address": plain_sub(addr, "", 6),
+           "locality": locality, "city": city, "source": "mappls"}
+    pin = str(g.get("pincode") or "").strip()
+    state = (g.get("state") or "").strip()
+    district = (g.get("district") or "").strip()
+    if district.lower().endswith(" district"):
+        district = district[: -len(" district")].strip()
+    if pin:
+        out["pincode"] = pin
+    if state:
+        out["state"] = state
+    if district:
+        out["district"] = district
+    return out
 
 
 @router.get("/reverse")
@@ -1484,14 +1569,9 @@ def downsample(pts: list, max_n: int = TT_MAX_PTS) -> list:
     return [clean[k] for k in out]
 
 
-def parse_tomtom_route(data) -> Optional[dict]:
-    """routes[0] -> contract dict. TRAFFIC section indices address the
-    response's own point list (legs[].points, concatenated)."""
-    routes = (data or {}).get("routes") or []
-    if not routes:
-        return None
-    r = routes[0]
-    s = r.get("summary") or {}
+def _tt_route_points(r: dict) -> tuple:
+    """route -> ([(lat,lon)], cum_m): the route's own polyline (all legs'
+    points concatenated) and cumulative metres along it."""
     pts = []
     for leg in r.get("legs") or []:
         for p in leg.get("points") or []:
@@ -1501,24 +1581,64 @@ def parse_tomtom_route(data) -> Optional[dict]:
     cum = [0.0]
     for a, b in zip(pts, pts[1:]):
         cum.append(cum[-1] + haversine_m(a[0], a[1], b[0], b[1]))
+    return pts, cum
+
+
+def _tt_sec_norm(s: str) -> str:
+    """'importantRoadStretch' (request) and 'IMPORTANT_ROAD_STRETCH'
+    (response) -> 'important_road_stretch'."""
+    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", str(s)).lower()
+
+
+def _tt_route(r: dict, requested: frozenset) -> dict:
+    """One routes[] entry -> contract dict. Section startPointIndex /
+    endPointIndex address this route's own point list."""
+    pts, cum = _tt_route_points(r)
+    s = r.get("summary") or {}
+    req = {_tt_sec_norm(x) for x in requested}
+    # False (checked, absent on this route) vs key missing (never asked)
+    flags = {fl: False for st, fl in _TT_FLAG_SECTIONS.items()
+             if _tt_sec_norm(st) in req}
 
     def at(i):
         if not pts:
             return None
-        i = max(0, min(int(i), len(pts) - 1))
-        return i
+        return max(0, min(int(i), len(pts) - 1))
 
-    roads = []
+    def span(sec):
+        i0, i1 = at(sec.get("startPointIndex") or 0), at(sec.get("endPointIndex") or 0)
+        if i0 is None:
+            return None
+        return {"lat": round(pts[i0][0], 6), "lon": round(pts[i0][1], 6),
+                "end_lat": round(pts[i1][0], 6), "end_lon": round(pts[i1][1], 6),
+                "from_m": int(round(cum[i0])), "to_m": int(round(cum[i1]))}
+
+    roads, jams, tolls, speed_limits = [], [], [], []
     for sec in r.get("sections") or []:
-        if str(sec.get("sectionType")) != "IMPORTANT_ROAD_STRETCH":
-            continue
-        nm = ((sec.get("streetName") or {}).get("text") or "").strip()
-        if not nm:
-            nm = ", ".join(x.get("text", "") for x in (sec.get("roadNumbers") or [])
-                           if x.get("text"))
-        if nm:
-            roads.append((int(sec.get("startPointIndex") or 0),
-                          int(sec.get("endPointIndex") or 0), nm))
+        st = str(sec.get("sectionType") or "")
+        fl = _TT_FLAG_SECTIONS.get(st)
+        if fl is not None and _tt_sec_norm(st) in req:
+            flags[fl] = True
+        if st == "IMPORTANT_ROAD_STRETCH":
+            nm = ((sec.get("streetName") or {}).get("text") or "").strip()
+            if not nm:
+                nm = ", ".join(x.get("text", "") for x in (sec.get("roadNumbers") or [])
+                               if x.get("text"))
+            if nm:
+                roads.append((int(sec.get("startPointIndex") or 0),
+                              int(sec.get("endPointIndex") or 0), nm))
+    named = []
+    if "important_road_stretch" in req:
+        seen_r, named = set(), []
+        for a, b, nm in sorted(roads):
+            key = (a, b, nm)
+            if key in seen_r:
+                continue
+            seen_r.add(key)
+            i0, i1 = at(a), at(b)
+            if i0 is not None:
+                named.append({"from_m": int(round(cum[i0])),
+                              "to_m": int(round(cum[i1])), "name": nm})
 
     def road_for(a, b) -> str:
         best, bo = "", 0
@@ -1528,29 +1648,75 @@ def parse_tomtom_route(data) -> Optional[dict]:
                 best, bo = nm, ov
         return best
 
-    jams = []
     for sec in r.get("sections") or []:
-        if str(sec.get("sectionType")) != "TRAFFIC":
+        st = str(sec.get("sectionType") or "")
+        if st == "TRAFFIC":
+            sp = span(sec)
+            if sp is None:
+                continue
+            cat = str(sec.get("simpleCategory") or "").lower() or None
+            mag = sec.get("magnitudeOfDelay")
+            jams.append({
+                **sp,
+                "delay_s": int(sec["delayInSeconds"]) if _num(sec.get("delayInSeconds")) is not None else None,
+                "road": road_for(at(sec.get("startPointIndex") or 0),
+                                 at(sec.get("endPointIndex") or 0)),
+                "magnitude": int(mag) if _num(mag) is not None else None,
+                "category": cat,
+                "speed_kmh": _num(sec.get("effectiveSpeedInKmh")),
+            })
+        elif st in ("TOLL", "TOLL_VIGNETTE"):
+            sp = span(sec)
+            if sp is None:
+                continue
+            pays = [str(p) for p in (sec.get("tollPaymentTypes") or []) if p]
+            t = dict(sp)
+            if pays:
+                t["payments"] = pays
+            if st == "TOLL_VIGNETTE":
+                t["vignette"] = True
+            tolls.append(t)
+        elif st == "SPEED_LIMIT":
+            sp = span(sec)
+            lim = _num(sec.get("maxSpeedLimitInKmh"))
+            if sp is None or lim is None:
+                continue
+            speed_limits.append({"from_m": sp["from_m"], "to_m": sp["to_m"],
+                                 "kmh": int(lim)})
+
+    instructions = []
+    for leg in r.get("legs") or []:
+        for ins in ((leg.get("guidance") or {}).get("instructions") or []):
+            msg = (ins.get("message") or "").strip()
+            if not msg:
+                continue
+            p = _latlon((ins.get("point") or {}).get("latitude"),
+                        (ins.get("point") or {}).get("longitude"))
+            it = {"i": len(instructions), "text": msg,
+                  "maneuver": ins.get("maneuver") or "",
+                  "street": ins.get("street") or "",
+                  "offset_m": int(_num(ins.get("routeOffsetInMeters")) or 0)}
+            tsec = _num(ins.get("travelTimeInSeconds"))
+            if tsec is not None:
+                it["t_s"] = int(tsec)
+            if p:
+                it["lat"], it["lon"] = round(p[0], 6), round(p[1], 6)
+            instructions.append(it)
+
+    progress = []
+    for pr in r.get("progress") or []:
+        d_m, t_s = _num(pr.get("distanceInMeters")), _num(pr.get("travelTimeInSeconds"))
+        pi = _num(pr.get("pointIndex"))
+        if d_m is None and t_s is None:
             continue
-        i0, i1 = at(sec.get("startPointIndex") or 0), at(sec.get("endPointIndex") or 0)
-        if i0 is None:
-            continue
-        cat = str(sec.get("simpleCategory") or "").lower() or None
-        mag = sec.get("magnitudeOfDelay")
-        jams.append({
-            "lat": round(pts[i0][0], 6), "lon": round(pts[i0][1], 6),
-            "end_lat": round(pts[i1][0], 6), "end_lon": round(pts[i1][1], 6),
-            "from_m": int(round(cum[i0])), "to_m": int(round(cum[i1])),
-            "delay_s": int(sec["delayInSeconds"]) if _num(sec.get("delayInSeconds")) is not None else None,
-            "road": road_for(i0, i1),
-            "magnitude": int(mag) if _num(mag) is not None else None,
-            "category": cat,
-            "speed_kmh": _num(sec.get("effectiveSpeedInKmh")),
-        })
+        progress.append({"i": int(pi or 0),
+                         "t_s": int(t_s) if t_s is not None else None,
+                         "d_m": int(round(d_m or 0))})
+
     live = _num(s.get("travelTimeInSeconds"))
     free = _num(s.get("noTrafficTravelTimeInSeconds"))
     delay = _num(s.get("trafficDelayInSeconds"))
-    return {
+    out = {
         "live_s": int(live) if live is not None else None,
         "freeflow_s": int(free) if free is not None else None,
         "delay_s": int(delay) if delay is not None else None,
@@ -1558,19 +1724,74 @@ def parse_tomtom_route(data) -> Optional[dict]:
         "jams": jams,
         "source": "tomtom",
     }
+    for src, dst in (("historicTrafficTravelTimeInSeconds", "historic_s"),
+                     ("liveTrafficIncidentsTravelTimeInSeconds", "incidents_s"),
+                     ("trafficLengthInMeters", "traffic_length_m"),
+                     ("deviationDistance", "deviation_m"),
+                     ("deviationTime", "deviation_s")):
+        v = _num(s.get(src))
+        if v is not None:
+            out[dst] = int(v)
+    for src, dst in (("fuelConsumptionInLiters", "fuel_l"),
+                     ("batteryConsumptionInkWh", "battery_kwh")):
+        v = _num(s.get(src))
+        if v is not None:
+            out[dst] = round(v, 3)
+    for src, dst in (("departureTime", "depart_at"),
+                     ("arrivalTime", "arrive_at")):
+        v = s.get(src)
+        if isinstance(v, str) and v:
+            out[dst] = v
+    if pts:
+        out["polyline"] = [[round(a, 6), round(b, 6)] for a, b in pts]
+    if flags:
+        out["flags"] = flags
+    if tolls:
+        out["tolls"] = tolls
+    if speed_limits:
+        out["speed_limits"] = speed_limits
+    if "important_road_stretch" in req and named:
+        out["roads"] = named
+    if progress:
+        out["progress"] = progress
+    if instructions:
+        out["instructions"] = instructions
+    return out
 
 
-_TT_MODES = {"car", "motorcycle", "bus", "taxi", "van", "truck"}
+def parse_tomtom_route(data, requested: frozenset = frozenset(TT_SECTION_TYPES)) -> Optional[dict]:
+    """routes[0] -> contract dict + routes[1:] -> alternatives, same shape.
+    `requested` = the section types the request asked for (a flag is only
+    claimed absent when we actually asked for it)."""
+    routes = (data or {}).get("routes") or []
+    if not routes:
+        return None
+    out = _tt_route(routes[0], requested)
+    alts = [_tt_route(r, requested) for r in routes[1:]]
+    if alts:
+        out["alternatives"] = alts
+    return out
 
 
-async def _route_traffic(pts: list, mode: str = "car") -> tuple:
-    """(dict, None) | (None, err). pts already [(lat, lon)], >= 2."""
+async def _route_traffic(pts: list, mode: str = "car", depart_at=None,
+                         consumption=None) -> tuple:
+    """(dict, None) | (None, err). pts already [(lat, lon)], >= 2.
+    consumption: ("combustion"|"electric", per-100 km amount) -> the summary
+    then carries the provider-computed fuel_l / battery_kwh."""
     sp = downsample(pts, TT_MAX_PTS)
     if len(sp) < 2:
         return None, "need >= 2 distinct points"
     mode = mode if mode in _TT_MODES else "car"
-    h = hashlib.sha1(("|".join(f"{a:.5f},{b:.5f}" for a, b in sp) + mode)
-                     .encode()).hexdigest()
+    dep = depart_at if isinstance(depart_at, str) and _DEPART_RE.match(depart_at) else None
+    cons = None
+    try:
+        eng, per = (consumption or (None, None))
+        if eng in ("combustion", "electric") and _num(per) and 0 < float(per) < 200:
+            cons = (eng, float(per))
+    except (TypeError, ValueError):
+        cons = None
+    h = hashlib.sha1(("|".join(f"{a:.5f},{b:.5f}" for a, b in sp)
+                      + mode + str(dep) + str(cons)).encode()).hexdigest()
     hit = _C_ROUTE.get(h)
     if hit is not None:
         return hit, None
@@ -1578,22 +1799,45 @@ async def _route_traffic(pts: list, mode: str = "car") -> tuple:
     url = (f"{TOMTOM_BASE}/routing/1/calculateRoute/"
            f"{o[0]:.6f},{o[1]:.6f}:{d[0]:.6f},{d[1]:.6f}/json")
     params = [("key", tomtom_key()), ("traffic", "true"),
-              ("sectionType", "traffic"), ("sectionType", "importantRoadStretch"),
               ("computeTravelTimeFor", "all"), ("routeType", "fastest"),
-              ("travelMode", mode)]
+              ("travelMode", mode),
+              ("maxAlternatives", str(TT_MAX_ALTS)),
+              ("alternativeType", "anyRoute"),
+              ("instructionsType", "text"), ("language", "en-GB"),
+              ("routeRepresentation", "polyline"),
+              ("includeTollPaymentTypes", "all"),
+              ("extendedRouteRepresentation", "distance"),
+              ("extendedRouteRepresentation", "travelTime")]
+    params += [("sectionType", st) for st in TT_SECTION_TYPES]
+    if dep:
+        params.append(("departAt", dep))
+    if cons:
+        eng, per = cons
+        params.append(("vehicleEngineType", eng))
+        params.append(("constantSpeedConsumptionInLitersPerHundredkm" if eng == "combustion"
+                       else "constantSpeedConsumptionInkWhPerHundredkm",
+                       f"50,{per:g}"))
     body = {"supportingPoints": [{"latitude": round(a, 6), "longitude": round(b, 6)}
                                  for a, b in sp]}
+    requested = frozenset(TT_SECTION_TYPES)
     data, err = await _call("POST", url, "tomtom", params=params, json_body=body,
                             budget="tomtom")
     if err == "http 400":
-        # road names are a nicety: if TomTom refuses the extra section type
-        # for this line, ask again for the traffic picture alone
-        params = [p for p in params if p != ("sectionType", "importantRoadStretch")]
+        # road names / guidance extras are niceties: if TomTom refuses the
+        # richer request for this line, ask again for the traffic picture
+        # alone (alternatives kept — verified harmless)
+        params = [("key", tomtom_key()), ("traffic", "true"),
+                  ("sectionType", "traffic"),
+                  ("computeTravelTimeFor", "all"), ("routeType", "fastest"),
+                  ("travelMode", mode),
+                  ("maxAlternatives", str(TT_MAX_ALTS)),
+                  ("alternativeType", "anyRoute")]
+        requested = frozenset({"traffic"})
         data, err = await _call("POST", url, "tomtom", params=params, json_body=body,
                                 budget="tomtom")
     if err:
         return None, err
-    out = parse_tomtom_route(data)
+    out = parse_tomtom_route(data, requested)
     if out is None:
         return None, "no route"
     _C_ROUTE.put(h, out)
@@ -1656,17 +1900,108 @@ def _densify(pts: list, step_m: float = 30.0, cap: int = 20000) -> list:
     return out
 
 
+def _ola_polyline(r: dict):
+    return decode_polyline(r.get("overview_polyline") or "")
+
+
+def _ola_poly_jams(poly: list, advisory: str) -> list:
+    """travel_advisory "from,to,level|..." -> jam spans measured along THIS
+    polyline (used for Ola's own alternative routes; the primary route's
+    jams are projected onto our line instead)."""
+    cum = [0.0]
+    for a, b in zip(poly, poly[1:]):
+        cum.append(cum[-1] + haversine_m(a[0], a[1], b[0], b[1]))
+    jams = []
+    for part in str(advisory or "").split("|"):
+        f = [x.strip() for x in part.split(",")]
+        if len(f) < 3:
+            continue
+        a, b, lv = _num(f[0]), _num(f[1]), _num(f[2])
+        cls = ola_level(lv)
+        if a is None or b is None or cls is None or not poly:
+            continue
+        a, b = max(0, int(a)), min(len(poly) - 1, int(b))
+        if a > b:
+            continue
+        # merge a same-category span separated from the last jam by a
+        # <= 50 m gap (the advisory is very granular)
+        if (jams and jams[-1]["category"] == cls[0]
+                and cum[a] - jams[-1]["to_m"] <= 50):
+            j = jams[-1]
+            if cum[b] > j["to_m"]:
+                j["to_m"] = int(round(cum[b]))
+                j["end_lat"], j["end_lon"] = round(poly[b][0], 6), round(poly[b][1], 6)
+            j["magnitude"] = max(j["magnitude"], cls[1])
+            j["level"] = max(j["level"], int(lv))
+            continue
+        jams.append({"lat": round(poly[a][0], 6), "lon": round(poly[a][1], 6),
+                     "end_lat": round(poly[b][0], 6), "end_lon": round(poly[b][1], 6),
+                     "from_m": int(round(cum[a])), "to_m": int(round(cum[b])),
+                     "delay_s": None, "road": "", "magnitude": cls[1],
+                     "category": cls[0], "speed_kmh": None,
+                     "level": int(lv)})
+    return jams
+
+
+def _ola_instructions(legs) -> list:
+    """legs[].steps[] -> turn-by-turn rows (real provider text)."""
+    out = []
+    for leg in legs or []:
+        for st in leg.get("steps") or []:
+            txt = (st.get("instructions") or "").strip()
+            if not txt:
+                continue
+            p = _latlon((st.get("start_location") or {}).get("lat"),
+                        (st.get("start_location") or {}).get("lng"))
+            it = {"i": len(out), "text": txt,
+                  "maneuver": str(st.get("maneuver") or ""),
+                  "distance_m": int(_num(st.get("distance")) or 0),
+                  "duration_s": int(_num(st.get("duration")) or 0)}
+            if p:
+                it["lat"], it["lon"] = round(p[0], 6), round(p[1], 6)
+            out.append(it)
+    return out
+
+
+def _ola_route_dict(r: dict, poly: list) -> dict:
+    """One Ola routes[] entry -> contract shape (its own polyline basis)."""
+    legs = r.get("legs") or []
+    dur = sum(_num(lg.get("duration")) or 0 for lg in legs)
+    dist = sum(_num(lg.get("distance")) or 0 for lg in legs)
+    out = {"live_s": int(dur) if dur else None,
+           "freeflow_s": None, "delay_s": None,
+           "length_m": int(dist) or None,
+           "jams": _ola_poly_jams(poly, r.get("travel_advisory")),
+           "source": "ola"}
+    if poly:
+        out["polyline"] = [[round(a, 6), round(b, 6)] for a, b in poly]
+    ins = _ola_instructions(legs)
+    if ins:
+        out["instructions"] = ins
+    if (r.get("summary") or "").strip():
+        out["summary"] = r["summary"].strip()
+    warns = [str(w) for w in (r.get("warnings") or []) if str(w).strip()]
+    if warns:
+        out["warnings"] = warns
+    adv = str(r.get("travel_advisory") or "")
+    if adv:
+        out["advisory"] = adv
+    return out
+
+
 def parse_ola_traffic(data, our_pts: list, near_m: float = 60.0) -> Optional[dict]:
-    """Ola Directions (overview=full, traffic_metadata=true) -> contract
-    dict measured along OUR line: a slow/jam span counts only where Ola's
-    polyline runs within near_m of our line; from_m/to_m are metres along
-    our line. live_s is Ola's own ETA, kept only when Ola's route length is
-    within 15 % of ours (else it describes a different road)."""
+    """Ola Directions (overview=full, traffic_metadata=true, steps=true,
+    alternatives=true) -> contract dict measured along OUR line: a slow/jam
+    span counts only where Ola's polyline runs within near_m of our line;
+    from_m/to_m are metres along our line. live_s is Ola's own ETA, kept
+    only when Ola's route length is within 15 % of ours (else it describes
+    a different road). polyline / instructions / advisory / alternatives
+    describe Ola's own returned geometry, not our line."""
     routes = (data or {}).get("routes") or []
     if not routes or len(our_pts) < 2:
         return None
     r = routes[0]
-    poly = decode_polyline(r.get("overview_polyline") or "")
+    poly = _ola_polyline(r)
     if poly and haversine_m(poly[0][0], poly[0][1], our_pts[0][0], our_pts[0][1]) > 50000:
         poly = decode_polyline(r.get("overview_polyline") or "", 6)
     legs = r.get("legs") or []
@@ -1704,36 +2039,67 @@ def parse_ola_traffic(data, our_pts: list, near_m: float = 60.0) -> Optional[dic
         a, b = max(0, int(a)), min(len(poly) - 1, int(b))
         hits = [k for k in (nearest(poly[i]) for i in range(a, b + 1)) if k is not None]
         if hits:
-            spans.append((min(hits), max(hits), cls))
+            spans.append((min(hits), max(hits), cls, int(lv)))
     spans.sort()
     jams: list = []
-    for k0, k1, (cat, mag) in spans:
+    for k0, k1, (cat, mag), lv in spans:
         if jams and jams[-1]["category"] == cat and cum[k0] - jams[-1]["to_m"] <= 50:
             j = jams[-1]
             if cum[k1] > j["to_m"]:
                 j["to_m"] = int(round(cum[k1]))
                 j["end_lat"], j["end_lon"] = round(our[k1][0], 6), round(our[k1][1], 6)
             j["magnitude"] = max(j["magnitude"], mag)
+            j["level"] = max(j["level"], lv)
             continue
         jams.append({"lat": round(our[k0][0], 6), "lon": round(our[k0][1], 6),
                      "end_lat": round(our[k1][0], 6), "end_lon": round(our[k1][1], 6),
                      "from_m": int(round(cum[k0])), "to_m": int(round(cum[k1])),
                      "delay_s": None, "road": "", "magnitude": mag,
-                     "category": cat, "speed_kmh": None})
+                     "category": cat, "speed_kmh": None, "level": lv})
     same_road = bool(dist) and our_len > 0 and abs(dist - our_len) <= 0.15 * our_len
-    return {"live_s": int(dur) if (dur and same_road) else None,
-            "freeflow_s": None, "delay_s": None,
-            "length_m": int(dist) or None, "jams": jams, "source": "ola"}
+    out = {"live_s": int(dur) if (dur and same_road) else None,
+           "freeflow_s": None, "delay_s": None,
+           "length_m": int(dist) or None, "jams": jams, "source": "ola"}
+    if poly:
+        out["polyline"] = [[round(a, 6), round(b, 6)] for a, b in poly]
+    ins = _ola_instructions(legs)
+    if ins:
+        out["instructions"] = ins
+    if (r.get("summary") or "").strip():
+        out["summary"] = r["summary"].strip()
+    warns = [str(w) for w in (r.get("warnings") or []) if str(w).strip()]
+    if warns:
+        out["warnings"] = warns
+    adv = str(r.get("travel_advisory") or "")
+    if adv:
+        out["advisory"] = adv
+    alts = []
+    for alt in routes[1:]:
+        alts.append(_ola_route_dict(alt, _ola_polyline(alt)))
+    if alts:
+        out["alternatives"] = alts
+    return out
 
 
-async def _ola_route_traffic(pts: list) -> tuple:
-    """(dict, None) | (None, err): Ola Directions travel_advisory on the
-    line's own origin -> destination, projected back onto the line."""
+# our mode names -> Ola's documented modes (driving | walking | bike | auto)
+_OLA_MODES = {"car": "driving", "taxi": "driving", "cab": "driving",
+              "bus": "driving", "van": "driving", "truck": "driving",
+              "motorcycle": "driving", "two_wheeler": "bike",
+              "bicycle": "bike", "bike": "bike", "cycling": "bike",
+              "walk": "walking", "pedestrian": "walking", "walking": "walking",
+              "auto": "auto", "rickshaw": "auto"}
+
+
+async def _ola_route_traffic(pts: list, mode: str = "driving") -> tuple:
+    """(dict, None) | (None, err): Ola Directions (alternatives + steps +
+    traffic_metadata) on the line's own origin -> destination, projected
+    back onto the line."""
     sp = downsample(pts, TT_MAX_PTS)
     if len(sp) < 2:
         return None, "need >= 2 distinct points"
-    h = "ola:" + hashlib.sha1("|".join(f"{a:.5f},{b:.5f}" for a, b in sp)
-                              .encode()).hexdigest()
+    omode = _OLA_MODES.get(str(mode or "").lower(), "driving")
+    h = "ola:" + hashlib.sha1(("|".join(f"{a:.5f},{b:.5f}" for a, b in sp)
+                               + omode).encode()).hexdigest()
     hit = _C_ROUTE.get(h)
     if hit is not None:
         return hit, None
@@ -1742,8 +2108,10 @@ async def _ola_route_traffic(pts: list) -> tuple:
         "POST", OLA_BASE + "/routing/v1/directions", "ola",
         params={"origin": f"{o[0]:.6f},{o[1]:.6f}",
                 "destination": f"{d[0]:.6f},{d[1]:.6f}",
-                "alternatives": "false", "steps": "false", "overview": "full",
-                "traffic_metadata": "true", "api_key": ola_key()},
+                "mode": omode,
+                "alternatives": "true", "steps": "true", "overview": "full",
+                "traffic_metadata": "true", "language": "en",
+                "route_preference": "fastest", "api_key": ola_key()},
         budget="ola:directions", headers={"X-Request-Id": uuid.uuid4().hex})
     if err:
         return None, err
@@ -1757,13 +2125,17 @@ async def _ola_route_traffic(pts: list) -> tuple:
     return out, None
 
 
-async def _traffic(pts: list, mode: str = "car") -> tuple:
-    """TomTom (best: delay + jam speeds) -> Ola travel_advisory -> nothing.
-    Skips a provider that is unconfigured or over today's budget."""
+async def _traffic(pts: list, mode: str = "car", depart_at=None,
+                   consumption=None) -> tuple:
+    """TomTom (best: delay + jam speeds + tolls + speed limits +
+    alternatives + time profile) -> Ola travel_advisory + steps ->
+    nothing. Skips a provider that is unconfigured or over today's
+    budget."""
     errs = []
     if tomtom_key():
         if BUDGET.allow("tomtom"):
-            out, err = await _route_traffic(pts, mode)
+            out, err = await _route_traffic(pts, mode, depart_at=depart_at,
+                                            consumption=consumption)
             if out is not None:
                 return out, None
             errs.append(err)
@@ -1771,7 +2143,7 @@ async def _traffic(pts: list, mode: str = "car") -> tuple:
             errs.append("budget")
     if ola_key():
         if ola_budget_ok("/routing/v1/directions"):
-            out, err = await _ola_route_traffic(pts)
+            out, err = await _ola_route_traffic(pts, mode)
             if out is not None:
                 return out, None
             errs.append(err)
@@ -1784,24 +2156,36 @@ async def _traffic(pts: list, mode: str = "car") -> tuple:
 
 
 async def traffic_for_route(coords, lonlat: Optional[bool] = None,
-                            mode: str = "car") -> Optional[dict]:
+                            mode: str = "car", depart_at=None,
+                            consumption=None) -> Optional[dict]:
     """For other server modules (async): live traffic on a route line.
 
         t = await traffic_for_route([[lat, lon], ...])
-        -> {live_s, freeflow_s, delay_s, length_m, jams[...], source} | None
+        -> {live_s, freeflow_s, delay_s, length_m, jams[...], source,
+            historic_s, incidents_s, traffic_length_m, depart_at,
+            arrive_at, polyline, roads, tolls, speed_limits, flags,
+            progress, instructions, alternatives}  (all additive; only
+            present when the provider really returned them) | None
 
     TomTom first; Ola Directions travel_advisory when TomTom is absent, over
-    budget or failing (source "ola": no delay_s, jams carry category
-    slow|jam + magnitude only); None when neither can answer (callers then
-    show no traffic — never a made-up one). GeoJSON [lon, lat] order is
-    auto-detected (or force lonlat=True)."""
+    budget or failing (source "ola": no delay_s; jams carry category
+    slow|jam + magnitude + level; adds real turn-by-turn instructions and
+    alternatives with their own advisories); None when neither can answer
+    (callers then show no traffic — never a made-up one). GeoJSON
+    [lon, lat] order is auto-detected (or force lonlat=True).
+
+    Optional: mode (TomTom travelMode; Ola driving/walking/bike/auto),
+    depart_at (ISO 8601 str -> TomTom departAt), consumption=
+    ("combustion"|"electric", per-100 km amount) -> fuel_l / battery_kwh
+    computed by TomTom's own model."""
     if not (tomtom_key() or ola_key()):
         return None
     try:
         pts = _coerce_coords(coords, lonlat)
         if len(pts) < 2:
             return None
-        out, err = await _traffic(pts, mode)
+        out, err = await _traffic(pts, mode, depart_at=depart_at,
+                                  consumption=consumption)
         return out if not err else None
     except Exception:  # noqa: BLE001 — a traffic miss must never break a plan
         log.warning("traffic_for_route failed")
@@ -1828,7 +2212,20 @@ async def route_traffic(request: Request):
     if len(pts) < 2:
         return JSONResponse({"error": "need >= 2 valid [lat,lon] points"},
                             status_code=400)
-    out, err = await _traffic(pts, str(body.get("mode") or "car"))
+    # optional extras (all real provider features):
+    #   depart_at: ISO-8601 -> TomTom departAt (future/planning traffic)
+    #   fuel_l100 / kwh_100km: a vehicle consumption figure -> TomTom's own
+    #   consumption model returns fuel_l / battery_kwh per route
+    cons = None
+    fl = _num(body.get("fuel_l100"))
+    kw = _num(body.get("kwh_100km"))
+    if fl and 0 < fl < 200:
+        cons = ("combustion", fl)
+    elif kw and 0 < kw < 200:
+        cons = ("electric", kw)
+    out, err = await _traffic(pts, str(body.get("mode") or "car"),
+                              depart_at=body.get("depart_at"),
+                              consumption=cons)
     if err == "budget":
         return _degraded()
     if err:
@@ -1966,5 +2363,5 @@ async def incidents(response: Response, bbox: str = Query(..., max_length=120)):
 
 
 __all__ = ["router", "traffic_for_route", "merge_results", "plain_sub",
-           "parse_tomtom_route", "parse_incidents", "downsample", "clear_caches",
-           "set_transport"]
+           "parse_tomtom_route", "parse_ola_traffic", "parse_incidents",
+           "downsample", "decode_polyline", "clear_caches", "set_transport"]
