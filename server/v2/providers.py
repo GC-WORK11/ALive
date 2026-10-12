@@ -119,7 +119,19 @@ DELHI = (28.6139, 77.2090)           # default bias point (CP area)
 # Palwal, Meerut, Bulandshahr all inside. Used for bias only, never to filter.
 NCR_WIDE = (27.6, 76.0, 30.0, 78.6)  # minLat, minLon, maxLat, maxLon
 FAR_KM = 200.0                       # results beyond this sink to the end
-DEDUP_M = 60.0                       # same name within this = same place
+DEDUP_M = 250.0                      # same name within this = same place
+# two providers pin one POI a block or two apart — 60 m let the same
+# hotel show twice; a partial name that only matches across a city
+# boundary is never the type-ahead target
+PARTIAL_FAR_M = 60000.0
+# a name that is only a category word — 'Hotel', 'ATM', 'School' — is an
+# unnamed feature, never a row the user can pick
+_GENERIC_NAME_WORDS = frozenset("""
+hotel hostel lodge lodging motel resort inn guesthouse restaurant cafe
+dhaba hotel atm hospital clinic school college university bank park mall
+market shop store pharmacy gym office temple mosque church gurudwara
+gurdwara station airport stop stand petrol pump
+""".split())
 MAX_RESOLVE = 4                      # Mappls coord look-ups per request
 TT_MAX_PTS = 150                     # TomTom supportingPoints cap
 
@@ -823,8 +835,16 @@ def _item_rank(it: dict, q: str) -> int:
 
 
 def _dup(a: dict, b: dict) -> bool:
-    if _norm(a["name"]) != _norm(b["name"]):
-        return False
+    an, bn = _norm(a["name"]), _norm(b["name"])
+    if an != bn:
+        # word-order and coverage variants of one name: 'Hotel IBIS' vs
+        # 'IBIS Hotel', 'AIIMS' vs 'AIIMS Hospital' — equal or nested
+        # token sets still name the same row when the pins sit together
+        at, bt = frozenset(an.split()), frozenset(bn.split())
+        if at != bt:
+            small, big = (at, bt) if len(at) <= len(bt) else (bt, at)
+            if not small < big or not any(len(t) >= 4 for t in small):
+                return False
     if a["lat"] is not None and b["lat"] is not None:
         return haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) <= DEDUP_M
     return _norm(a["sub"]) == _norm(b["sub"])
@@ -837,8 +857,22 @@ def merge_results(groups: list, q: str = "", limit: int = 10) -> list:
     ranked = []
     for gi, items in enumerate(groups):
         for ri, it in enumerate(items or []):
+            # a provider name with no letters is a pincode or a '00'
+            # house-name — never a place the user can pick
+            _nm = _norm(it.get("name") or "")
+            if not re.search(r"[a-z]", _nm):
+                continue
+            _nt = _nm.split()
+            if len(_nt) == 1 and _nt[0] in _GENERIC_NAME_WORDS:
+                continue
+            rank = _item_rank(it, q)
+            # a weak text match cities away ('Saket' partial in another
+            # town) is noise even at the tail — drop, don't sink
+            if (rank >= 2 and it.get("distance_m") is not None
+                    and it["distance_m"] > PARTIAL_FAR_M):
+                continue
             far = it.get("distance_m") is not None and it["distance_m"] > FAR_KM * 1000
-            ranked.append(((1 if far else 0), _item_rank(it, q), ri, gi, it))
+            ranked.append(((1 if far else 0), rank, ri, gi, it))
     ranked.sort(key=lambda t: t[:4])
     out: list = []
     for *_, it in ranked:

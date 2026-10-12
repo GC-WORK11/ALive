@@ -234,6 +234,26 @@ def _merge(t1: list, t2: list, qn: str, blat: float, blon: float,
         # duplicate while every same-named pool row sits at CP
         anchors = [a for a in anchors
                    if not _anchor_corrupt(a, merged)]
+    if anchors:
+        # a named-entity anchor that already consumed the whole ask is
+        # not a ward constraint — 'aiims' asks for the thing itself, and
+        # re-ranking every row named after it ('AIIMS' platform, metro
+        # gates, flyover) above the engine's own landmark order is how
+        # the bus bay beat the hospital. The vouch machinery exists for
+        # '<thing> in <place>' asks: it only runs when a locality-family
+        # anchor is present or the query still asks something the
+        # anchors didn't claim.
+        _cov_spans = set()
+        for a in anchors:
+            _s, _e = a.get("span") or (None, None)
+            if _s is not None:
+                _cov_spans.update(range(_s, _e))
+        _leftover = [t for i, t in enumerate(qn.split())
+                     if i not in _cov_spans and t not in _METRO_TOKS]
+        if not _leftover and not any(
+                _anchor_w(a) >= 2 for a in anchors):
+            anchors = []
+    if anchors:
         # qualifier ordering — a second resolvable locality in the
         # query ('ashok nagar shahdara', 'gulati pandara road') is the
         # user's ward; rows sitting near it win their match class, and
@@ -1818,6 +1838,14 @@ def _merge_honesty_rules(merged: list, qn: str) -> None:
                 any(t not in rtoks for t in qreal):
             r["match_rank"], r["match"], r["suspect"] = \
                 3, _MATCH_NAMES[3], "degenerate-name"
+            r["_pen"] = 1
+            continue
+        # a name that is only a category word — 'Hotel', 'ATM', 'Park' —
+        # is an unnamed feature: it answers nothing a named row could
+        # and it crowds out the real hotels for 'hotel'
+        if len(rtoks) == 1 and rtoks[0] in _NEUTRAL_TOKS:
+            r["match_rank"], r["match"], r["suspect"] = \
+                3, _MATCH_NAMES[3], "generic-name"
             r["_pen"] = 1
             continue
         kind = (r.get("kind") or "").lower()

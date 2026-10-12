@@ -55,7 +55,10 @@ def wired(monkeypatch):
                         [(28.6315, 77.2167, "test-station"),
                          (28.5850, 77.2300, "test-south")], raising=False)
     vals = [150.0] * 120
-    for i in range(30, 40):
+    # dip rides a few hours ahead of now — fixed slots (30-39) sit
+    # outside the next-24h serve early in the UTC day
+    now_h = datetime.now(timezone.utc).hour
+    for i in range(now_h + 6, now_h + 16):
         vals[i] = 60.0
     _seed_forecast(vals)
 
