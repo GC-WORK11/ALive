@@ -38,6 +38,21 @@ const API_ORIGIN = (() => {
 let map = null, ready = false, queue = [];
 let fieldEpoch = null, field = null, fieldWanted = false, fieldTimer = null;
 let styleOk = false, fellBack = false, omtTileOk = false, omtErrors = 0;
+/* WebGL-off mode: a Leaflet raster map takes the same API instead of a
+   dead canvas — 'basic' means no street-level air colours, everything
+   else (field tint, pins, puck, routes, traffic tiles) still works */
+let basicMode = false, fieldImg = null, trafficLayer = null;
+const lfRoutes = new Map();
+
+function markReady() {
+  if (ready) return;
+  ready = true;
+  queue.forEach((cb) => { try { cb(map); } catch (err) { /* one caller's bug never blocks the rest */ } });
+  queue = [];
+  loadField(true);
+  // live field — repaint every 5 min quietly
+  fieldTimer = setInterval(() => loadField(false), 300000);
+}
 
 /* ── basemap ─────────────────────────────────────────────────────── */
 /* the offline fallback: our own pmtiles, quiet positron-like paint, no
@@ -121,8 +136,124 @@ function noMapNote() {
   el.appendChild(n);
 }
 
+/* ── basic mode: Leaflet + raster tiles when WebGL can't run ────────── */
+/* a slim chip, not a wall — the map is real, just without street-level
+   air colours (those need the vector source only WebGL can draw) */
+function basicNote() {
+  const el = document.getElementById('map');
+  if (!el || el.querySelector('.map-nogl')) return;
+  const n = document.createElement('div');
+  n.className = 'map-nogl';
+  n.setAttribute('role', 'note');
+  n.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:800;max-width:82%;padding:6px 12px;border-radius:20px;background:rgba(255,255,255,.92);box-shadow:0 1px 4px rgba(20,20,20,.14);font-size:12.5px;line-height:1.4;color:#4A4E57;text-align:center;pointer-events:none';
+  n.textContent = 'Basic map — this browser has graphics acceleration off, so live road colours can\'t draw. Everything else still works.';
+  el.appendChild(n);
+}
+function initBasic() {
+  basicMode = true;
+  if (!document.getElementById('map')) { noMapNote(); return; }
+  const start = () => {
+    if (!window.L) { noMapNote(); return; }
+    map = window.L.map('map', {
+      center: [A.DELHI.lat, A.DELHI.lon], zoom: 11,
+      minZoom: 9, maxZoom: 18, zoomControl: false,
+    });
+    window.L.control.zoom({ position: 'bottomright' }).addTo(map);
+    window.L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors · tiles: Wikimedia',
+    }).addTo(map);
+    map.on('click', (e) => {
+      document.dispatchEvent(new CustomEvent('alive:maptap', { detail: { lat: e.latlng.lat, lon: e.latlng.lng, point: e.containerPoint } }));
+    });
+    basicNote();
+    markReady();
+  };
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  document.head.appendChild(css);
+  const s = document.createElement('script');
+  s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload = start;
+  s.onerror = noMapNote;
+  document.head.appendChild(s);
+}
+/* the field tint is a painted PNG — an image overlay carries it in
+   basic mode exactly like the raster source does under MapLibre */
+function leafFieldVisible(v) {
+  if (!map || !fieldImg) return;
+  if (v && !map.hasLayer(fieldImg)) fieldImg.addTo(map);
+  if (!v && map.hasLayer(fieldImg)) map.removeLayer(fieldImg);
+}
+const leafLL = (coords) => coords.map((c) => [c[1], c[0]]);
+function leafShowRoute(id, geojson, segments) {
+  onReady(() => {
+    leafHideRoute(id);
+    const coords = geojson.coordinates || (geojson.geometry && geojson.geometry.coordinates) || [];
+    if (!coords.length) return;
+    const g = window.L.layerGroup().addTo(map);
+    window.L.polyline(leafLL(coords), { color: '#ffffff', weight: 10, opacity: 0.55, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+    window.L.polyline(leafLL(coords), { color: '#2A4D3B', weight: 5, opacity: 0.85, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+    const n = coords.length;
+    for (const s of segments || []) {
+      const bi = segBandIdx(s);
+      if (bi == null) continue;
+      const a = Math.floor((s.start_frac ?? 0) * (n - 1));
+      const b = Math.max(a + 1, Math.ceil((s.end_frac ?? 1) * (n - 1)));
+      window.L.polyline(leafLL(coords.slice(a, b + 1)), { color: BANDS[bi], weight: 5, opacity: 0.9, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+    }
+    lfRoutes.set(id, g);
+  });
+}
+function leafHideRoute(id) { const g = lfRoutes.get(id); if (g) { g.remove(); lfRoutes.delete(id); } }
+function leafHideAll() { lfRoutes.forEach((g) => g.remove()); lfRoutes.clear(); }
+function leafPin(id, lon, lat, html, cls) {
+  onReady(() => {
+    unpin(id);
+    const ic = window.L.divIcon({ className: '', html: `<div class="alive-pin ${cls || ''}" style="transform:translate(-50%,-50%)">${html || '<div class="pin-dot"></div>'}</div>` });
+    pins.set(id, window.L.marker([lat, lon], { icon: ic, interactive: false, keyboard: false }).addTo(map));
+  });
+}
+function leafPuckMove(lat, lon, acc) {
+  onReady(() => {
+    if (!puck) {
+      const ic = window.L.divIcon({ className: '', html: '<div class="alive-puck" style="transform:translate(-50%,-50%)"><div class="puck-ring"></div><div class="puck-core"></div></div>' });
+      puck = window.L.marker([lat, lon], { icon: ic, interactive: false, keyboard: false }).addTo(map);
+      puckEl = puck.getElement() && puck.getElement().firstChild;
+    } else puck.setLatLng([lat, lon]);
+    if (acc && puckEl) puckEl.style.setProperty('--acc', `${Math.min(160, acc)}px`);
+  });
+}
+function leafFly(lat, lon, zoom) {
+  onReady(() => map.flyTo([lat, lon], zoom ?? map.getZoom(), { duration: 0.9 }));
+}
+function leafFit(geojsonOrCoords, pad = 90) {
+  onReady(() => {
+    const g = geojsonOrCoords;
+    const coords = g.type === 'Feature' ? g.geometry.coordinates : g.type === 'LineString' ? g.coordinates : g;
+    if (!coords || !coords.length) return;
+    map.flyToBounds(window.L.latLngBounds(leafLL(coords)), { padding: window.L.point(pad, pad) });
+  });
+}
+function leafTraffic(on) {
+  const off = () => { if (trafficLayer) { trafficLayer.remove(); trafficLayer = null; } return false; };
+  if (!on || !map) return Promise.resolve(off());
+  return probeFlow().then((ok) => {
+    if (!ok) return off();
+    if (!trafficLayer) {
+      trafficLayer = window.L.tileLayer(`${API_ORIGIN}/v2/p/flow_tile/{z}/{x}/{y}.png`, {
+        tileSize: 256, minZoom: 6, maxZoom: 18, opacity: 0.9,
+        bounds: [[27.4, 75.8], [30.0, 78.9]],
+      });
+    }
+    trafficLayer.addTo(map);
+    return true;
+  });
+}
+
 function init() {
-  if (!webglOK() || !window.maplibregl) { noMapNote(); return; }
+  if (!webglOK() || !window.maplibregl) { initBasic(); return; }
   map = new maplibregl.Map({
     container: 'map',
     style: STYLE_URL,
@@ -157,15 +288,6 @@ function init() {
     if (!sid && msg && !/glyph|sprite|fetch|abort|network/i.test(msg)) console.warn('[map]', msg);
   });
   map.on('data', (e) => { if (!omtTileOk && e.sourceId === OMT && e.tile) omtTileOk = true; });
-  const markReady = () => {
-    if (ready) return;
-    ready = true;
-    queue.forEach((cb) => { try { cb(map); } catch (err) { /* one caller's bug never blocks the rest */ } });
-    queue = [];
-    loadField(true);
-    // live field — repaint every 5 min quietly
-    fieldTimer = setInterval(() => loadField(false), 300000);
-  };
   map.on('load', markReady);
   map.on('click', (e) => {
     document.dispatchEvent(new CustomEvent('alive:maptap', { detail: { lat: e.lngLat.lat, lon: e.lngLat.lng, point: e.point } }));
@@ -327,6 +449,15 @@ async function loadField(first) {
   const url = paintTint(L);
   const coords = [[L.x0, L.y1], [L.x1, L.y1], [L.x1, L.y0], [L.x0, L.y0]];
   onReady((m) => {
+    if (basicMode) {
+      const b = [[L.y0, L.x0], [L.y1, L.x1]];
+      if (fieldImg) { fieldImg.setUrl(url); fieldImg.setBounds(b); }
+      else {
+        fieldImg = window.L.imageOverlay(url, b, { opacity: 0.42, interactive: false });
+        if (fieldWanted) fieldImg.addTo(m);
+      }
+      return;
+    }
     const src = m.getSource('alive-field');
     if (src && typeof src.updateImage === 'function') src.updateImage({ url, coordinates: coords });
     else {
@@ -457,6 +588,16 @@ function trafficTileXY(z) {
   return [Math.floor(((A.DELHI.lon + 180) / 360) * n),
     Math.floor(((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) * n)];
 }
+function probeFlow() {
+  if (!trafficProbe || (trafficOk === false && Date.now() - trafficProbe.t > 300000)) {
+    const [x, y] = trafficTileXY(11);
+    const p = fetch(`${API_ORIGIN}/v2/p/flow_tile/11/${x}/${y}.png`, { cache: 'no-store' })
+      .then((r) => { trafficOk = !!(r.ok && /image/.test(r.headers.get('content-type') || '')); return trafficOk; })
+      .catch(() => { trafficOk = false; return false; });
+    trafficProbe = { t: Date.now(), p };
+  }
+  return trafficProbe.p;
+}
 function traffic(m, on) {
   const mm = m || map;
   if (!mm) return Promise.resolve(false);
@@ -466,14 +607,7 @@ function traffic(m, on) {
     return false;
   };
   if (!on) return Promise.resolve(off());
-  if (!trafficProbe || (trafficOk === false && Date.now() - trafficProbe.t > 300000)) {
-    const [x, y] = trafficTileXY(11);
-    const p = fetch(`${API_ORIGIN}/v2/p/flow_tile/11/${x}/${y}.png`, { cache: 'no-store' })
-      .then((r) => { trafficOk = !!(r.ok && /image/.test(r.headers.get('content-type') || '')); return trafficOk; })
-      .catch(() => { trafficOk = false; return false; });
-    trafficProbe = { t: Date.now(), p };
-  }
-  return trafficProbe.p.then((ok) => {
+  return probeFlow().then((ok) => {
     if (!ok) return off();
     const add = () => {
       if (!mm.getSource(SRC)) {
@@ -646,13 +780,26 @@ function fit(geojsonOrCoords, pad = 90) {
 }
 function center() { return map && map.getCenter(); }
 
-A.map = { init, ready: onReady, loadField, setFieldVisible,
+/* basic mode dispatch — the Leaflet map speaks the same API; callers
+   never learn which engine drew. Pure functions never branch. */
+A.map = { init, ready: onReady, loadField,
+  setFieldVisible: (v) => basicMode ? leafFieldVisible(v) : setFieldVisible(v),
   get fieldEpoch() { return fieldEpoch; },
-  showRoute, hideRoute, hideAllRoutes, pin, unpin, clearPins,
-  puckMove, puckRemove, fly, fit, center,
-  traffic, airRoads, sampleField, fieldInfo, BANDS, cpcbAqi, cpcb, aqiBand: aqiBandIdx,
+  showRoute: (id, g, s) => basicMode ? leafShowRoute(id, g, s) : showRoute(id, g, s),
+  hideRoute: (id) => basicMode ? leafHideRoute(id) : hideRoute(id),
+  hideAllRoutes: () => basicMode ? leafHideAll() : hideAllRoutes(),
+  pin: (id, lon, lat, html, cls) => basicMode ? leafPin(id, lon, lat, html, cls) : pin(id, lon, lat, html, cls),
+  unpin, clearPins,
+  puckMove: (lat, lon, acc) => basicMode ? leafPuckMove(lat, lon, acc) : puckMove(lat, lon, acc),
+  puckRemove,
+  fly: (lat, lon, zoom, opts) => basicMode ? leafFly(lat, lon, zoom, opts) : fly(lat, lon, zoom, opts),
+  fit: (g, pad) => basicMode ? leafFit(g, pad) : fit(g, pad),
+  center,
+  traffic: (m, on) => basicMode ? leafTraffic(on) : traffic(m, on),
+  airRoads: (on) => { if (!basicMode) airRoads(on); },
+  sampleField, fieldInfo, BANDS, cpcbAqi, cpcb, aqiBand: aqiBandIdx,
   segBand: segBandIdx,
-  get basemap() { return fellBack ? 'offline' : 'openfreemap'; },
+  get basemap() { return basicMode ? 'leaflet' : fellBack ? 'offline' : 'openfreemap'; },
   get map() { return map; } };
 init();
 void fieldTimer;
