@@ -78,13 +78,17 @@ const geo = {
     if (!navigator.geolocation) throw new Error('no geolocation');
     const goodM = (opts && opts.goodM) || 100, waitMs = (opts && opts.waitMs) || 5000;
     return new Promise((res, rej) => {
-      let best = null, done = false, id = null, tm = null;
+      let best = null, done = false, id = null, tm = null, tm2 = null;
       const end = (err) => {
         if (done) return; done = true;
-        clearTimeout(tm); if (id != null) navigator.geolocation.clearWatch(id);
+        clearTimeout(tm); clearTimeout(tm2); if (id != null) navigator.geolocation.clearWatch(id);
         if (best) { geo.pos = best; store.set('pos', best); res(best); } else rej(err || new Error('no fix'));
       };
       tm = setTimeout(() => (best ? end() : null), waitMs);
+      /* hard deadline: a silent watch (no fix, no error callback — e.g.
+         an unreported denial) must not leave the promise pending past
+         the watch's own timeout window */
+      tm2 = setTimeout(() => end(Object.assign(new Error('no fix'), { code: 3 })), 16000);
       id = navigator.geolocation.watchPosition((p) => {
         const pos = { lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now(), acc: p.coords.accuracy };
         if (!best || !(best.acc <= pos.acc)) best = pos;

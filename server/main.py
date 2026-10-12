@@ -1337,7 +1337,9 @@ async def leave_feedback(body: dict, request: Request):
     now = time.time()
     hits = [t for t in _review_rate.get(host, []) if now - t < 3600]
     if len(hits) >= _REVIEW_MAX_PER_HOUR:
-        raise HTTPException(429, "feedback rate limit — try later")
+        retry = max(1, int(3600 - (now - hits[0])))
+        raise HTTPException(429, "feedback rate limit — try later",
+                            headers={"Retry-After": str(retry)})
     hits.append(now)
     _review_rate[host] = hits
     # the limiter map itself must stay bounded — a public endpoint would

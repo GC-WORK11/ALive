@@ -173,6 +173,16 @@ def _norm_text(s: str) -> str:
     return _html.unescape(re.sub(r"\s+", " ", s or "")).strip()
 
 
+_AGENCY_PREFIX = re.compile(r"^[A-Z][A-Z0-9]+(?:-[A-Z][A-Z0-9]+)+\s+")
+
+
+def _display_label(label: str) -> str:
+    """Nav labels carry the operator's own code ('SPM-SPC Talkatora
+    Garden') — strip the all-caps dash-code prefix for display; the
+    raw label still drives STATIONS/registry resolution."""
+    return _AGENCY_PREFIX.sub("", label) or label
+
+
 def station_links(index_html: str) -> list:
     """Index tree links -> [(b64, label)] in order, deduped."""
     seen, out = set(), []
@@ -315,15 +325,16 @@ def _bundle_from_pages(pages: dict, now: float) -> dict:
         ts = parsed["ts"]
         ts_utc = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
+        disp = _display_label(label)
         for param, (v, unit, src_v) in parsed["vals"].items():
             obs.append({
-                "station_id": b64, "name": label,
+                "station_id": b64, "name": disp,
                 "lat": lat, "lon": lon,
                 "parameter": param, "value": v, "unit": "µg/m³",
                 "src_value": src_v, "src_unit": unit,
                 "ts": ts, "ts_utc": ts_utc, "coord_src": prov,
             })
-        stations.append({"lat": lat, "lon": lon, "name": label,
+        stations.append({"lat": lat, "lon": lon, "name": disp,
                          "pm25": pm[0], "ts": ts, "station_id": b64})
     return {"stations": stations, "obs": obs, "skipped": skipped}
 
