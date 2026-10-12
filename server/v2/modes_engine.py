@@ -665,11 +665,24 @@ def pick_and_explain(options: list, mode: str, vehicle: str,
             elif one_road:
                 o["why"] = "the same road wins every way"
             elif mode == "time_health" and tie_slower:
-                # a cleaner row within a minute of the fastest won the tie
-                o["why"] = ("within a minute of fastest, cleanest air"
-                            if _dose(o) is not None and min_dose is not None
-                            and _dose(o) <= min_dose * 1.0001
-                            else "within a minute of fastest, cleaner air")
+                # a cleaner row near the pool's fastest won the tie —
+                # but "fastest" has to hold against every row on screen,
+                # not just the clean-window candidates (a visibly
+                # quicker road below made the old claim false).
+                air = ("cleanest air"
+                       if _dose(o) is not None and min_dose is not None
+                       and _dose(o) <= min_dose * 1.0001
+                       else "cleaner air")
+                fastest_all = min((_live(x) for x in options
+                                   if math.isfinite(_live(x))),
+                                  default=None)
+                dt = (_live(o) - fastest_all) \
+                    if fastest_all is not None else None
+                if dt is not None and dt >= SAME_ETA_S:
+                    o["why"] = (f"{_mins(dt)} min behind the "
+                                f"quickest route, {air}")
+                else:
+                    o["why"] = f"within a minute of fastest, {air}"
             else:
                 o["why"] = _pick_why(mode, o, min_dose, live_known)
         elif same and o in pool:
