@@ -332,6 +332,11 @@ function tapPin(label, band, lon, lat) {
     </div>
     <div class="am-tappin-dot" style="background:${fg}"></div>`;
   A.map.ready((m) => {
+    if (A.map.basemap === 'leaflet') {
+      A.map.pin('amtap', lon, lat, pin.outerHTML, 'anchor-b');
+      tapMarker = { remove: () => A.map.unpin('amtap') };
+      return;
+    }
     tapMarker = new maplibregl.Marker({ element: pin, anchor: 'bottom' }).setLngLat([lon, lat]).addTo(m);
   });
 }

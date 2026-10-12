@@ -211,7 +211,10 @@ function leafHideAll() { lfRoutes.forEach((g) => g.remove()); lfRoutes.clear(); 
 function leafPin(id, lon, lat, html, cls) {
   onReady(() => {
     unpin(id);
-    const ic = window.L.divIcon({ className: '', html: `<div class="alive-pin ${cls || ''}" style="transform:translate(-50%,-50%)">${html || '<div class="pin-dot"></div>'}</div>` });
+    /* 'anchor-b' in cls = the pin's bottom tip sits on the point (matches
+       MapLibre anchor:'bottom'); default centres the marker like MapLibre */
+    const ay = /(^|\s)anchor-b(\s|$)/.test(cls || '') ? '-100%' : '-50%';
+    const ic = window.L.divIcon({ className: '', html: `<div class="alive-pin ${cls || ''}" style="transform:translate(-50%,${ay})">${html || '<div class="pin-dot"></div>'}</div>` });
     pins.set(id, window.L.marker([lat, lon], { icon: ic, interactive: false, keyboard: false }).addTo(map));
   });
 }
