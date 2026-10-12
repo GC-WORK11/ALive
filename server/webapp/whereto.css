@@ -246,13 +246,26 @@
 .wt-otop { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 6px }
 .wt-oeta { font-size: 20px; font-weight: 700; color: #16181D; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.2 }
 .wt-oarr { font-size: 14px; color: #4A4E57; white-space: nowrap }
+.wt-otop .wt-odot { align-self: center }
+.wt-otop .wt-obr { font-size: 14px }
+.wt-otop .wt-oword { align-self: center }
+.wt-otop .wt-na { font-size: 15px; font-weight: 600; color: #6E7278 }
 .wt-oair { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; font-size: 14px; color: #16181D }
 .wt-oair b { font-weight: 600; font-variant-numeric: tabular-nums }
-.wt-odot { width: 10px; height: 10px; border-radius: 5px; flex: none }
+.wt-odot { width: 10px; height: 10px; border-radius: 5px; flex: none; display: inline-block }
 .wt-obr { color: #4A4E57 }
 .wt-oword { padding: 1px 8px; border-radius: 999px; font-size: 13px; font-weight: 500; color: #16181D; white-space: nowrap }
 .wt-oair.wt-na { color: #6E7278 }
-.wt-oext { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 4px; font-size: 13px; color: #4A4E57 }
+.wt-na { color: #6E7278 }
+.wt-oext { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin-top: 4px; font-size: 13px; color: #4A4E57 }
+.wt-oext .wt-oeta { font-size: 14px; font-weight: 600 }
+.wt-oext .wt-oarr { font-size: 13px }
+.wt-oext .wt-obr { font-size: 13px }
+.wt-oext .wt-oword { align-self: center }
+.wt-oext .wt-odot { align-self: center }
+.wt-oext .wt-na { font-size: 13px }
+.wt-otag { align-self: flex-start; margin-bottom: 3px; padding: 1px 8px; border-radius: 999px; background: #EEF0F3; color: #4A4E57; font-size: 11px; font-weight: 600; letter-spacing: .02em }
+.wt-ovs { margin-top: 4px; font-size: 13px; font-weight: 600; color: #16181D; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .wt-otraf { font-weight: 500; white-space: nowrap }
 .wt-otraf::before {
   content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;

@@ -541,12 +541,10 @@ def _fuel_saved(pick: dict, pool: list) -> None:
     pick["fuel_saved_vs"] = fastest.get("route_id")
 
 
-def pick_and_explain(options: list, mode: str, vehicle: str,
-                     family_of: Callable, live_known: bool) -> Optional[dict]:
-    """Stamp mode_pick + why on every row, move the pick first. Returns
-    the picked row (None only for an empty list)."""
-    if not options:
-        return None
+def _pool_ctx(options: list, vehicle: str, family_of: Callable) -> dict:
+    """The choice set every mode judges on: the rider's own vehicle
+    family when it has servable rows, else every servable row. One ctx
+    shared by all three mode picks keeps the comparisons like-for-like."""
     servable = [o for o in options if _servable(o)]
     fam = [o for o in servable if family_of(o.get("mode")) == vehicle]
     pool = fam or servable or list(options)
@@ -554,7 +552,15 @@ def pick_and_explain(options: list, mode: str, vehicle: str,
     min_dose = min((_dose(o) for o in dosed), default=None)
     within = ([o for o in dosed if _dose(o) <= min_dose * DOSE_SLACK]
               if min_dose is not None else [])
+    return {"pool": pool, "dosed": dosed, "min_dose": min_dose,
+            "within": within}
 
+
+def _mode_cands_key(mode: str, ctx: dict):
+    """(candidates, sort key) for a mode — the contract's own filter +
+    its own metric. petr/time pick only inside the 1.15x clean-air
+    guard; health_max never compromises."""
+    pool, dosed, within = ctx["pool"], ctx["dosed"], ctx["within"]
     if mode == "health_max":
         cands = dosed or pool
         fk = _fuel_key_fn(cands)
@@ -578,6 +584,14 @@ def pick_and_explain(options: list, mode: str, vehicle: str,
         cands = read or cands
         key = lambda o: (_live(o), _dose(o) if _dose(o) is not None
                          else float("inf"))
+    return cands, key
+
+
+def _pick_for(mode: str, ctx: dict):
+    """The would-be pick for `mode` on this pool: no stamping, no
+    reorder. Returns (row, sort key, tie_slower). Row is None only for
+    an empty pool."""
+    cands, key = _mode_cands_key(mode, ctx)
     pick = min(cands, key=key)
     tie_slower = False
     # near-ties on the mode's own axis (petrol within 1 % / 0.01 L or kg,
@@ -597,9 +611,50 @@ def pick_and_explain(options: list, mode: str, vehicle: str,
             _dose(o) if _dose(o) is not None else float("inf"), _live(o)))
         tie_slower = _live(pick) > fastest + 0.5
     if mode == "petrol_health":
-        _fuel_saved(pick, pool)
+        _fuel_saved(pick, ctx["pool"])
+    return pick, key, tie_slower
+
+
+def _pick_brief(o) -> Optional[dict]:
+    """The numbers a client needs to trade this pick off against the
+    other modes': own metric + the two others, never a recomputed one."""
+    if o is None:
+        return None
+    return {
+        "route_id": o.get("route_id"), "label": o.get("label"),
+        "mode": o.get("mode"), "distance_km": o.get("distance_km"),
+        "dose_mid": _dose(o),
+        "eta_s": o.get("eta_s"), "live_eta_s": o.get("live_eta_s"),
+        "traffic_delay_s": o.get("traffic_delay_s"),
+        "fuel_l": o.get("fuel_l"), "fuel_kg": o.get("fuel_kg"),
+        "fuel_type": o.get("fuel_type"),
+        "fuel_saved_l": o.get("fuel_saved_l"),
+        "fuel_saved_kg": o.get("fuel_saved_kg"),
+        "your_vehicle": o.get("your_vehicle"),
+    }
+
+
+def pick_and_explain(options: list, mode: str, vehicle: str,
+                     family_of: Callable, live_known: bool,
+                     ctx: dict = None, pick: dict = None,
+                     key: Callable = None, tie_slower: bool = False,
+                     picks: dict = None) -> Optional[dict]:
+    """Stamp mode_pick + why on every row, move the pick first. Returns
+    the picked row (None only for an empty list). `ctx`/`pick`/`key`
+    come precomputed when apply() already ran the other modes' picks on
+    the same pool; `picks` maps every trip mode to its would-be pick so
+    a row that wins all three can say so plainly."""
+    if not options:
+        return None
+    if ctx is None:
+        ctx = _pool_ctx(options, vehicle, family_of)
+    pool, min_dose = ctx["pool"], ctx["min_dose"]
+    if pick is None or key is None:
+        pick, key, tie_slower = _pick_for(mode, ctx)
 
     same = _all_same(pool)
+    one_road = bool(picks) and len(pool) > 1 \
+        and all(p is pick for p in picks.values())
     for o in options:
         o["mode_pick"] = o is pick
         if o is pick:
@@ -607,6 +662,8 @@ def pick_and_explain(options: list, mode: str, vehicle: str,
                 o["why"] = "the only route for this ride"
             elif same:
                 o["why"] = "all routes are about the same today"
+            elif one_road:
+                o["why"] = "the same road wins every way"
             elif mode == "time_health" and tie_slower:
                 # a cleaner row within a minute of the fastest won the tie
                 o["why"] = ("within a minute of fastest, cleanest air"
@@ -640,7 +697,10 @@ async def apply(options: list, mode: str, vehicle: str,
                 family_of: Callable, traffic: bool = True,
                 budget_s: float = TRAFFIC_BUDGET_S) -> dict:
     """Fuel -> live traffic (+ published idle burn for unpriced live
-    delay) -> pick + why + order. Returns the response-level block."""
+    delay) -> pick + why + order. Returns the response-level block.
+    `mode_picks` carries all three modes' would-be picks from THIS same
+    candidate pool so a client can trade the shown pick off against the
+    other two in real numbers; `one_pick` says one road won all three."""
     for o in options:
         o.update(option_fuel(o))
     if traffic:
@@ -656,11 +716,19 @@ async def apply(options: list, mode: str, vehicle: str,
         for o in options:
             _no_traffic(o)
         tstat = {"live": False, "note": "not checked on the quick first paint"}
-    pick = pick_and_explain(options, mode, vehicle, family_of,
-                            live_known=bool(tstat.get("live")))
+    ctx = _pool_ctx(options, vehicle, family_of) if options else None
+    picks = {m: _pick_for(m, ctx) for m in TRIP_MODES} if ctx else {}
+    pk, key, tie = picks[mode]
+    pick = pick_and_explain(
+        options, mode, vehicle, family_of,
+        live_known=bool(tstat.get("live")), ctx=ctx, pick=pk, key=key,
+        tie_slower=tie, picks={m: p[0] for m, p in picks.items()})
+    one_pick = bool(picks) and len({id(p[0]) for p in picks.values()}) == 1
     return {"mode": mode, "mode_rule": MODE_RULES[mode],
             "traffic": tstat, "fuel_basis": FUEL_SOURCES,
-            "pick_route_id": (pick or {}).get("route_id")}
+            "pick_route_id": (pick or {}).get("route_id"),
+            "mode_picks": {m: _pick_brief(p[0]) for m, p in picks.items()},
+            "one_pick": one_pick}
 
 
 # --- extra candidates: OSRM alternatives ----------------------------------

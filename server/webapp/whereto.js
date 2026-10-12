@@ -50,7 +50,7 @@ const T = {
   plan_outside_title: 'this trip sits outside Delhi NCR',
   plan_outside_body: 'Alive only measures the air inside Delhi NCR, so this trip can’t be counted honestly.',
   plan_outside_cta: 'change the trip',
-  compare_doseNA: 'no air estimate',
+  compare_doseNA: 'no air estimate', compare_fuelNA: 'fuel not known',
   breathed: 'breathed', traffic: 'traffic', otherWays: 'other ways to go',
   startJourney: 'Start', arriveAt: 'arrive {t}',
   unitsKm: 'km', minUnit: 'min',
@@ -236,7 +236,8 @@ const clockLabel = (ts) => {
 /* ── route-card words + numbers — plain, short, from live fields only ── */
 const BAND_WORD = ['good', 'satisfactory', 'moderate', 'poor', 'very poor', 'severe'];
 const fmtMins = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
-const doseTxt = (x) => `${x < 1 ? x.toFixed(1) : Math.round(x)} µg`;
+/* one decimal under 10 so a real 4.1-vs-5.2 win can't round away */
+const doseTxt = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} µg`;
 const etaOf = (o) => (o && typeof o.live_eta_s === 'number' ? o.live_eta_s
   : o && typeof o.eta_s === 'number' ? o.eta_s
   : o && typeof o.duration_min === 'number' ? o.duration_min * 60 : Infinity);
@@ -756,6 +757,7 @@ function finish(place) {
   A.store.set(K_LAST, { from: S.from, to: S.to });
   cancelLive();
   S.q = ''; S.results = null; S.final = true; S.saveFor = null; S.notice = null;
+  S.plans = {};                    /* a new trip: cached mode answers are stale */
   if (S.from && S.to) afterBoth();
   else { S.armed = which === 'to' ? 'from' : 'to'; renderSearch(true); }
 }
@@ -848,6 +850,23 @@ function showModes() {
   clearMapExtras(); A.map.hideAllRoutes(); S.paintedIds = [];
   renderModes();
 }
+/* once a mode's plan was fetched this trip, its card shows the pick's
+   own numbers ("pick · 0.93 L · 17 min") — real answers, not promises */
+function modeSub(m) {
+  const j = S.plans && S.plans[m.id];
+  if (!j) return m.sub;
+  const b = (j.mode_picks && j.mode_picks[m.id])
+    || (Array.isArray(j.options) ? j.options.find((o) => o.mode_pick) : null);
+  if (!b) return m.sub;
+  const es = num(b.live_eta_s) != null ? b.live_eta_s : num(b.eta_s);
+  const mins = es != null ? Math.max(1, Math.round(es / 60)) : null;
+  const dm = num(b.dose_mid), fl = fuelLead(b);
+  const parts = m.id === 'petrol_health' ? [fl, mins != null ? `${mins} min` : null]
+    : m.id === 'time_health' ? [mins != null ? `${mins} min` : null, dm != null ? doseTxt(dm) : null]
+    : [dm != null ? doseTxt(dm) : null, mins != null ? `${mins} min` : null];
+  const s = parts.filter(Boolean).join(' · ');
+  return s ? `pick · ${s}` : m.sub;
+}
 function renderModes() {
   setHalf(false);
   const cur = S.mode;
@@ -858,7 +877,7 @@ function renderModes() {
     <div class="wt-list wt-mlist">
       ${MODES.map((m) => `<button class="wt-mode${m.id === cur ? ' on' : ''}" type="button" data-mode="${m.id}" aria-pressed="${m.id === cur}">
         <span class="wt-mg">${icon(m.glyph, 26, m.id === cur ? ACCENT : INK2)}</span>
-        <span class="wt-mt"><b>${esc(m.title)}</b><span>${esc(m.sub)}</span></span>
+        <span class="wt-mt"><b>${esc(m.title)}</b><span>${esc(modeSub(m))}</span></span>
         ${CHEV_SVG(m.id === cur ? ACCENT : INK3, 20)}
       </button>`).join('')}
     </div>
@@ -903,6 +922,7 @@ async function plan() {
   if (j.error === 'outside') { S.planErr = 'outside'; renderPlan(); return; }
   if (!Array.isArray(j.options) || !j.options.length) { S.planErr = j.error === 'failed' ? 'failed' : 'noroutes'; renderPlan(); return; }
   S.plan = j;
+  S.plans[S.mode] = j;             /* the modes screen annotates with each fetched pick */
   S.view = buildView(j.options);
   S.sel = S.view.pickI >= 0 ? S.view.pickI : (S.view.prim[0] ? S.view.prim[0].i : 0);
   if (S.view.otherPickI >= 0) S.showOther = true;   /* the server's pick is another ride — show it */
@@ -987,10 +1007,99 @@ function buildView(opts) {
     const f = famOf(opts[serverPickI]);
     fams.set(f, { o: opts[serverPickI], i: serverPickI });
   }
-  const other = [...fams.values()].sort((a, b) => doseOf(a.o) - doseOf(b.o)).slice(0, 6);
+  const other = [...fams.values()].sort((a, b) =>
+    (key(a.o) - key(b.o)) || (doseOf(a.o) - doseOf(b.o))).slice(0, 6);
   return { prim: distinct, other, pickI, otherPickI: flagged ? -1 : serverPickI };
 }
 const baseLabel = (o) => String(o.label || '').split(' · ')[0].trim() || t('vehicle_' + famOf(o));
+/* the number each mode leads its cards with — its own metric */
+const PK_TAG = { health_max: 'the cleanest pick', petrol_health: 'the petrol pick', time_health: 'the fastest pick' };
+const PK_WORD = { health_max: 'the cleanest', petrol_health: 'the thriftiest', time_health: 'the fastest' };
+const fuelLead = (o) => {
+  /* 2 decimals under 1 L so a real 0.01 L win can't round away */
+  const l = num(o.fuel_l), kg = num(o.fuel_kg);
+  const kind = String(o.fuel_type || (o.emissions && o.emissions.fuel) || '').toLowerCase();
+  if (l != null && l > 0) return `${l < 1 ? l.toFixed(2) : l < 10 ? l.toFixed(1) : Math.round(l)} L ${kind === 'diesel' ? 'diesel' : 'petrol'}`;
+  if (l == null && kg != null && kg > 0) return `${kg < 1 ? kg.toFixed(2) : kg.toFixed(1)} kg CNG`;
+  if (l === 0) return 'no petrol';
+  return null;                       /* unknown — never a guess */
+};
+/* pick card: the trade-off against the OTHER modes' picks, in real
+   numbers from mode_picks. Every clause is a comparison of two wire
+   numbers; nothing is interpolated or invented. */
+function vsLine(o) {
+  const pk = S.plan && S.plan.mode_picks;
+  if (!pk || S.plan.one_pick) return '';
+  const segs = [];
+  const sameRow = (r) => r && r.route_id === o.route_id;
+  const myDose = num(o.dose && o.dose.mid), myEta = etaOf(o), myFuel = fuelOf(o);
+  const refDose = pk.health_max, refFuel = pk.petrol_health, refTime = pk.time_health;
+  const doseSeg = (ref, word) => {
+    if (!ref) return null;
+    if (sameRow(ref)) return `also ${word}`;
+    const rd = num(ref.dose_mid);
+    if (myDose == null || rd == null || rd <= 0) return null;
+    const p = Math.round((myDose - rd) / rd * 100);
+    if (Math.abs(p) < 3) return `about the same smoke as ${word}`;
+    return `${p > 0 ? '+' : ''}${p}% smoke vs ${word}`;
+  };
+  const etaSeg = (ref, word) => {
+    if (!ref) return null;
+    if (sameRow(ref)) return `also ${word}`;
+    const re = num(ref.live_eta_s) != null ? ref.live_eta_s : num(ref.eta_s);
+    if (!isFinite(myEta) || re == null) return null;
+    const d = Math.round((myEta - re) / 60);
+    if (d === 0) return `same time as ${word}`;
+    return `${d > 0 ? '+' : ''}${d} min vs ${word}`;
+  };
+  const fuelSeg = (ref, word) => {
+    if (!ref) return null;
+    if (sameRow(ref)) return `also ${word}`;
+    const rf = num(ref.fuel_l) != null ? num(ref.fuel_l) : num(ref.fuel_kg);
+    if (myFuel == null || rf == null) return null;
+    const unit = (o.fuel_kg != null && ref.fuel_kg != null) ? ' kg' : ' L';
+    if (unit === ' L' && (o.fuel_l == null || ref.fuel_l == null)) return null;
+    if (unit === ' kg' && (o.fuel_kg == null || ref.fuel_kg == null)) return null;
+    const d = myFuel - rf;
+    if (Math.abs(d) < 0.005) return `about the same fuel as ${word}`;
+    return `${d > 0 ? '+' : ''}${Math.abs(d) < 0.1 ? d.toFixed(2) : d.toFixed(1)}${unit} vs ${word}`;
+  };
+  if (S.mode === 'health_max') {
+    segs.push(etaSeg(refTime, PK_WORD.time_health));
+    if (!sameRow(refTime)) {
+      const ds = doseSeg(refTime, PK_WORD.time_health);
+      if (ds && !/^also/.test(ds)) segs[0] = `${ds} · ${segs[0]}`;
+    }
+    const fs = fuelSeg(refFuel, PK_WORD.petrol_health);
+    if (fs && /^also/.test(fs)) segs.push(fs);
+    else if (fs && segs.length < 2) segs.push(fs);
+  } else if (S.mode === 'petrol_health') {
+    const fs = fuelSeg(refTime, PK_WORD.time_health);
+    const es = etaSeg(refTime, PK_WORD.time_health);
+    if (fs && !/^also/.test(fs) && es && !/^also/.test(es)) segs.push(`${fs} · ${es}`);
+    else segs.push(fs || es);
+    const ds = doseSeg(refDose, PK_WORD.health_max);
+    if (ds) segs.push(ds);
+  } else {
+    const ds = doseSeg(refDose, PK_WORD.health_max);
+    if (ds) segs.push(ds);
+    const fs = fuelSeg(refFuel, PK_WORD.petrol_health);
+    if (fs) segs.push(fs);
+  }
+  return segs.filter(Boolean).slice(0, 2).join(' · ');
+}
+/* a row that is one of the OTHER modes' picks gets a small tag —
+   cross-mode comparison on the card itself */
+function otherPickTag(o) {
+  const pk = S.plan && S.plan.mode_picks;
+  if (!pk) return '';
+  for (const m of MODES) {
+    if (m.id === S.mode) continue;
+    const r = pk[m.id];
+    if (r && r.route_id === o.route_id) return PK_TAG[m.id];
+  }
+  return '';
+}
 const ROADISH = /^[A-Z0-9]/;
 function viaOf(o) {
   if (o.stations && o.stations.board && o.stations.alight) return `${o.stations.board} → ${o.stations.alight}`;
@@ -1037,16 +1146,40 @@ function optionCard(o, i, other) {
   const e = etaOf(o);
   const mins = isFinite(e) ? Math.max(1, Math.round(e / 60)) : null;
   const d = o.dose;
-  let air;
-  if (d && typeof d.mid === 'number') {
-    const bi = typeof d.avg_conc_ugm3 === 'number' ? bandIdx(d.avg_conc_ugm3) : null;
-    air = `<span class="wt-oair">${bi != null ? `<i class="wt-odot" style="background:${BAND_HEX[bi]}"></i>` : ''}<b>${doseTxt(d.mid)}</b><span class="wt-obr">${t('breathed')}</span>${bi != null ? `<span class="wt-oword" style="background:var(--w${bi})">${BAND_WORD[bi]} air</span>` : ''}</span>`;
-  } else air = `<span class="wt-oair wt-na">${t('compare_doseNA')}</span>`;
-  const extra = [];
-  if (typeof o.traffic_delay_s === 'number' && o.traffic_delay_s > 60) extra.push(`<span class="wt-otraf">+${Math.round(o.traffic_delay_s / 60)} min ${t('traffic')}</span>`);
-  for (const fb of fuelBits(o)) extra.push(`<span class="wt-ofuel${S.mode === 'petrol_health' ? ' hl' : ''}">${fb}</span>`);
+  /* the three metrics, split so the card can lead with THIS mode's */
+  const dNum = d && typeof d.mid === 'number' ? d.mid : null;
+  const bi = dNum != null && typeof d.avg_conc_ugm3 === 'number' ? bandIdx(d.avg_conc_ugm3) : null;
+  const dotHtml = bi != null ? `<i class="wt-odot" style="background:${BAND_HEX[bi]}"></i>` : '';
+  const bandHtml = bi != null ? `<span class="wt-oword" style="background:var(--w${bi})">${BAND_WORD[bi]} air</span>` : '';
+  const timeHtml = mins != null ? `<b class="wt-oeta">${fmtMins(mins)}</b><span class="wt-oarr">· ${t('arriveAt', { t: clockLabel(Date.now() + e * 1000) })}</span>` : '';
+  const airHtml = dNum != null
+    ? `${dotHtml}<b class="wt-oeta">${doseTxt(dNum)}</b><span class="wt-obr">${t('breathed')}</span>${bandHtml}`
+    : `<span class="wt-na">${t('compare_doseNA')}</span>`;
+  const fLead = fuelLead(o);
+  const fuelHtml = fLead != null ? `<b class="wt-oeta">${fLead}</b>` : `<span class="wt-na">${t('compare_fuelNA')}</span>`;
+  const traf = typeof o.traffic_delay_s === 'number' && o.traffic_delay_s > 60
+    ? `<span class="wt-otraf">+${Math.round(o.traffic_delay_s / 60)} min ${t('traffic')}</span>` : '';
+  const fBits = fuelBits(o);
+  const savedBit = fBits.find((x) => /^saves/.test(x));
+  const fuelChip = (x) => x ? `<span class="wt-ofuel">${x}</span>` : '';
+  /* every mode leads with its own metric, then the other two real
+     numbers follow — the pick also carries its trade-off vs the other
+     modes' picks where the server sent them */
+  let lead, rest;
+  if (S.mode === 'petrol_health') {
+    lead = fuelHtml;
+    rest = [timeHtml, traf, airHtml, savedBit ? `<span class="wt-ofuel hl">${savedBit}</span>` : ''].filter(Boolean);
+  } else if (S.mode === 'time_health') {
+    lead = timeHtml || `<span class="wt-na">${t('compare_doseNA')}</span>`;
+    rest = [traf, airHtml, fuelChip(fBits[0])].filter(Boolean);
+  } else {
+    lead = airHtml;
+    rest = [timeHtml, traf, fuelChip(fBits[0])].filter(Boolean);
+  }
   const meta = [baseLabel(o), o.distance_km != null ? `${o.distance_km} ${t('unitsKm')}` : null, viaOf(o)].filter(Boolean).join(' · ');
   const why = o.why ? String(o.why).trim() : '';
+  const vs = pick && !other ? vsLine(o) : '';
+  const tag = !pick && !other ? otherPickTag(o) : '';
   /* honest edge note: the router snapped a far point to the coverage
      edge — the line on the map really does start/end short. Say so on
      the card, never let '15 km' read as a 25 km trip. */
@@ -1059,9 +1192,10 @@ function optionCard(o, i, other) {
     <span class="wt-well">${icon(vehicleGlyph(o.mode), 24, sel ? ACCENT : INK2)}</span>
     <span class="wt-omid">
       ${pick ? `<span class="wt-badge">${icon(md.glyph, 12, ACC_INK)}<span>${esc(md.badge)}</span></span>` : ''}
-      <span class="wt-otop">${mins != null ? `<b class="wt-oeta">${fmtMins(mins)}</b><span class="wt-oarr">· ${t('arriveAt', { t: clockLabel(Date.now() + e * 1000) })}</span>` : ''}</span>
-      ${air}
-      ${extra.length ? `<span class="wt-oext">${extra.join('<span class="wt-osep">·</span>')}</span>` : ''}
+      ${tag ? `<span class="wt-otag">${esc(tag)}</span>` : ''}
+      <span class="wt-otop">${lead}</span>
+      ${rest.length ? `<span class="wt-oext">${rest.join('<span class="wt-osep">·</span>')}</span>` : ''}
+      ${vs ? `<span class="wt-ovs">${esc(vs)}</span>` : ''}
       ${why ? `<span class="wt-owhy">${esc(why)}</span>` : ''}
       <span class="wt-ometa">${esc(meta)}</span>
       ${gapLine ? `<span class="wt-ogap">${esc(gapLine)}</span>` : ''}
@@ -1337,11 +1471,13 @@ function bindVehicle() {
     S.veh = p;
     S.tripVeh = p;
     A.store.set(K_VEH, p);
+    S.plans = {};                  /* a new ride: cached mode answers were for another vehicle */
     toRoutes();
   };
   root.querySelectorAll('[data-act="skip"]').forEach((b) => b.addEventListener('click', () => {
     if (w.step === 'puc') { done(false); return; }
     S.tripVeh = null;            /* a typical Delhi ride — the server's fleet prior */
+    S.plans = {};
     toRoutes();
   }));
   if (q('[data-act="back"]')) q('[data-act="back"]').addEventListener('click', prevStep);
@@ -1389,7 +1525,7 @@ A.screen('whereto', {
       veh: loadJ(K_VEH, null),
       mode: MODES.some((m) => m.id === m0) ? m0 : 'health_max',
       modeChosen: false, vehChosen: false, tripVeh: null,
-      plan: null, view: null, planning: false, planErr: null, sel: 0, pseq: 0, partial: null,
+      plan: null, view: null, planning: false, planErr: null, sel: 0, pseq: 0, partial: null, plans: {},
       showOther: false, paintedIds: [], jamIds: [], trafficOn: false,
       wiz: null, _tapOff: null, _anim: null,
     };
