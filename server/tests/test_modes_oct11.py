@@ -496,4 +496,75 @@ def test_reroute_legacy_vehicle_mode_untouched():
     j = client.post("/v2/reroute", json={
         "at": FROM, "to": TO, "mode": "walk"}).json()
     assert j["mode"] == "walk" and "trip_mode" not in j
-    assert "mode_pick" not in j["option"]
+
+
+# --- mode_picks: all three modes' picks on the same pool -------------------
+def _brief_keys(b):
+    for k in ("route_id", "label", "dose_mid", "eta_s", "live_eta_s",
+              "traffic_delay_s", "fuel_l", "fuel_kg", "fuel_type",
+              "your_vehicle"):
+        assert k in b, k
+
+
+def test_mode_picks_carries_every_mode_from_the_same_pool():
+    j = _plan(mode="time_health", vehicle="car")
+    opts = _contract(j)
+    mp = j["mode_picks"]
+    assert set(mp) == {"health_max", "petrol_health", "time_health"}
+    ids = {o["route_id"] for o in opts}
+    for m, b in mp.items():
+        _brief_keys(b)
+        assert b["route_id"] in ids
+    # the asked-for mode's brief IS its pick row
+    pick = next(o for o in opts if o["mode_pick"])
+    assert mp["time_health"]["route_id"] == pick["route_id"]
+    for k in ("dose_mid", "live_eta_s", "fuel_l"):
+        assert mp["time_health"][k] == (pick["dose"]["mid"] if k == "dose_mid"
+                                        else pick[k])
+    # every mode's pick obeys its own rule on this pool — recompute,
+    # don't trust the wire
+    cars = [o for o in opts if _fam(o) == "car"]
+    min_d = min(o["dose"]["mid"] for o in cars)
+    within = [o for o in cars if o["dose"]["mid"] <= min_d * 1.15]
+    assert mp["health_max"]["route_id"] == \
+        min(cars, key=lambda o: o["dose"]["mid"])["route_id"]
+    assert mp["petrol_health"]["route_id"] == \
+        min(within, key=lambda o: o["fuel_l"])["route_id"]
+    assert mp["time_health"]["route_id"] == pick["route_id"]
+    assert j["one_pick"] is False
+
+
+def test_mode_picks_one_pick_when_one_road_wins_all_three():
+    # a single row that is cleanest AND cheapest AND fastest: the engine
+    # must say so plainly instead of pretending three stories
+    rows = [_row("only", 100.0, 900, 1.0)]
+    me.pick_and_explain(rows, "health_max", "car",
+                        lambda m: m, live_known=False,
+                        picks={"health_max": rows[0],
+                               "petrol_health": rows[0],
+                               "time_health": rows[0]})
+    assert rows[0]["why"] == "the only route for this ride"
+    rows = [_row("a", 100.0, 600, 1.0), _row("b", 140.0, 900, 2.0)]
+    me.pick_and_explain(rows, "petrol_health", "car",
+                        lambda m: m, live_known=False,
+                        picks={"health_max": rows[0],
+                               "petrol_health": rows[0],
+                               "time_health": rows[0]})
+    assert rows[0]["why"] == "the same road wins every way"
+    assert rows[0]["mode_pick"] is True
+
+
+def test_mode_picks_live_through_apply_not_just_the_asked_mode():
+    # the briefs come from apply()'s own pool, so a client comparing
+    # picks compares like-for-like rows
+    o1, o2 = _row("main", 100.0, 1300, 1.0), _row("alt", 105.0, 800, 0.8)
+    opts = [o1, o2]
+    fam = lambda m: m
+    block = asyncio.run(
+        me.apply(opts, "health_max", "car", fam, traffic=False))
+    mp = block["mode_picks"]
+    assert mp["health_max"]["route_id"] == "main"     # cleanest
+    assert mp["petrol_health"]["route_id"] == "alt"   # less fuel, within 15%
+    assert mp["time_health"]["route_id"] == "alt"     # fastest
+    assert block["one_pick"] is False
+    assert block["pick_route_id"] == "main"
