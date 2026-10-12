@@ -243,8 +243,7 @@ async def reverse(lat: float, lon: float):
                            "dropped_pin": True})
 
     if out is None:
-        return JSONResponse(status_code=404, content={
-            "error": f"no named place within {int(REV_MAX_M)}m",
-            "lat": lat, "lon": lon, "dropped_pin": True})
+        out = {"name": None, "subtitle": None, "lat": lat, "lon": lon,
+               "dropped_pin": True}
     _cache_put(_rev_cache, ckey, out)
     return out
