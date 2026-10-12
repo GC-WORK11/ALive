@@ -455,6 +455,7 @@ function buildSteps(option, route) {
       street: st.street || null,
       type: st.type || null,
       modifier: st.modifier || null,
+      wait_s: st.wait_s || null,
     }));
   const real = steps.filter((st) => st.type !== 'depart' && st.type !== 'arrive');
   if (!real.length && route.n > 2) steps = steps.concat(lineTurns(route));
@@ -471,7 +472,7 @@ function buildSteps(option, route) {
   };
   function cue(st, s) {
     return { instruction: st.instruction, street: st.street, distM: Math.max(0, st.s - s),
-      type: st.type, modifier: st.modifier, s: st.s };
+      type: st.type, modifier: st.modifier, s: st.s, wait_s: st.wait_s };
   }
 }
 
@@ -479,6 +480,13 @@ function buildSteps(option, route) {
 const BIN_M = 20;                  // intake bins along the trip odometer (m)
 const SLOW_MPS = 5 / 3.6;          // under 5 km/h = not moving
 const TICK_MS = 1000;
+/* desktop (journey.css ≥720px): the banner floats top-left (~430 px)
+   and the ETA card bottom-right (~418 px) — fits and the follow puck
+   keep clear of both */
+const WIDE_PX = 720;
+const RIGHT_PAD = 460;
+const DONE_MIN_M = 25;             // paint the covered stretch only past this
+const DONE_STEP_M = 30;            // … and re-paint it only per this much progress
 const NO_TRAFFIC = new Set(['walk', 'cycle', 'metro']);   // no car queue to sit in
 const TT_MODE = { bike: 'motorcycle', bus: 'bus', cab: 'taxi' };
 /* the verdict scale — share of a full day breathed at the WHO 24 h
@@ -538,6 +546,15 @@ function remainingCoords(route, s0, cap) {
   return out;
 }
 
+/* the piece of the line already ridden — a LineString from the start
+   through the projected position, always ≥ 2 points */
+function coveredGeom(route, s0) {
+  const pts = route.pts.slice(0, route.idxAt(s0) + 1);
+  const p = route.pointAt(s0);
+  pts.push([p.lon, p.lat]);
+  return { type: 'LineString', coordinates: pts };
+}
+
 A.screen('journey', {
   mount(el, params) {
     /* defend the handoff — anything missing goes back to whereto */
@@ -576,10 +593,11 @@ A.screen('journey', {
       offSince: 0, rerouting: false, lastReroute: 0, rerouteFail: false, reroutes: 0,
       slowSince: 0, stuckOpen: null, stuck: [],
       traffic: null, jams: [], jamT: 0, jamBusy: false, jamPins: 0, trafficDown: false,
-      follow: true, bearing: null, cueKey: null,
+      follow: true, bearing: null, cueKey: null, camInit: false,
       done: false, dead: false, simulated: false,
       timer: 0, simTimer: 0, geoPulse: 0,
     };
+    let doneS = -1;                 // arclength the covered line last drew at
 
     /* ── view: maneuver banner · jam + status line · ETA card ─────── */
     el.innerHTML = `
@@ -652,7 +670,24 @@ A.screen('journey', {
     }
     drawRoute();
     A.map.pin('jfrom', plan0.route.pts[0][0], plan0.route.pts[0][1], '<div class="pin-dot"></div>');
-    A.map.fit(plan0.geom, 84);
+    /* frame the whole line once — on wide screens the cards own the
+       top-left strip and the bottom-right corner, so the fit pads them
+       (Leaflet takes the same insets as two corner points) */
+    function frameAll() {
+      if (window.innerWidth < WIDE_PX) { A.map.fit(S.P.geom, 84); return; }
+      const pad = { top: 120, right: RIGHT_PAD, bottom: 210, left: 70 };
+      if (A.map.basemap === 'leaflet') {
+        A.map.ready((m) => {
+          if (!window.L) return;
+          const b = window.L.latLngBounds(S.P.geom.coordinates.map((c) => [c[1], c[0]]));
+          m.flyToBounds(b, { paddingTopLeft: [pad.left, pad.top],
+            paddingBottomRight: [pad.right, pad.bottom] });
+        });
+        return;
+      }
+      A.map.fit(S.P.geom, pad);
+    }
+    frameAll();
 
     function paintJams(clear) {
       for (let i = 0; i < S.jamPins; i++) A.map.unpin(`jjam${i}`);
@@ -664,14 +699,67 @@ A.screen('journey', {
       });
     }
 
+    /* the stretch already ridden draws over the air bands in a muted
+       finish — what is behind shouldn't compete with what is ahead.
+       The second showRoute works on both engines; the grey restyle is
+       GL-only (basic mode's plain casing+line still flattens the bands
+       it covers). Always re-added after 'journey' so it stays on top. */
+    function paintDone() {
+      if (S.s < DONE_MIN_M) {
+        if (doneS >= 0) { A.map.hideRoute('journey-done'); doneS = -1; }
+        return;
+      }
+      if (doneS >= 0 && S.s - doneS < DONE_STEP_M) return;
+      doneS = S.s;
+      A.map.showRoute('journey-done', coveredGeom(S.P.route, S.s), null);
+      if (A.map.basemap === 'leaflet') return;
+      A.map.ready((m) => {
+        try {
+          if (m.getLayer('route-journey-done-line')) {
+            m.setPaintProperty('route-journey-done-line', 'line-color', '#98A0AA');
+            m.setPaintProperty('route-journey-done-line', 'line-opacity', 0.6);
+          }
+          if (m.getLayer('route-journey-done-casing')) {
+            m.setPaintProperty('route-journey-done-casing', 'line-opacity', 0.3);
+          }
+        } catch (e) { /* paint is cosmetic — never break a fix over it */ }
+      });
+    }
+
     /* ── camera: follows the puck, heading = the line ahead ───────── */
     function camera(lat, lon, instant) {
-      const brg = S.P.route.bearingAt(S.s);
-      const b = S.bearing == null ? brg : lerpAng(S.bearing, brg, 0.35);
-      S.bearing = b;
+      const wide = window.innerWidth >= WIDE_PX;
       A.map.ready((m) => {
+        if (A.map.basemap === 'leaflet') {
+          /* the basic engine has no bearing/offset (and easeTo doesn't
+             exist on it — calling it killed every fix): fly in on the
+             first fix, then pan just enough to keep the puck inside the
+             box the banner + ETA card leave clear */
+          try {
+            if (!S.camInit) {
+              S.camInit = true;
+              m.flyTo([lat, lon], Math.max(16, m.getZoom()), { duration: 0.9 });
+              return;
+            }
+            m.panInside([lat, lon], {
+              paddingTopLeft: window.L.point(wide ? 70 : 30, 130),
+              paddingBottomRight: window.L.point(wide ? RIGHT_PAD + 10 : 30,
+                wide ? 210 : 180),
+              animate: true, duration: instant ? 0.3 : 0.6,
+            });
+          } catch (e) { /* a camera hiccup must never lose a fix */ }
+          return;
+        }
+        const brg = S.P.route.bearingAt(S.s);
+        const b = S.bearing == null ? brg : lerpAng(S.bearing, brg, 0.35);
+        S.bearing = b;
+        S.camInit = true;
+        /* offset — a per-call pixel shift of the rendered centre: on
+           desktop it parks the puck at the middle of the area left of
+           the bottom-right card, low like a nav HUD. (Not `padding` —
+           easeTo padding mutates transform.padding permanently.) */
         m.easeTo({ center: [lon, lat], zoom: Math.max(16, m.getZoom()), bearing: b,
-          offset: [0, 70], duration: instant ? 300 : 800 });
+          offset: [wide ? -RIGHT_PAD / 2 : 0, 70], duration: instant ? 300 : 800 });
       });
     }
     const onDrag = () => {               // the user panned → stop following
@@ -709,6 +797,15 @@ A.screen('journey', {
         }, opts);
       } catch (e) { if (done) done(); }
     }
+    /* nudge acquisition while the watch is silent — the next fix that
+       lands (onFix) clears it, as does a permission denial */
+    function pulse() {
+      if (S.geoPulse) return;
+      S.geoPulse = setInterval(() => {
+        if (S.done || S.dead || S.geoErr === 'denied' || S.geoErr === 'unsupported') return;
+        probe({ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+      }, 9000);
+    }
     function startGeo() {
       if (!navigator.geolocation) { S.geoErr = 'unsupported'; render(); return; }
       try {
@@ -721,6 +818,7 @@ A.screen('journey', {
         }, (err) => {
           if (S.done || S.dead) return;
           S.geoErr = err && err.code === 1 ? 'denied' : 'unavailable';
+          pulse();            // a watch that dropped mid-trip re-acquires
           render();
         }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
       } catch (e) { S.geoErr = 'unavailable'; render(); }
@@ -728,10 +826,7 @@ A.screen('journey', {
          the same plausibility drops), then keep nudging until one lands —
          never while permission itself is the problem */
       probe({ enableHighAccuracy: false, maximumAge: 30000, timeout: 12000 });
-      S.geoPulse = setInterval(() => {
-        if (S.done || S.dead || S.gotFix || S.geoErr === 'denied' || S.geoErr === 'unsupported') return;
-        probe({ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
-      }, 9000);
+      pulse();
     }
     /* denied is fixable by the user, not by us — say exactly how, and let
        them re-check once it's on */
@@ -827,6 +922,7 @@ A.screen('journey', {
       A.map.puckMove(px.lat, px.lon, f.acc);
       if (S.follow) camera(px.lat, px.lon);
       pushTrack(px.lat, px.lon);
+      paintDone();
       const remM = P.route.L - S.s;
       if (remM <= 35 || (remM < 250 && havM(f.lat, f.lon, to.lat, to.lon) < ARRIVE_M)) {
         finish(true);
@@ -876,7 +972,11 @@ A.screen('journey', {
       S.traffic = null; S.jams = []; paintJams();
       if (!S.trafficDown) S.jamT = 0;         // live traffic for the new line next tick
       if (P.k != null || P.dose.total != null) S.doseKnown = true;
+      /* the covered overlay belongs to the old line: hide it BEFORE the
+         fresh route draws, then re-add — layer order keeps it on top */
+      A.map.hideRoute('journey-done'); doneS = -1;
       drawRoute();
+      paintDone();
       render();
     }
 
@@ -1039,7 +1139,11 @@ A.screen('journey', {
         if (next.street && instr.toLowerCase().indexOf(String(next.street).toLowerCase()) < 0) {
           street = next.street;
         }
+        if (next.wait_s > 0) {
+          street = `${street ? `${street} · ` : ''}wait ≈ ${Math.max(1, Math.round(next.wait_s / 60))} min`;
+        }
       }
+      if (!street) street = S.P.roadAt(S.s) || '';   // the road you're on
       const key = `${gname}|${instr}`;
       if (S.cueKey !== key) {                // only a new cue earns the swap
         S.cueKey = key;
@@ -1074,7 +1178,9 @@ A.screen('journey', {
       stopAll();
       const now = Date.now();
       if (S.stuckOpen) closeStuck(now);
-      const takenS = Math.round((now - S.t0) / 1000);
+      /* "on the way" starts at the first real fix — the wait for GPS at
+         the start isn't travel */
+      const takenS = Math.round((now - (S.t1 || S.t0)) / 1000);
       const km = S.odo / 1000;
       const frac = arrived ? 1 : clamp(S.odo / plan0.route.L, 0, 1);
       const measured = S.gotFix && S.doseKnown && (arrived || S.odo >= 50);
@@ -1133,7 +1239,13 @@ A.screen('journey', {
     function renderReceipt(x) {
       const jn = $('.jn');
       if (jn) jn.remove();
+      /* the trip's map layer work ends with the trip: routes, end pins,
+         puck, jam pins — both engines, the receipt's mini map is its
+         own SVG */
       paintJams(true);
+      A.map.hideAllRoutes();
+      A.map.unpin('jfrom'); A.map.unpin('jto');
+      A.map.puckRemove();
       const chip = modeLabel(opt.mode || '', opt.label || '');
       const head = `
         <div class="jr-head">
@@ -1287,7 +1399,11 @@ A.screen('journey', {
         A.show('whereto', swap, true);              // replaces the old whereto
       });
       rc.querySelector('.jr-done').addEventListener('click', () => A.back());
-      A.map.ready((m) => { if (m.getBearing() !== 0) m.easeTo({ bearing: 0, duration: 500 }); });
+      A.map.ready((m) => {
+        if (typeof m.getBearing === 'function' && m.getBearing() !== 0) {
+          m.easeTo({ bearing: 0, duration: 500 });
+        }
+      });
     }
 
     /* the receipt's mini map — the planned line faint, what you rode
@@ -1365,9 +1481,14 @@ A.screen('journey', {
       paintJams(true);
       A.map.ready((m) => { m.off('dragstart', onDrag); });
       A.map.hideRoute('journey');
+      A.map.hideRoute('journey-done');
       A.map.unpin('jfrom'); A.map.unpin('jto');
       A.map.puckRemove();
-      A.map.ready((m) => { if (m.getBearing() !== 0) m.easeTo({ bearing: 0, duration: 500 }); });
+      A.map.ready((m) => {
+        if (typeof m.getBearing === 'function' && m.getBearing() !== 0) {
+          m.easeTo({ bearing: 0, duration: 500 });
+        }
+      });
     };
   },
 });
