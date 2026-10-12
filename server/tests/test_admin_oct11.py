@@ -508,11 +508,14 @@ def test_admin_page_has_the_audience_panel():
     html = open(os.path.join(_SERVER, "admin.html"), encoding="utf-8").read()
     assert 'id="s-who"' in html and "who uses alive" in html
     assert html.count('class="asof"') >= 7
-    for need in ("renderWho(app)", "app.audience", "top_areas",
+    for need in ("renderWho(app)", "app.audience",
                  "age_bands", "profiles_total",
-                 "no names, no locations — age group and area only, by choice",
+                 "age group only, by choice",
                  "so far — counting since"):
         assert need in html, need
+    # the areas display was removed from the audience panel (age only)
+    for gone in ("top_areas", "areaTop", "named so far"):
+        assert gone not in html, gone
 
 
 def test_telemetry_profile_contract():

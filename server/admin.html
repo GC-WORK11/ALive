@@ -394,15 +394,13 @@
     <p class="note" id="segNote"></p>
   </div></section>
 
-  <!-- 07 audience — the age group + area people chose to give -->
+  <!-- 07 audience — the age group people chose to give -->
   <section id="s-who"><div class="col">
     <div class="ph"><h2>who uses alive</h2><span class="asof" id="wAsof"></span></div>
     <div class="kpis" id="wKpis"></div>
     <div class="ph ph2"><h3>age group</h3></div>
     <div class="bars" id="ageBars"></div>
-    <div class="ph ph2"><h3>top areas</h3></div>
-    <div class="dl" id="areaTop"></div>
-    <p class="note" id="whoNote">no names, no locations — age group and area only, by choice.</p>
+    <p class="note" id="whoNote">age group only, by choice.</p>
   </div></section>
 
   <footer class="noidx"><div class="col foot">
@@ -778,30 +776,22 @@ function renderSeg(corr,glob,usage,app){
     `${supp.od_pairs?` · ${fmt(supp.od_pairs)} thinner flow${supp.od_pairs===1?'':'s'} withheld`:''}.`;
 }
 
-/* 07 — who uses alive: age group + area, only what people chose to give.
-   Each device counts once, by its latest answer; age and area are tallied
-   apart (never crossed), so no row pairs an age with a place. */
+/* 07 — who uses alive: the age group people chose to give.
+   Each device counts once, by its latest answer. */
 const AGE_NAME={under13:'under 13','13-17':'13–17','18-29':'18–29','30-44':'30–44','45-59':'45–59','60plus':'60+'};
-const WHO_PRIV='no names, no locations — age group and area only, by choice';
+const WHO_PRIV='age group only, by choice';
 function renderWho(app){
-  if(!app||app.available===false){$('wKpis').innerHTML=app?'':LOCK;$('ageBars').innerHTML='';$('areaTop').innerHTML='';return}
+  if(!app||app.available===false){$('wKpis').innerHTML=app?'':LOCK;$('ageBars').innerHTML='';return}
   const a=app.audience||{},tot=a.profiles_total||0;
   $('wAsof').innerHTML=asofHTML(a.as_of||app.ts);
   const sinceA=a.since?dayLbl(a.since):since({server_start_ts:app.server_start_ts});
   $('wKpis').innerHTML=
     kpi('answered',fmt(tot),'devices, all time',!tot)+
-    kpi('today',fmt(a.today),'devices',!a.today)+
-    kpi('areas',fmt(a.areas_total),'named so far',!a.areas_total);
+    kpi('today',fmt(a.today),'devices',!a.today);
   const ab=a.age_bands||{};
   const rows=Object.keys(AGE_NAME).map(k=>({name:k,started:ab[k]||0}));
   $('ageBars').innerHTML=bars(rows,n=>AGE_NAME[n]||n)+
     (rows.some(r=>r.started)?'':`<div class="zero"><b>0</b> answers so far — counting since ${esc(sinceA)}</div>`);
-  const top=a.top_areas||[],withArea=a.with_area||0;
-  $('areaTop').innerHTML=top.length
-    ?top.map((r,i)=>`<div class="crr"><span class="cn"><i>${String(i+1).padStart(2,'0')}</i>${esc(r.area)}</span>`+
-      `<b class="cv">${fmt(r.count)} <i>device${r.count===1?'':'s'}${withArea?` · ${fmt(100*r.count/withArea)}%`:''}</i></b></div>`).join('')+
-      (a.areas_other?row('everywhere else',`${fmt(a.areas_other)} <i>devices</i>`):'')
-    :`<div class="zero"><b>0</b> areas named so far — counting since ${esc(sinceA)}</div>`;
   $('whoNote').innerHTML=`${esc(WHO_PRIV)}${tot?` · counting since ${esc(sinceA)}`:''}.`;
 }
 
