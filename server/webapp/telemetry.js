@@ -30,7 +30,13 @@
    batches of ≤ 20 a few seconds after the last event, and on pagehide /
    tab-hide via sendBeacon (fetch keepalive as fallback). 2xx or 4xx drops
    the batch (a 4xx can never succeed on retry); network error or 5xx
-   keeps it for the next flush. */
+   keeps it for the next flush.
+
+   Internal/test traffic: opening the app with ?internal=1 marks this
+   browser as internal (localStorage 'alive.internal'); every event then
+   carries internal:true and the ops console counts it apart from real
+   traffic. ?internal=0 lifts the mark. Still counts-only — the flag says
+   "test device", nothing more. */
 (() => {
 'use strict';
 if (!window.A || !A.store) return;
@@ -89,6 +95,12 @@ function areaName(v) {
 const MAX_Q = 50, BATCH = 20, DEBOUNCE_MS = 4000;
 const st = A.store;
 const off = () => st.get('telemetry') === false;
+/* the internal mark — a test browser's own declaration, kept on the
+   device and echoed on each event so the server never has to guess */
+const _intq = new URLSearchParams(location.search).get('internal');
+if (_intq === '1' || _intq === 'true') st.set('internal', true);
+else if (_intq === '0' || _intq === 'false') st.del('internal');
+const isInternal = () => st.get('internal') === true;
 const istDay = () => new Date(Date.now() + 19800000).toISOString().slice(0, 10);
 
 function anonId() {
@@ -177,7 +189,9 @@ async function flush(beacon) {
 
 function enqueue(event, props) {
   const q = loadQ();
-  q.push({ event, ts: Date.now(), props });
+  const ev = { event, ts: Date.now(), props };
+  if (isInternal()) ev.internal = true;
+  q.push(ev);
   saveQ(q);
   clearTimeout(timer);
   timer = setTimeout(() => flush(false), event === 'journey_end' ? 800 : DEBOUNCE_MS);

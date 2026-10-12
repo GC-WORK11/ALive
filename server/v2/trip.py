@@ -668,7 +668,12 @@ async def post_tally(request: Request):
             continue
         kind = ev["event"]
         dropped_fields += sum(1 for k in ev
-                              if k not in ("event", "ts", "props"))
+                              if k not in ("event", "ts", "props",
+                                           "internal"))
+        # the browser's own test mark (telemetry.js ?internal=1): the
+        # event counts, but under the store's internal scope — never
+        # mixed into the console's real-traffic numbers
+        internal = ev.get("internal") is True
         props, d = _clean_usage_props(kind, ev.get("props"))
         dropped_fields += d
         # client clock only within a sane window — an offline queue may
@@ -679,12 +684,12 @@ async def post_tally(request: Request):
             t = t / 1000.0 if t > 1e11 else t
             if now - 3 * 86400 <= t <= now + 300:
                 ts = t
-        clean.append((kind, props, ts))
+        clean.append((kind, props, ts, internal))
     allowed = _usage_rate_ok(anon_hash, len(clean), now)
     limited = len(clean) - allowed
     accepted = duplicates = 0
     try:
-        for kind, props, ts in clean[:allowed]:
+        for kind, props, ts, internal in clean[:allowed]:
             if kind == "app_open" and not _first_open_today(
                     anon_hash, agg.ist_day(ts)):
                 duplicates += 1     # ≤ 1 open per device per IST day
@@ -699,11 +704,11 @@ async def post_tally(request: Request):
                     duplicates += 1     # ≤ 1 profile per device per day
                     continue
                 counted = store.record(kind, props, anon_hash, ts,
-                                       prev=prev)
+                                       prev=prev, internal=internal)
                 _profile_seen(anon_hash, day, props, counted)
                 accepted += 1
                 continue
-            store.record(kind, props, anon_hash, ts)
+            store.record(kind, props, anon_hash, ts, internal=internal)
             accepted += 1
     except Exception:  # noqa: BLE001 - store down: tell the client to keep it
         return JSONResponse(status_code=503, content={

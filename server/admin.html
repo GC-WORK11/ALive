@@ -178,7 +178,7 @@
 
   /* ---------- journeys table ---------- */
   .tbl{margin-top:20px;border-top:1px solid var(--rLine)}
-  .tr{display:grid;grid-template-columns:minmax(64px,1.2fr) repeat(3,minmax(0,1fr));
+  .tr{display:grid;grid-template-columns:minmax(58px,1.1fr) repeat(4,minmax(0,1fr));
     gap:10px;padding:10px 0;border-bottom:1px solid var(--rLine);align-items:baseline}
   .tr span{font-size:15px;font-weight:500;text-align:right;color:var(--rInk);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -256,6 +256,17 @@
   .crr .cs b{color:var(--rInk2);font-weight:500}
   .cdot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;
     vertical-align:-1px}
+  /* ---------- traffic switch — which counters the usage panels read ---------- */
+  .tseg{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:-6px 0 22px}
+  .tg{display:inline-flex;border:1px solid var(--rLine);border-radius:2px;overflow:hidden}
+  .tg button{appearance:none;-webkit-appearance:none;border:0;border-right:1px solid var(--rLine);
+    background:none;color:var(--rInk3);font-family:var(--mono);font-size:11px;
+    padding:10px 14px;min-height:38px;cursor:pointer;white-space:nowrap}
+  .tg button:last-child{border-right:0}
+  .tg button.on{background:var(--rInk);color:#0B0B0A}
+  .tg button[disabled]{opacity:.35;cursor:default}
+  .tsegcap{font-family:var(--mono);font-size:10.5px;color:var(--rInk3);line-height:1.6;min-width:0}
+
   .note{font-family:var(--serif);font-size:13.5px;line-height:1.6;color:var(--rInk3);
     margin-top:18px;max-width:60ch}
   .note b{color:var(--rInk2);font-weight:700}
@@ -279,7 +290,11 @@
     .crr .cv{text-align:left;white-space:normal}
     .dr .dv{white-space:normal}
     .tr{gap:6px}
-    .tr span{font-size:14px}
+    .tr span{font-size:13px}
+    .tr span:first-child{font-size:10px}
+    .tg{flex:1}
+    .tg button{flex:1;padding:10px 8px}
+    .tsegcap{flex-basis:100%}
     .mapbox{height:380px;min-height:0}}
   @media(prefers-reduced-motion:reduce){.bar .bt i{transition:none}}
 </style>
@@ -335,6 +350,14 @@
   <!-- 02 users — distinct anonymous installs -->
   <section id="s-users"><div class="col">
     <div class="ph"><h2>who's using it</h2><span class="asof" id="usersAsof"></span></div>
+    <div class="tseg" id="tseg">
+      <span class="tg" role="group" aria-label="which traffic the panels below count">
+        <button type="button" data-v="real" class="on">people only</button>
+        <button type="button" data-v="internal">internal</button>
+        <button type="button" data-v="all">everyone</button>
+      </span>
+      <span class="tsegcap" id="tsegcap"></span>
+    </div>
     <div class="kpis" id="usagecards"></div>
     <div class="dl" id="usagefb"></div>
   </div></section>
@@ -658,11 +681,11 @@ function renderJourneys(app){
     kpi('success rate',t.success_pct==null?'—':`${fmt1(t.success_pct)}%`,
       t.success_pct==null?'no journey yet':'arrived ÷ started',t.success_pct==null);
   const pct=v=>v==null?'<i>—</i>':`${fmt1(v)}%`;
-  const tr=(k,o)=>`<div class="tr"><span>${k}</span><span>${fmt(o.started)}</span><span>${fmt(o.completed)}</span><span>${pct(o.success_pct)}</span></div>`;
+  const tr=(k,o)=>`<div class="tr"><span>${k}</span><span>${fmt(o.started)}</span><span>${fmt(o.ended)}</span><span>${fmt(o.completed)}</span><span>${pct(o.success_pct)}</span></div>`;
   $('jTbl').innerHTML=(t.started||t.ended)
-    ?`<div class="tr th"><span></span><span>started</span><span>completed</span><span>success</span></div>`+
+    ?`<div class="tr th"><span></span><span>started</span><span>ended</span><span>completed</span><span>success</span></div>`+
       tr('today',td)+tr('7 days',w)+tr('all time',t)+
-      (t.km?`<div class="tr"><span>travelled</span><span>${fmt1(t.km)} km</span><span>${fmt(t.minutes)} min</span><span></span></div>`:'')
+      (t.km?`<div class="tr"><span>travelled</span><span>${fmt1(t.km)} km</span><span>${fmt(t.minutes)} min</span><span></span><span></span></div>`:'')
     :zeroLine('journeys',app);
   const days=app.daily||[];
   const mx=Math.max(1,...days.map(d=>d.started||0));
@@ -782,8 +805,46 @@ function renderWho(app){
   $('whoNote').innerHTML=`${esc(WHO_PRIV)}${tot?` · counting since ${esc(sinceA)}`:''}.`;
 }
 
-/* ============================== the tick ============================== */
-let LAST_OK=null;
+/* ============================== the tick ==============================
+   traffic scope: the server answers /api/app with three views of the
+   same counters — the top level (people only, never touched by a test
+   browser), .internal (only browsers opened with ?internal=1) and .all
+   (the union). The switch above the users panel picks which view the
+   usage panels 02–05 + 07 read; corridors, shared trips and the field
+   map are traffic-blind and stay as they are. */
+let LAST_OK=null,LAST_APP=null,LAST_USAGE=null;
+let VIEW='real';
+const viewOf=app=>{
+  if(!app)return null;
+  const v=app[VIEW];
+  /* a view the store couldn't read stays null — fall back to the real
+     counters rather than inventing a blank board; the button is
+     disabled so the state is honest */
+  return v?{...app,...v}:app;
+};
+function applyView(){
+  const raw=LAST_APP;
+  document.querySelectorAll('#tseg .tg button').forEach(b=>{
+    b.classList.toggle('on',b.dataset.v===VIEW);
+    if(b.dataset.v!=='real')b.disabled=!!(raw&&raw[b.dataset.v]==null);
+  });
+  const idev=raw&&raw.internal&&raw.internal.devices&&raw.internal.devices.total;
+  $('tsegcap').textContent=!raw?''
+    :VIEW==='internal'
+      ?'only browsers opened with ?internal=1 — team and test traffic'
+    :VIEW==='all'
+      ?'people and internal browsers counted together'
+    :(idev?`internal/test traffic counted apart — ${fmt(idev)} device${idev===1?'':'s'} so far`
+      :'no internal/test traffic seen yet');
+  const app=viewOf(raw);
+  try{renderUsers(app,LAST_USAGE)}catch(e){}
+  try{renderJourneys(app)}catch(e){}
+  try{renderModes(app)}catch(e){}
+  try{renderIntake(app)}catch(e){}
+  try{renderWho(app)}catch(e){}
+}
+document.querySelectorAll('#tseg .tg button').forEach(b=>
+  b.addEventListener('click',()=>{if(b.disabled)return;VIEW=b.dataset.v;applyView()}));
 async function tick(){
   /* each feed settles on its own — one failing endpoint must not blank
      the rest. An unauthenticated load fires zero gated requests. */
@@ -795,22 +856,19 @@ async function tick(){
   const val=i=>res[i].status==='fulfilled'?res[i].value:null;
   const sess=val(4);
   if(sess&&sess.authenticated===false&&AUT){AUT=false;showGate('session ended — sign in again')}
-  const app=val(0),corr=val(1),glob=val(2),usage=val(3);
-  try{renderUsers(app,usage)}catch(e){}
-  try{renderJourneys(app)}catch(e){}
-  try{renderModes(app)}catch(e){}
-  try{renderIntake(app)}catch(e){}
-  try{renderSeg(corr,glob,usage,app)}catch(e){}
-  try{renderWho(app)}catch(e){}
+  const rawApp=val(0),corr=val(1),glob=val(2),usage=val(3);
+  LAST_APP=rawApp;LAST_USAGE=usage;
+  applyView();
+  try{renderSeg(corr,glob,usage,rawApp)}catch(e){}
   if(!AUT){$('toplive').innerHTML='locked';return}
-  if(!app&&!corr&&!glob){
+  if(!rawApp&&!corr&&!glob){
     $('toplive').innerHTML=`<span class="err">the server isn't answering</span>`+
       (LAST_OK?` · last good <b>${hm(LAST_OK)}</b>`:'');
     return;
   }
   LAST_OK=Date.now()/1000;
   $('toplive').innerHTML=`as of <b>${hm(LAST_OK)}</b>`;
-  $('footR').innerHTML=app?`counters: <b>${esc(app.backend||'—')}</b> · refreshes every 60 s`:'';
+  $('footR').innerHTML=rawApp?`counters: <b>${esc(rawApp.backend||'—')}</b> · refreshes every 60 s`:'';
 }
 
 /* sign-in is a real form on the gate screen now — the token crosses the

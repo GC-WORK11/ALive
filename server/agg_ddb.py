@@ -823,8 +823,14 @@ class DDBDeviceLedger:
 # are separate sets, never crossed, so no row pairs an age with a place.
 #
 # Days are IST calendar days — "today" on a Delhi operator's console.
-
+#
+# Internal/test traffic (telemetry.js ?internal=1) rides the same item
+# layout under the 'usage#i#' prefix instead of 'usage#d#': identical
+# counters, identical sets, a different scope — the console reads real,
+# internal or the union of both without a single real count ever mixing
+# with test traffic.
 USAGE_PK = "usage#d#"
+USAGE_IPK = "usage#i#"
 IST_OFFSET_S = 19800                  # +05:30, no DST
 USAGE_MODES = ("health_max", "petrol_health", "time_health")
 USAGE_VEHICLES = ("car", "cab", "bike", "auto", "erick", "bus", "metro",
@@ -834,6 +840,10 @@ AREA_CAP = 500                        # distinct areas per IST day
 AREA_OTHER = "other"
 _USAGE_NUM = ("opens", "started", "ended", "completed", "dose_ug", "dose_n",
               "saved_ug", "saved_n", "km", "minutes")
+
+# summaries() returns the three reads at once: 'real' = people only,
+# 'internal' = test browsers only, 'all' = both scopes unioned. Device
+# and profile sets union exactly, so 'all' never double-counts an id.
 
 
 def _area_key(area) -> str:
@@ -923,6 +933,45 @@ def _empty_day() -> dict:
     return d
 
 
+def _usage_bag() -> dict:
+    """The raw accumulators a scope reads into: per-day counters, per-day
+    device sets, per-day profile sets. Pure-python shape — both backends
+    fill it, then roll it up identically."""
+    return {"days": {}, "dev": {}, "prof": {}}
+
+
+def _merge_usage_bag(dst: dict, src: dict) -> None:
+    """Fold one bag's counters and sets into another — union semantics:
+    day counters sum, device and profile sets merge (same id counted
+    once), last_ts takes the newest."""
+    for day, v in src["days"].items():
+        d = dst["days"].setdefault(day, _empty_day())
+        for kk in _USAGE_NUM:
+            d[kk] += v.get(kk) or 0
+        d["last_ts"] = max(float(d["last_ts"] or 0.0),
+                           float(v.get("last_ts") or 0.0))
+        for bucket in ("modes", "vehicles"):
+            for name, r in (v.get(bucket) or {}).items():
+                row = d[bucket].setdefault(
+                    name, {"started": 0, "completed": 0})
+                row["started"] += int(r.get("started") or 0)
+                row["completed"] += int(r.get("completed") or 0)
+    for day, ss in src["dev"].items():
+        dst["dev"].setdefault(day, set()).update(ss)
+    for day, pp in src["prof"].items():
+        p = dst["prof"].setdefault(day, {"age": {}, "area": {}})
+        for dim in ("age", "area"):
+            for key, ss in (pp.get(dim) or {}).items():
+                p[dim].setdefault(key, set()).update(ss)
+
+
+def _roll_usage_bag(bag: dict, now: float, backend: str) -> dict:
+    out = _usage_rollup(bag["days"], bag["dev"], now)
+    out["audience"] = _audience_rollup(bag["prof"], now)
+    out["backend"] = backend
+    return out
+
+
 def _usage_rollup(days: dict, dev_sets: dict, now: float) -> dict:
     """Shared read shape: per-day rows + exact distinct-device windows
     (set unions, never sums of daily counts)."""
@@ -962,17 +1011,24 @@ class MemoryUsageAggregates:
         self._dev = {}
         self._prof = {}     # day -> {"age": {band: set}, "area": {a: set},
         #                            "areas": set of the day's real areas}
+        self._idays = {}    # internal scope (test browsers) — same shape,
+        self._idev = {}     # counted apart, never mixed into real reads
+        self._iprof = {}
         self.last_error = None
 
     def record(self, kind: str, props: dict, anon_hash: str,
-               ts: float = None, prev: dict = None):
+               ts: float = None, prev: dict = None,
+               internal: bool = False):
         ts = ts or time.time()
         day = ist_day(ts)
         props = props or {}
         s, mode, veh, dim = _usage_deltas(kind, props)
         counted = None
         with self._lock:
-            d = self._days.setdefault(day, _empty_day())
+            d = (self._idays if internal else self._days).setdefault(
+                day, _empty_day())
+            dev = self._idev if internal else self._dev
+            prof = self._iprof if internal else self._prof
             for k, v in s.items():
                 d[k] = d[k] + v
             if s:
@@ -984,10 +1040,10 @@ class MemoryUsageAggregates:
                     for k, v in dim.items():
                         row[k] += v
             if anon_hash:
-                self._dev.setdefault(day, set()).add(anon_hash)
+                dev.setdefault(day, set()).add(anon_hash)
             if kind == "profile" and anon_hash:
-                p = self._prof.setdefault(day, {"age": {}, "area": {},
-                                                "areas": set()})
+                p = prof.setdefault(day, {"age": {}, "area": {},
+                                          "areas": set()})
                 counted = {}
                 for dim_k, key in (("age", (prev or {}).get("age_band")),
                                    ("area", (prev or {}).get("area"))):
@@ -1008,28 +1064,40 @@ class MemoryUsageAggregates:
                     counted["area"] = area
         return counted
 
-    def summary(self, now: float = None) -> dict:
+    def _bag_of(self, days_m, dev_m, prof_m) -> dict:
+        bag = _usage_bag()
+        _merge_usage_bag(bag, {"days": days_m, "dev": dev_m,
+                               "prof": prof_m})
+        return bag
+
+    def summaries(self, now: float = None) -> dict:
+        """The three reads in one pass: real traffic, internal/test
+        traffic, and the union — one locked copy each, rolled the same
+        way. Internal merges first so a real-traffic profile answer wins
+        a same-day tie in the 'all' view."""
         now = now or time.time()
         with self._lock:
-            days = {k: {**v, "modes": {m: dict(r) for m, r in
-                                       v["modes"].items()},
-                        "vehicles": {m: dict(r) for m, r in
-                                     v["vehicles"].items()}}
-                    for k, v in self._days.items()}
-            dev = {k: set(v) for k, v in self._dev.items()}
-            prof = {k: {"age": {b: set(x) for b, x in v["age"].items()},
-                        "area": {a: set(x) for a, x in v["area"].items()}}
-                    for k, v in self._prof.items()}
-        out = _usage_rollup(days, dev, now)
-        out["audience"] = _audience_rollup(prof, now)
-        out["backend"] = self.backend
+            bags = {"internal": self._bag_of(self._idays, self._idev,
+                                             self._iprof),
+                    "real": self._bag_of(self._days, self._dev,
+                                         self._prof)}
+        merged = _usage_bag()
+        for name in ("internal", "real"):
+            _merge_usage_bag(merged, bags[name])
+        out = {name: _roll_usage_bag(bags[name], now, self.backend)
+               for name in ("real", "internal")}
+        out["all"] = _roll_usage_bag(merged, now, self.backend)
         return out
+
+    def summary(self, now: float = None, scope: str = "real") -> dict:
+        r = self.summaries(now)
+        return r.get(scope) or r["real"]
 
     def reset(self) -> None:
         with self._lock:
-            self._days.clear()
-            self._dev.clear()
-            self._prof.clear()
+            for m in (self._days, self._dev, self._prof,
+                      self._idays, self._idev, self._iprof):
+                m.clear()
 
 
 class DDBUsageAggregates:
@@ -1107,9 +1175,10 @@ class DDBUsageAggregates:
             raise
 
     def record(self, kind: str, props: dict, anon_hash: str,
-               ts: float = None, prev: dict = None):
+               ts: float = None, prev: dict = None,
+               internal: bool = False):
         ts = ts or time.time()
-        pk = USAGE_PK + ist_day(ts)
+        pk = (USAGE_IPK if internal else USAGE_PK) + ist_day(ts)
         props = props or {}
         s, mode, veh, dim = _usage_deltas(kind, props)
         counted = None
@@ -1148,20 +1217,32 @@ class DDBUsageAggregates:
             raise
         return counted
 
-    def summary(self, now: float = None):
+    def summaries(self, now: float = None):
+        """The three reads in one table pass: each 'usage#…' item sorts
+        itself by prefix into the real or internal bag; 'all' is their
+        union. One failed scan fails the whole read — a partial bag
+        presented as a total would be a lie."""
         now = now or time.time()
-        days, dev, prof = {}, {}, {}
+        bags = {"real": _usage_bag(), "internal": _usage_bag()}
         try:
-            for it in DDBTripAggregates._scan(self, USAGE_PK):
-                day = it["pk"]["S"][len(USAGE_PK):]
+            for it in DDBTripAggregates._scan(self, "usage#"):
+                pk_full = it["pk"]["S"]
+                scope = ("internal" if pk_full.startswith(USAGE_IPK)
+                         else "real" if pk_full.startswith(USAGE_PK)
+                         else None)
+                if scope is None:
+                    continue
+                day = pk_full.split("#", 2)[2]
+                bag = bags[scope]
                 sk = (it.get("sk") or {}).get("S", "")
-                d = days.setdefault(day, _empty_day())
+                d = bag["days"].setdefault(day, _empty_day())
                 if sk == "sum":
                     for k in _USAGE_NUM:
                         d[k] = _num(it.get(k))
                     d["last_ts"] = _num(it.get("last_ts"))
                 elif sk == "dev":
-                    dev[day] = set((it.get("devices") or {}).get("SS") or [])
+                    bag["dev"][day] = set(
+                        (it.get("devices") or {}).get("SS") or [])
                 elif sk.startswith("mode#") or sk.startswith("veh#"):
                     bucket = "modes" if sk.startswith("mode#") else "vehicles"
                     key = sk.split("#", 1)[1]
@@ -1170,19 +1251,27 @@ class DDBUsageAggregates:
                         "completed": int(_num(it.get("completed")) or 0)}
                 elif sk.startswith("age#") or sk.startswith("area#"):
                     dim, key = sk.split("#", 1)
-                    prof.setdefault(day, {"age": {}, "area": {}})[dim][key] = \
-                        set((it.get("devices") or {}).get("SS") or [])
+                    bag["prof"].setdefault(day, {"age": {}, "area": {}})[
+                        dim][key] = set(
+                        (it.get("devices") or {}).get("SS") or [])
             self.last_error = None
         except Exception as e:  # noqa: BLE001 - degrade, dashboard must live
             self.last_error = f"{type(e).__name__}: {e}"
             return None
-        out = _usage_rollup(days, dev, now)
-        out["audience"] = _audience_rollup(prof, now)
-        out["backend"] = self.backend
+        merged = _usage_bag()
+        for name in ("internal", "real"):
+            _merge_usage_bag(merged, bags[name])
+        out = {name: _roll_usage_bag(bags[name], now, self.backend)
+               for name in ("real", "internal")}
+        out["all"] = _roll_usage_bag(merged, now, self.backend)
         return out
 
+    def summary(self, now: float = None, scope: str = "real"):
+        r = self.summaries(now)
+        return None if r is None else (r.get(scope) or r["real"])
+
     def reset(self) -> None:
-        for it in DDBTripAggregates._scan(self, USAGE_PK):
+        for it in DDBTripAggregates._scan(self, "usage#"):
             self.client.delete_item(TableName=self.table_name,
                                     Key={"pk": it["pk"], "sk": it["sk"]})
 

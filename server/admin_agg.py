@@ -393,27 +393,10 @@ def _ranked(rows: dict, fixed: tuple = ()) -> list:
     return out
 
 
-@router.get("/app")
-async def app_usage():
-    """Anonymous app counters for the console's panels 02–05 — users
-    (distinct anonymous devices today / 7 IST days / all time), journeys
-    started/completed/success rate, modes and vehicles picked, intake
-    saved (µg the user's pick avoided vs the fastest option, as the app's
-    own receipt computed it). Honest absence: available=false + error when
-    the store can't be read; zeros only when the store answered zero."""
-    agg = _agg_ddb()
-    now = time.time()
-    store = agg.usage_store()
-    try:
-        s = store.summary(now)
-    except Exception as e:  # noqa: BLE001 - dashboard must live
-        s = None
-        store.last_error = f"{type(e).__name__}: {e}"
-    if s is None:
-        return {"ts": now, "available": False,
-                "backend": getattr(store, "backend", "memory"),
-                "error": getattr(store, "last_error", None)
-                or "usage store unreadable"}
+def _usage_view(s: dict, agg, now: float) -> dict:
+    """One scope's rollup → the console's panel shape: users, opens,
+    journeys, modes, vehicles, intake, audience and the 14-day series.
+    Called once per traffic scope (real / internal / all)."""
     days = s.get("days") or {}
     today = s.get("today") or agg.ist_day(now)
     last7 = {agg.ist_day(now - i * 86400) for i in range(7)}
@@ -429,23 +412,16 @@ async def app_usage():
                       "saved_ug": round(float(d.get("saved_ug") or 0.0), 1)})
     first = s.get("first_day")
     return {
-        "ts": now,
-        "available": True,
-        "backend": s.get("backend") or getattr(store, "backend", "memory"),
-        "error": None,
-        "tz": "Asia/Kolkata",
         "today": today,
         "since": first,
         "since_basis": ("first IST day with a counted event" if first else
                         "nothing counted yet — counters armed at server "
                         "start"),
-        "server_start_ts": _BOOT_TS,
-        "persists": getattr(store, "backend", "memory") == "dynamodb",
         "last_event_ts": s.get("last_ts"),
         "devices": {**(s.get("devices") or {"today": 0, "d7": 0, "total": 0}),
-                  "basis": ("distinct anonymous app installs (random id, "
-                            "no account, no location) that opened the app "
-                            "or logged a journey")},
+                    "basis": ("distinct anonymous app installs (random id, "
+                              "no account, no location) that opened the app "
+                              "or logged a journey")},
         "journeys": {"today": _journeys(w_today), "d7": _journeys(w_7),
                      "total": _journeys(w_all)},
         "modes": {"d7": _ranked(w_7["modes"], agg.USAGE_MODES),
@@ -461,11 +437,67 @@ async def app_usage():
                   "total": w_all["opens"]},
         "audience": _audience(s, agg, now),
         "daily": daily,
+        "empty": not (w_all["opens"] or w_all["started"] or w_all["ended"]),
+    }
+
+
+@router.get("/app")
+async def app_usage():
+    """Anonymous app counters for the console's panels 02–05 — users
+    (distinct anonymous devices today / 7 IST days / all time), journeys
+    started/completed/success rate, modes and vehicles picked, intake
+    saved (µg the user's pick avoided vs the fastest option, as the app's
+    own receipt computed it). Honest absence: available=false + error when
+    the store can't be read; zeros only when the store answered zero.
+
+    Traffic scope: the top-level body is the REAL view — nothing a
+    browser marked internal (?internal=1) ever lands in it. `internal`
+    is the same shape over test traffic only, `all` the union of both;
+    the console's switch picks a view, the numbers are never mixed by
+    accident."""
+    agg = _agg_ddb()
+    now = time.time()
+    store = agg.usage_store()
+    sums = None
+    try:
+        if hasattr(store, "summaries"):
+            sums = store.summaries(now)
+        else:
+            s = store.summary(now)
+            sums = None if s is None else {
+                "real": s,
+                "internal": store.summary(now, "internal"),
+                "all": store.summary(now, "all")}
+    except Exception as e:  # noqa: BLE001 - dashboard must live
+        sums = None
+        store.last_error = f"{type(e).__name__}: {e}"
+    if not sums or sums.get("real") is None:
+        return {"ts": now, "available": False,
+                "backend": getattr(store, "backend", "memory"),
+                "error": getattr(store, "last_error", None)
+                or "usage store unreadable"}
+    s = sums["real"]
+    out = _usage_view(s, agg, now)
+    out.update({
+        "ts": now,
+        "available": True,
+        "backend": s.get("backend") or getattr(store, "backend", "memory"),
+        "error": None,
+        "tz": "Asia/Kolkata",
+        "server_start_ts": _BOOT_TS,
+        "persists": getattr(store, "backend", "memory") == "dynamodb",
+        "internal": (_usage_view(sums["internal"], agg, now)
+                     if sums.get("internal") else None),
+        "all": (_usage_view(sums["all"], agg, now)
+                if sums.get("all") else None),
+        "internal_basis": ("test browsers the team opened with "
+                           "?internal=1 — their events count apart, "
+                           "never in the real view"),
         "privacy": ("counts only — usage events carry no coordinates; the "
                     "anonymous id is hashed and lives only in per-day "
                     "distinct sets"),
-        "empty": not (w_all["opens"] or w_all["started"] or w_all["ended"]),
-    }
+    })
+    return out
 
 
 @router.get("/timing")
