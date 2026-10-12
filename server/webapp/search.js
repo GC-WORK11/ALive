@@ -22,6 +22,26 @@
    A.search.inArea(lat, lon)  coverage box (NCR + outskirts)
    A.search.inDelhi(lat, lon) Delhi proper (home.js "outside Delhi" note)
 
+   My-location hint (opt-in — existing calls are untouched):
+     live(q, bias, onRows, { myLoc: true, locLabel? }) — for EMPTY/short
+       queries (<2 chars) emits a first row that resolves via geolocation:
+       the cached fix paints instantly (non-final), a fresh locate()
+       refines it, final arrives once as usual. The row is a normal
+       {name:'My location', lat, lon} pick — flagged loc:true /
+       kind:'myloc' so callers can give it the pin glyph.
+     A.search.myLocation(opts?) -> Promise<row|null>  same row, directly
+       ({maxAgeMs, goodM, waitMs, label, bias}); null when no fix at all.
+
+   A.search.attach(input, opts?) -> composer | null
+     Drop-in maps-style composer on a plain text input (opt-in helper for
+     screens without their own): progressive live() suggestions, a clear
+     ✕ while non-empty, Escape clears, recent places + 'my location' row
+     when empty (opts.myLoc), ArrowUp/ArrowDown/Enter navigation, and row
+     taps that never steal the input's focus. opts: {bias|bias(), onPick,
+     myLoc, recents, recentKey, strings{myLoc,recent,clear,none},
+     list, x, anchor, fillPick, debounceMs, liveOpts, onEnter, onClear}.
+     Return: {input, list, x, st, rows(), clear(), detach()}.
+
    Row: {name, sub, kind, lat, lon, dist (metres | null), source, key, full}
      full = holds every typed word (last as prefix) — partials rank below
    Ranking narrows like Google: the leading words are the NAME; kind words
@@ -1003,6 +1023,9 @@ function live(q, bias, onRows, opts = {}) {
   const ctl1 = new AbortController();   /* tier-1 requests */
   const timers = [];
   let dead = false;
+  let emitT = 0, pend = null;           /* coalesced-paint state — hoisted:
+                                           the short-query path returns
+                                           before the paint block's lets */
   const remember = opts.remember !== false;
   const me = { qt, ctl1, adopt: null, t: 0 };
   /* superseded by a newer keystroke: stop painting and the deep tier,
@@ -1011,6 +1034,7 @@ function live(q, bias, onRows, opts = {}) {
     if (dead) return;
     dead = true; ctl.abort();
     timers.forEach(clearTimeout);
+    if (emitT) { clearTimeout(emitT); emitT = 0; pend = null; }
     if (!remember) { ctl1.abort(); return; }
     if (orphan && orphan !== me) orphan.ctl1.abort();
     orphan = me;
@@ -1040,14 +1064,25 @@ function live(q, bias, onRows, opts = {}) {
     if (dead) return;
     try { onRows(rows, { final, stage }); } catch (e) { /* caller's bug, not ours */ }
   };
-  if (qt.length < 2) { say([], true, 'short'); return cancel; }
-
   const b = bias && Number.isFinite(+bias.lat) && Number.isFinite(+bias.lon)
     ? { lat: +bias.lat, lon: +bias.lon } : null;
+  if (qt.length < 2) {
+    if (!opts.myLoc) { say([], true, 'short'); return cancel; }
+    /* opt-in 'my location' hint row: the cached fix paints at once
+       (non-final), a real locate() refines it — callers get a normal
+       {name,lat,lon} row they can hand straight to their pick path */
+    const known = geoPos();
+    if (known) say([locRow(known, b, opts.locLabel)], false, 'myloc');
+    within(myLocation({ bias: b, label: opts.locLabel }), 6000, null).then((row) => {
+      say(row ? [row] : (known ? [locRow(known, b, opts.locLabel)] : []), true, 'myloc');
+    });
+    return cancel;
+  }
+
   const qa = analyze(raw);
   const ctx = { qa, bias: b, prev: null, anchorPts: null, anchorToks: null };
   const pool = new Map();
-  let finalSent = false, shownN = 0, lastAt = 0, emitT = 0, pend = null;
+  let finalSent = false, shownN = 0, lastAt = 0;
   /* coalesce bursts (the anchor stage lands in many small pieces):
      at most one repaint per 90 ms; first paint and final go straight out */
   const emit = (stage, final) => {
@@ -1226,14 +1261,21 @@ function live(q, bias, onRows, opts = {}) {
   timers.push(setTimeout(() => { pauseFired = true; pauseCheck(); },
     opts.enter ? 0 : Math.max(0, opts.pauseMs ?? PAUSE_MS)));
 
-  /* final = tier 1 settled AND (deep settled, or deep never needed) */
+  /* final = tier 1 settled AND (deep settled, or deep never needed).
+     latestMs bounds the wait by what can still arrive: with the pause
+     trigger disabled (pauseMs huge — e.g. profile's type-ahead) the deep
+     tier can never start, so only Photon's ~3 s window is still live;
+     waiting the full 12 s would leave `final` looking hung. */
+  const deepMayStart = !!opts.enter || !!opts.immediate ||
+    (opts.pauseMs ?? PAUSE_MS) < 30000;
+  const latestMs = deepMayStart ? 12000 : 3400;
   const settle = async () => {
     await t1;
     while (!dead && !finalSent) {
       if (deepP) { await deepP; break; }
       if (enough(top())) break;
       await new Promise((res) => setTimeout(res, 60));
-      if (Date.now() - t0 > 12000) break;     /* never a spinner that never ends */
+      if (Date.now() - t0 > latestMs) break;  /* never a spinner that never ends */
     }
     emit('final', true);
   };
@@ -1259,13 +1301,16 @@ function search(q, bias, opts = {}) {
   const ck = cacheKey(q, bias, opts.enter);
   if (cache.has(ck)) return Promise.resolve(cache.get(ck));
   return new Promise((resolve) => {
-    let last = [], done = false;
-    const fin = (rows) => { if (done) return; done = true; resolve(rows); };
+    let last = [], done = false, wd = 0;
+    const fin = (rows) => {
+      if (done) return;
+      done = true; clearTimeout(wd); resolve(rows);
+    };
     const cancel = live(q, bias, (rows, m) => {
       last = rows;
       if (m.final) { cachePut(ck, rows); fin(rows); }
     }, { ...opts, immediate: true, remember: false, pauseMs: 1e9 });
-    setTimeout(() => { cancel(); fin(last); }, 9000);
+    wd = setTimeout(() => { cancel(); fin(last); }, 9000);
   });
 }
 
@@ -1286,7 +1331,339 @@ async function reverse(lat, lon) {
   return r.j ? ((r.j.display_name || '').split(',')[0] || null) : null;
 }
 
-A.search = { live, search, reverse, inDelhi, inArea, AREA };
+/* ── 'my location' — a normal row backed by geolocation ─────────── */
+
+const geoPos = () => {
+  const p = typeof A !== 'undefined' && A.geo && A.geo.pos;
+  return p && Number.isFinite(+p.lat) && Number.isFinite(+p.lon) ? p : null;
+};
+
+/* the hint as a NORMAL row — a caller's pick path consumes it unchanged;
+   loc:true / kind:'myloc' is there so it can get a pin/target glyph */
+function locRow(pos, bias, label) {
+  if (!pos) return null;
+  const lat = +pos.lat, lon = +pos.lon;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return {
+    name: label || 'My location',
+    sub: pos.acc != null ? `gps · ±${Math.round(pos.acc)} m` : 'gps',
+    kind: 'myloc', rawKind: 'myloc', lat, lon,
+    dist: bias && Number.isFinite(+bias.lat) && Number.isFinite(+bias.lon)
+      ? hav(+bias.lat, +bias.lon, lat, lon) : 0,
+    source: 'geolocation', loc: true,
+    key: `myloc|${lat.toFixed(4)}|${lon.toFixed(4)}`,
+  };
+}
+
+/* Promise<row|null>: the cached fix while it's fresh (≤ maxAgeMs — 2 min,
+   same staleness bar as app.js), else a real locate(); a stale fix still
+   answers when the fresh one fails; null only when there's no fix at all */
+async function myLocation(opts = {}) {
+  const pos = geoPos();
+  if (pos && pos.t && Date.now() - pos.t <= (opts.maxAgeMs ?? 120000))
+    return locRow(pos, opts.bias, opts.label);
+  const g = typeof A !== 'undefined' && A.geo;
+  if (g && typeof g.locate === 'function') {
+    try {
+      const p = await g.locate({ goodM: opts.goodM ?? 150, waitMs: opts.waitMs ?? 4500 });
+      if (p && Number.isFinite(+p.lat) && Number.isFinite(+p.lon))
+        return locRow(p, opts.bias, opts.label);
+    } catch (e) { /* refused / no fix — the stale one still answers */ }
+  }
+  return pos ? locRow(pos, opts.bias, opts.label) : null;
+}
+
+/* ── the shared composer (opt-in) ─────────────────────────────────
+   Screens with their own UI (airmap's floating bar, whereto's armed
+   row) keep it — attach() is for an input that wants the whole maps
+   behaviour out of the box: progressive live() rows, 'my location' +
+   recent places on an empty field, a ✕ clear while non-empty,
+   ↑/↓/Enter/Esc keys, and row taps that never blur the input mid-type.
+   Looks are intentionally plain inline styles + .asc-* hooks; callers
+   style or pass opts.list/opts.x/opts.anchor for full control. */
+function attach(input, opts = {}) {
+  if (typeof document === 'undefined' || !input || !input.addEventListener) return null;
+  const T = {
+    myLoc: 'My location', recent: 'recent places', clear: 'clear search',
+    searching: 'searching…', none: 'no place found',
+    ...(opts.strings || {}),
+  };
+  const biasOf = () => {
+    const v = typeof opts.bias === 'function' ? opts.bias() : opts.bias;
+    return (v && Number.isFinite(+v.lat) && Number.isFinite(+v.lon)) ? v
+      : (geoPos() || DELHI_CENTER);
+  };
+  const storeGet = (k, d) =>
+    (typeof A !== 'undefined' && A.store && A.store.get ? A.store.get(k, d) : d);
+  const storeSet = (k, v) => {
+    if (typeof A !== 'undefined' && A.store && A.store.set) A.store.set(k, v);
+  };
+  const rKey = opts.recentKey || 'search.recent';
+  const recents = () => (opts.recents === false ? [] :
+    (storeGet(rKey, []) || []))
+    .filter((r) => r && Number.isFinite(+r.lat) && Number.isFinite(+r.lon) && (r.name || r.label))
+    .map((r) => {
+      const b = biasOf();
+      return { name: r.name || r.label, sub: r.sub || '', lat: +r.lat, lon: +r.lon,
+        dist: b ? hav(b.lat, b.lon, +r.lat, +r.lon) : null, _recent: true };
+    });
+  const pushRecent = (r) => {
+    if (!r || r.loc || r._recent || r.noRecent || opts.recents === false) return;
+    const nk = norm(r.name);
+    const list = recents().filter((x) =>
+      !(norm(x.name) === nk && Math.abs(x.lat - r.lat) < 0.002 && Math.abs(x.lon - r.lon) < 0.002));
+    list.unshift({ name: r.name, sub: r.sub || '', lat: +r.lat, lon: +r.lon });
+    storeSet(rKey, list.slice(0, 8));
+  };
+
+  /* DOM: the suggestion list sits under the input (absolute inside the
+     nearest positioned ancestor — we make the parent one if needed) */
+  const anchor = opts.anchor || input.parentElement || null;
+  if (anchor && anchor.style && typeof getComputedStyle === 'function' &&
+      getComputedStyle(anchor).position === 'static') anchor.style.position = 'relative';
+  const list = opts.list || document.createElement('div');
+  if (!opts.list) {
+    list.className = 'asc-list';
+    list.style.cssText = 'position:absolute;left:0;right:0;top:calc(100% + 6px);' +
+      'z-index:40;background:#fff;border-radius:14px;padding:4px;' +
+      'box-shadow:0 8px 28px rgba(22,24,29,.18);max-height:min(320px,55vh);' +
+      'overflow-y:auto;overflow-x:hidden';
+    if (anchor && anchor.appendChild) anchor.appendChild(list);
+    else input.insertAdjacentElement('afterend', list);
+  }
+  list.hidden = true;
+  let x = opts.x || null;
+  if (!x && opts.clear !== false && anchor && anchor.appendChild) {
+    x = document.createElement('button');
+    x.type = 'button'; x.className = 'asc-x';
+    x.setAttribute('aria-label', T.clear); x.textContent = '✕';
+    x.style.cssText = 'position:absolute;right:5px;top:50%;transform:translateY(-50%);' +
+      'border:0;background:transparent;padding:8px;cursor:pointer;' +
+      'color:#6E7278;font-size:13px;line-height:1';
+    anchor.appendChild(x);
+  }
+  if (x) x.hidden = !input.value;
+
+  const escH = (s) => String(s == null ? '' : s)
+    .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtD = (m) => m == null ? '' : m < 1000 ? `${Math.max(50, Math.round(m / 50) * 50)} m`
+    : m < 10000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 1000)} km`;
+  const toksOf = (v) => norm(v).split(' ').filter(Boolean);
+  const rowHit = (r, toks) => {
+    if (!toks.length) return true;
+    const words = norm(`${r.name} ${r.sub || ''}`).split(' ');
+    return toks.every((tk) => words.some((w) => w.startsWith(tk)));
+  };
+
+  const st = { q: input.value || '', view: [], rows: [], loc: null, locAsked: false,
+    final: true, open: false, act: -1, seq: 0, cur: null, timer: 0, dead: false };
+  const show = () => {
+    if (!st.view.length && st.q.trim().length < 2) return;
+    st.open = true; list.hidden = false;
+  };
+  const hide = () => { st.open = false; list.hidden = true; };
+
+  /* the empty-field hints: 'my location' first (resolved async, paints
+     the moment the fix lands), then recent places */
+  const hintRows = () => {
+    const rows = [];
+    if (opts.myLoc && st.loc) rows.push(st.loc);
+    rows.push(...recents().slice(0, 6));
+    return rows;
+  };
+  const ensureLoc = () => {
+    if (!opts.myLoc || st.locAsked) return;
+    st.locAsked = true;
+    const pos = geoPos();
+    if (pos) st.loc = locRow(pos, biasOf(), T.myLoc);
+    within(myLocation({ bias: biasOf(), label: T.myLoc }), 6000, null).then((row) => {
+      if (st.dead) return;
+      if (row) st.loc = row;
+      if (st.q.trim().length < 2) { paint(); show(); }
+    });
+  };
+
+  const rowHtml = (r, i) => `<button type="button" data-i="${i}" class="asc-row${i === st.act ? ' asc-on' : ''}" ` +
+    `style="display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:0;border-radius:10px;` +
+    `background:${i === st.act ? '#F0EFED' : 'transparent'};text-align:left;cursor:pointer;font:inherit">` +
+    `<span class="asc-ic" style="flex:none;width:22px;text-align:center;color:#6E7278">${r.loc ? '◎' : r._recent ? '◷' : '•'}</span>` +
+    `<span style="flex:1;min-width:0"><span class="asc-t" style="display:block;font-size:14px;font-weight:500;color:#16181D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(r.name)}</span>` +
+    (r.sub ? `<span class="asc-s" style="display:block;font-size:12px;color:#6E7278;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(r.sub)}</span>` : '') +
+    `</span>` +
+    (r.dist != null ? `<span class="asc-d" style="flex:none;font-size:12px;color:#9A9DA5;font-variant-numeric:tabular-nums">${escH(fmtD(r.dist))}</span>` : '') +
+    `</button>`;
+
+  function markAct() {
+    list.querySelectorAll('.asc-row').forEach((b, i) => {
+      const on = i === st.act;
+      b.classList.toggle('asc-on', on);
+      b.style.background = on ? '#F0EFED' : 'transparent';
+      if (on && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' });
+    });
+  }
+  function bindRows() {
+    list.querySelectorAll('.asc-row').forEach((b) => {
+      /* pointerdown, not click, is where focus would move — eating it
+         keeps the caret in the input while a row is being tapped */
+      b.addEventListener('pointerdown', (e) => e.preventDefault());
+      b.addEventListener('pointerenter', () => {
+        const i = +b.dataset.i;
+        if (st.act !== i) { st.act = i; markAct(); }
+      });
+      b.addEventListener('click', () => pick(+b.dataset.i));
+    });
+  }
+  function paint() {
+    const qt = st.q.trim();
+    st.view = qt.length < 2 ? hintRows() : st.rows;
+    let h = '', secDone = false;
+    st.view.forEach((r, i) => {
+      if (r._recent && !secDone) { h += `<div class="asc-sec" style="font-size:11px;color:#9A9DA5;padding:7px 12px 1px">${escH(T.recent)}</div>`; secDone = true; }
+      h += rowHtml(r, i);
+    });
+    if (qt.length >= 2 && !st.view.length)
+      h += `<div class="asc-quiet" style="padding:12px 14px;font-size:13px;color:#6E7278">${escH(st.final ? T.none : T.searching)}</div>`;
+    list.innerHTML = h;
+    bindRows();
+    if (!st.view.length && qt.length < 2) hide(); else if (st.open) show();
+  }
+
+  function pick(i) {
+    const r = st.view[i];
+    if (!r) return;
+    cancelCur();
+    pushRecent(r);
+    if (opts.fillPick !== false) { input.value = r.name; st.q = r.name; }
+    st.act = -1;
+    hide();
+    try { if (opts.onPick) opts.onPick(r); } catch (e) { /* caller's */ }
+  }
+  function cancelCur() {
+    clearTimeout(st.timer);
+    if (st.cur) { try { st.cur(); } catch (e) { /* done */ } st.cur = null; }
+  }
+  function apply(rows, meta) {
+    const fin = !meta || meta.final !== false;
+    const clean = [], seen = new Set();
+    for (const r of rows || []) {
+      if (!r || !Number.isFinite(+r.lat) || !Number.isFinite(+r.lon)) continue;
+      const k = r.key || `${r.name}|${(+r.lat).toFixed(4)}|${(+r.lon).toFixed(4)}`;
+      if (seen.has(k)) continue;
+      seen.add(k); clean.push(r);
+    }
+    /* while deeper tiers are still coming, only rows carrying every typed
+       word show; the final word may add the closest guesses */
+    if (!fin) clean = clean.filter((r) => rowHit(r, toksOf(st.q)));
+    if (clean.length || fin) st.rows = clean.slice(0, 10);
+    if (fin) st.final = true;
+    st.act = -1;
+    paint();
+  }
+  function runLive(v, extra) {
+    const seq = ++st.seq;
+    if (st.cur) { try { st.cur(); } catch (e) { /* done */ } st.cur = null; }
+    const c = live(v, biasOf(), (rows, meta) => {
+      if (st.dead || seq !== st.seq || v !== st.q) return;
+      apply(rows, meta);
+    }, { ...(opts.liveOpts || {}), ...(extra || {}) });
+    st.cur = typeof c === 'function' ? c : null;
+  }
+  function onQ(v) {
+    st.q = v;
+    if (x) x.hidden = !v;
+    st.seq++; st.act = -1;
+    if (v.trim().length < 2) {
+      cancelCur();
+      st.final = true; st.rows = [];
+      ensureLoc(); paint(); show();
+      return;
+    }
+    /* the last answer narrows in place while the next one is fetched */
+    if (st.rows.length) st.rows = st.rows.filter((r) => rowHit(r, toksOf(v)));
+    st.final = false;
+    paint(); show();
+    clearTimeout(st.timer);
+    st.timer = setTimeout(() => runLive(v), opts.debounceMs ?? 90);
+  }
+  function clear(focus = true) {
+    cancelCur();
+    st.q = ''; st.rows = []; st.final = true; st.act = -1;
+    input.value = '';
+    if (x) x.hidden = true;
+    ensureLoc(); paint(); show();
+    if (focus) input.focus();
+    try { if (opts.onClear) opts.onClear(); } catch (e) { /* caller's */ }
+  }
+
+  const onInput = () => onQ(input.value);
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!st.view.length) return;
+      e.preventDefault();
+      const n = st.view.length;
+      if (e.key === 'ArrowDown') st.act = st.act + 1 >= n ? 0 : st.act + 1;
+      /* ↑ from the top row hands the text back (act -1); from there it
+         wraps to the last row */
+      else st.act = st.act <= 0 ? (st.act === 0 ? -1 : n - 1) : st.act - 1;
+      markAct();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const i = st.act >= 0 ? st.act : 0;
+      if (st.view[i]) { pick(i); return; }
+      /* nothing listed yet → look deeper now, like the screens do */
+      if (st.q.trim().length >= 2) {
+        cancelCur(); st.final = false; paint();
+        runLive(st.q, { enter: true });
+      }
+      try { if (opts.onEnter) opts.onEnter(st.q); } catch (e2) { /* caller's */ }
+    }
+  };
+  /* Esc — capture at WINDOW level: motion.js eats Escape at document
+     capture whenever a sheet is open, so an input-level listener never
+     sees the key (airmap's composer does the same). Consume the key only
+     while this composer is engaged — text to clear or a list up and the
+     input focused — an idle composer lets it fall through to the
+     screen's own walk-back. */
+  const onEsc = (e) => {
+    if (e.key !== 'Escape' || st.dead) return;
+    if (!st.q && !st.open) return;
+    if (document.activeElement !== input && !st.open) return;
+    e.stopImmediatePropagation(); e.preventDefault();
+    clear(false);                     /* first Esc clears text + closes */
+    hide();
+    input.blur();
+  };
+  const onFocus = () => { ensureLoc(); paint(); show(); };
+  const onBlur = () => { setTimeout(() => { if (!st.dead) hide(); }, 140); };
+
+  input.addEventListener('input', onInput);
+  input.addEventListener('keydown', onKey);
+  window.addEventListener('keydown', onEsc, true);
+  input.addEventListener('focus', onFocus);
+  input.addEventListener('blur', onBlur);
+  if (x && !opts.x) {
+    x.addEventListener('pointerdown', (e) => e.preventDefault());
+    x.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); clear(); });
+  }
+
+  return {
+    input, list, x, st,
+    rows: () => st.view.slice(),
+    clear: () => clear(false),
+    detach() {
+      st.dead = true; cancelCur();
+      input.removeEventListener('input', onInput);
+      input.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onEsc, true);
+      input.removeEventListener('focus', onFocus);
+      input.removeEventListener('blur', onBlur);
+      if (!opts.list) list.remove();
+      if (x && !opts.x) x.remove();
+    },
+  };
+}
+
+A.search = { live, search, reverse, myLocation, attach, inDelhi, inArea, AREA };
 /* dev surface for search-test.html and the node harness */
 A.search._dbg = {
   engineSearch, photonSearch, nominatimSearch, overpass,
