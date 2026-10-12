@@ -66,6 +66,21 @@ body[data-top="journey"] .maplibregl-ctrl-group { display: none }
 .jn-pdot[hidden] { display: none }
 @keyframes jn-breath { 50% { opacity: .35 } }
 
+/* location denied — the exact way back, plus a re-check */
+.jn-geohelp { pointer-events: auto; background: var(--jn-glass); border-radius: 16px;
+  box-shadow: var(--jn-sh-float); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 5px; max-width: 100%;
+  font-size: 13px; color: var(--ink2); animation: jn-fade .3s var(--ease) }
+.jn-geohelp[hidden] { display: none }
+.jn-gh-t { font-size: 14px; font-weight: 700; color: var(--ink) }
+.jn-gh-s { line-height: 1.45 }
+.jn-gh-b { align-self: flex-start; border-radius: 999px; min-height: 44px;
+  padding: 0 18px; background: var(--ink); color: var(--paper);
+  font-size: 14px; font-weight: 600; transition: transform .2s var(--ease) }
+.jn-gh-b:active { transform: scale(.96) }
+.jn-gh-b[disabled] { opacity: .55 }
+
 /* map pin for a live jam on the line */
 .jn-jampin { width: 14px; height: 14px; border-radius: 50%; background: var(--ink);
   border: 2.5px solid var(--paper); box-shadow: 0 1px 4px rgba(22, 24, 29, .35) }

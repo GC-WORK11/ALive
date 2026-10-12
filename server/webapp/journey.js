@@ -578,7 +578,7 @@ A.screen('journey', {
       traffic: null, jams: [], jamT: 0, jamBusy: false, jamPins: 0, trafficDown: false,
       follow: true, bearing: null, cueKey: null,
       done: false, dead: false, simulated: false,
-      timer: 0, simTimer: 0,
+      timer: 0, simTimer: 0, geoPulse: 0,
     };
 
     /* ── view: maneuver banner · jam + status line · ETA card ─────── */
@@ -597,6 +597,11 @@ A.screen('journey', {
         <div class="jn-flags">
           <div class="jn-jam" hidden>${ic('clock', 15, 'currentColor')}<span class="jn-jtxt"></span></div>
           <div class="jn-pill" hidden><i class="jn-pdot"></i><span class="jn-ptxt"></span></div>
+          <div class="jn-geohelp" hidden>
+            <b class="jn-gh-t">Location is off</b>
+            <span class="jn-gh-s"></span>
+            <button class="jn-gh-b" type="button">Try again</button>
+          </div>
         </div>
         </div>
         <div class="jn-bottom">
@@ -628,6 +633,7 @@ A.screen('journey', {
       instr: $('.jn-instr'), street: $('.jn-street'), close: $('.jn-close'),
       jam: $('.jn-jam'), jtxt: $('.jn-jtxt'),
       pill: $('.jn-pill'), pdot: $('.jn-pdot'), ptxt: $('.jn-ptxt'),
+      geohelp: $('.jn-geohelp'), ghs: $('.jn-gh-s'), ghb: $('.jn-gh-b'),
       recenter: $('.jn-recenter'), progFill: $('.jn-prog i'),
       main: $('.jn-main'), etaV: $('.jn-etav'), etaS: $('.jn-etas'), spdV: $('.jn-spdv'),
       air: $('.jn-air'), adot: $('.jn-adot'), aword: $('.jn-aword'), doseV: $('.jn-dosev'),
@@ -680,6 +686,29 @@ A.screen('journey', {
     });
 
     /* ── the device's own GPS — errors are surfaced, never swallowed ─ */
+    /* a one-shot probe alongside the watch: primes nav from a last-known
+       fix on devices with one, and re-pokes acquisition while we wait —
+       a watch that timed out once would otherwise sit dead forever */
+    function probe(opts, done) {
+      if (!navigator.geolocation) { if (done) done(); return; }
+      try {
+        navigator.geolocation.getCurrentPosition((p) => {
+          if (S.done || S.dead) { if (done) done(); return; }
+          const c = p.coords;
+          const f = { lat: c.latitude, lon: c.longitude, acc: c.accuracy,
+            speed: c.speed, heading: c.heading, t: Date.now() };
+          A.geo.pos = { lat: f.lat, lon: f.lon, t: f.t, acc: f.acc };
+          onFix(f);
+          if (done) done();
+        }, (err) => {
+          if (S.done || S.dead) { if (done) done(); return; }
+          if (err && err.code === 1) S.geoErr = 'denied';
+          else if (!S.gotFix) S.geoErr = 'unavailable';
+          render();
+          if (done) done();
+        }, opts);
+      } catch (e) { if (done) done(); }
+    }
     function startGeo() {
       if (!navigator.geolocation) { S.geoErr = 'unsupported'; render(); return; }
       try {
@@ -695,7 +724,28 @@ A.screen('journey', {
           render();
         }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
       } catch (e) { S.geoErr = 'unavailable'; render(); }
+      /* grab whatever the device already knows (a cached fix goes through
+         the same plausibility drops), then keep nudging until one lands —
+         never while permission itself is the problem */
+      probe({ enableHighAccuracy: false, maximumAge: 30000, timeout: 12000 });
+      S.geoPulse = setInterval(() => {
+        if (S.done || S.dead || S.gotFix || S.geoErr === 'denied' || S.geoErr === 'unsupported') return;
+        probe({ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+      }, 9000);
     }
+    /* denied is fixable by the user, not by us — say exactly how, and let
+       them re-check once it's on */
+    ui.ghs.textContent = /iP(hone|ad|od)/.test(navigator.userAgent)
+      ? 'Settings → Privacy & Security → Location Services on → Safari Websites → While Using. Then Try again.'
+      : /android/i.test(navigator.userAgent)
+        ? 'Tap the lock icon by the address bar → Permissions → Location → Allow. Then Try again.'
+        : 'Tap the lock icon by the address bar → Site settings → Location → Allow. Then Try again.';
+    ui.ghb.addEventListener('click', () => {
+      ui.ghb.disabled = true; ui.ghb.textContent = 'Checking…';
+      probe({ enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }, () => {
+        ui.ghb.disabled = false; ui.ghb.textContent = 'Try again';
+      });
+    });
     /* QA only (?sim=1, never linked): fixes fed along the line at 4×
        plan pace through the same path; the record is simulated:true */
     function startSim() {
@@ -726,6 +776,7 @@ A.screen('journey', {
         if ((S.teleHits = (S.teleHits || 0) + 1) < 4) return;
       } else S.teleHits = 0;
       S.geoErr = null;
+      if (S.geoPulse) { clearInterval(S.geoPulse); S.geoPulse = 0; }
       /* measured speed: the device's own reading when it gives one, else
          the displacement between two fixes (inside the noise = 0) */
       let v = typeof f.speed === 'number' && isFinite(f.speed) && f.speed >= 0 ? f.speed : null;
@@ -963,13 +1014,15 @@ A.screen('journey', {
       let pill = null, dot = false;
       if (S.geoErr === 'denied') pill = 'Location is blocked — allow it to navigate';
       else if (S.geoErr === 'unsupported') pill = "This browser can't share your location";
-      else if (!S.gotFix) { pill = S.geoErr ? 'No GPS signal yet…' : 'Finding your location…'; dot = true; }
+      else if (!S.gotFix) { pill = S.geoErr ? 'No GPS signal yet — still trying…' : 'Finding your location…'; dot = true; }
+      else if (Date.now() - S.lastFixT > 2 * FIX_STALE_MS) { pill = 'GPS signal lost — still watching'; dot = true; }
       else if (S.rerouting) { pill = 'Off route — finding a new way…'; dot = true; }
       else if (S.offSince) pill = S.rerouteFail ? "Off route — couldn't get a new way yet" : 'Off route';
       else if (S.weak) pill = 'Weak GPS signal';
       ui.pill.hidden = pill == null;
       ui.pdot.hidden = !dot;
       if (pill != null) set(ui.ptxt, 'pt', pill);
+      ui.geohelp.hidden = S.geoErr !== 'denied';
       paintCue(remM);
     }
 
@@ -1010,8 +1063,8 @@ A.screen('journey', {
 
     function stopAll() {
       if (S.watchId != null) { try { navigator.geolocation.clearWatch(S.watchId); } catch (e) {} S.watchId = null; }
-      clearInterval(S.timer); clearInterval(S.simTimer);
-      S.timer = 0; S.simTimer = 0;
+      clearInterval(S.timer); clearInterval(S.simTimer); clearInterval(S.geoPulse);
+      S.timer = 0; S.simTimer = 0; S.geoPulse = 0;
     }
 
     function finish(arrived) {
