@@ -180,12 +180,14 @@ def test_place_and_reverse_503_without_key(monkeypatch):
     deps.set_location(FakeLoc(enabled=False))
     assert client.get("/v2/place/amz:X9").status_code == 503
     # with no gazetteer hit nearby and Amazon disabled the endpoint is an
-    # honest 404 ("no named place within ...") — never a fabricated label
+    # honest empty answer — 200 {name: null} since 94e1a48 (the client's
+    # Nominatim fallback reads it; a fabricated label is still banned)
     import core_engine
     monkeypatch.setattr(core_engine, "nearest", lambda *a, **k: [])
     r = client.get("/v2/reverse", params={"lat": 28.61, "lon": 77.21})
-    assert r.status_code == 404
-    assert "no named place" in r.json()["error"]
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] is None and body["dropped_pin"] is True
 
 
 def test_reverse_names_street_level():

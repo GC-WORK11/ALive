@@ -35,7 +35,8 @@ REQUIRED = [
     "/static/god/integrate-s18_compare2.webp",  # gallery captures
     "/static/god/integrate-s26b_stays.webp",
     'id="tryit"',                    # the live preview section
-    "/static/sim/index.html",        # the live preview iframe
+    'src="/app/"',                   # the live preview iframe — the real
+                                     # app since 3e44ada (was scripted sim)
     'id="simFrame"', 'id="simfit"',  # desktop embedded preview rig
     'id="simOpen"', 'id="simOv"',    # phone poster → fullscreen overlay
     'id="fieldSec"',                 # the field section

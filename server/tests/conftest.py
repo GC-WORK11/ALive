@@ -22,6 +22,10 @@ os.environ.setdefault("ALIVE_RATE_LIMIT", "0")
 os.environ.setdefault("ALIVE_INGEST_IN_APP", "0")
 # ...nor the hourly field archiver (writes data/archive/ + S3)
 os.environ.setdefault("ALIVE_ARCHIVE", "0")
+# a dev box with the real ops token exported would push admin api tests
+# onto the Bearer path — the suite covers the loopback (no-token) path,
+# and token-path tests set the var themselves
+os.environ.pop("ALIVE_ADMIN_TOKEN", None)
 
 
 def pytest_configure(config):

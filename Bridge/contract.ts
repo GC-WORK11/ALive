@@ -33,6 +33,12 @@ export interface Place {
   source?: string;              // gazetteer | amazon | photon | ...
   sources?: string[];           // tiers that found it, e.g. ["t1","t2"]
   outside_ncr?: boolean;
+  _anchor_w?: number;           // compound-anchor weight the engine
+                                // scored this row under (emitted on
+                                // /v2/search rows; ranking metadata)
+  suspect?: string;             // demotion reason on mis-coord rows —
+                                // "claim-evidence:…", "sector-grid-off",
+                                // "digit-mismatch", … (merge honesty)
 }
 
 export interface SearchResponse {
@@ -362,9 +368,14 @@ export interface V2SearchResponse {
    *  duplicate "t2" dict key shadowed the row list; fixed — status moved
    *  here so t2 stays a Place[]). */
   t2_status: string;
-  tiers: string[];              // ["t1"] or ["t1","t2"]
+  t3: Place[];                  // tier-3 rows (deep index pass, runs
+                                // inside the search budget)
+  /** "ok" | "skipped:budget" | "timeout:budget" | "off" | null */
+  t3_status: string | null;
+  tiers: string[];              // ["t1"] or ["t1","t2"] (+ "t3")
   t1_engine: string;            // alive_core | alive_core_ref | gazetteer
-  took_ms: { t1: number; t2: number | null; total: number };
+  took_ms: { t1: number; t2: number | null; t3: number | null;
+             total: number };
 }
 
 /** Every dose on the v2 wire prices the breathing-zone field —
@@ -537,6 +548,11 @@ export interface V2PlanOption {
                                 // dose confidence "low"
   origin_gap_km?: number;       // how far the geometry starts from the
                                 // requested origin, km
+  from_gap_km?: number;         // measured start gap whenever >300m —
+                                // the UI's 'route starts N km from your
+                                // point' note (lighter than the
+                                // starts_at_origin truncation flag)
+  to_gap_km?: number;           // same measured gap at the far end
   route_id: string;             // opaque, /v2/strip key, ~1 h TTL
   delta?: V2RouteDelta | null;  // exposure drop vs the honest baseline —
                               // "the purest route and the default one",

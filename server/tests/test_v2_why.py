@@ -561,11 +561,12 @@ def test_city_html_has_why_line():
     assert 'id="whyline"' in html and "cy.why" in html
 
 
-def test_admin_html_has_drivers_table():
-    html = open(os.path.join(os.path.dirname(__file__), "..",
-                             "admin.html")).read()
-    assert 'id="whydrivers"' in html and "/v2/why" in html \
-        and 'id="whyeval"' in html
+def test_why_endpoint_is_live():
+    # the admin's whydrivers table was dropped in the Oct-10 dark-minimal
+    # rebuild (914f529) — the surface contract that remains is the
+    # endpoint itself: /v2/why answers for the Delhi default point
+    got = client.get("/v2/why").json()
+    assert got["point_in_area"] is True
 
 
 # ------------------------------------------------------------- cause_note
@@ -616,7 +617,7 @@ def test_cause_note_full_carrying_inflow():
     assert "44 fires in the Punjab–Haryana belt" in text
     assert "up from 20 4 hours back" in text
     assert "carrying it our way" in text
-    assert "the air is barely moving" in text and "~54%" in text
+    assert "the air is holding still" in text and "~54%" in text
     assert "64.8 → 49.2" in text
     assert text.endswith("smoke coming in while the air sits still")
     assert f["basis"] == "measured" and f["belt_delta"] == 24
@@ -660,7 +661,7 @@ def test_cause_note_floors_hold():
     and a belt delta under the re-count floor isn't a 'jump'."""
     ev = _ev(belt=9, factor=1.1, delta=6.0)
     text, f = v2why._cause_note(ev, _wind(), _series_belt([(5.0, 11), (1.0, 10)]))
-    assert "9 fires" in text and "barely moving" not in text
+    assert "9 fires" in text and "holding still" not in text
     assert "city's average" not in text
     assert f["stag_factor"] is None and f["trend_to"] is None
     # |delta|=2 < _NOTE_DELTA_MIN — FIRMS re-count noise, not a move
