@@ -988,6 +988,35 @@ async def ac(response: Response, q: str = Query("", max_length=200),
                  or it["distance_m"] <= FAR_KM * 1000]
                 for g in (groups.get("ola", []), mappls_items or [])]
         merged = merge_results(near, q=q, limit=limit)
+        # canonical-place pin: when the whole query is a known place name
+        # ('panipat', 'hapur'), its gazetteer entity must be in the pool —
+        # otherwise a same-name provider row wins whenever the index call
+        # drops that row (the #1 then flips run to run)
+        want_kinds = ("town", "city", "locality", "district", "state",
+                      "station", "train_station", "metro_station",
+                      "airport", "landmark")
+        if (2 <= len(nq) <= 40 and
+                not any(_norm(m.get("name") or "") == nq
+                        and (m.get("kind") or "") in want_kinds
+                        for m in merged)):
+            try:
+                from .gazetteer import AC
+                if AC.ready:
+                    cands = [g for g in AC.query(q, lat, lon, 8)
+                             if _norm(g.get("name") or "") == nq
+                             and (g.get("kind") or "") in want_kinds]
+                    cands.sort(key=lambda g: want_kinds.index(g["kind"]))
+                    if cands:
+                        g = cands[0]
+                        merged.insert(0, _item(
+                            pid=g.get("id") or f"ac:{nq}",
+                            name=g["name"], sub=g.get("subtitle") or "",
+                            lat=g["lat"], lon=g["lon"], kind=g["kind"],
+                            source=g.get("source") or "gazetteer",
+                            distance_m=g.get("distance_m"), bias=bias))
+                        merged = merged[:limit]
+            except Exception:
+                pass
         o = {"results": _public(merged), "configured": True}
         if errs:
             o["errors"] = dict(errs)
