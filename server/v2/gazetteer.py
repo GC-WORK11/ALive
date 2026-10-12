@@ -892,6 +892,11 @@ _LOCAL_KINDS = frozenset((
     "town", "city", "district", "administrative", "macrohood", "quarter",
     "sector", "hamlet", "borough", "residential", "county",
     "localadmin", "region", "state"))
+# kinds that merely NAME a place rather than mark a feature on it —
+# 'place'/'political' rows join the same-name collapse in query()
+_AC_AREA_NAME_KINDS = _LOCAL_KINDS | {"place", "political"}
+_AC_ADMIN_KINDS = frozenset(("district", "administrative", "county",
+                             "localadmin", "region", "state"))
 _CITY_KINDS = frozenset(("city", "town", "district", "administrative",
                          "county", "localadmin"))
 # context radius (in 0.01-degree cells) a locality name lends to nearby
@@ -1724,14 +1729,33 @@ class AcIndex:
         kept = []
         for score, rid, d_km, cov, name_hits in top:
             norm = " ".join(toks_l[rid])
-            dup = False
-            for k_rid in kept:
-                if " ".join(toks_l[k_rid]) == norm and _fast_km(
-                        lat_l[rid], lon_l[rid], lat_l[k_rid],
-                        lon_l[k_rid]) < 0.3:
-                    dup = True
+            # a name with no letters is a pincode or a '00' house-name
+            if not re.search(r"[a-z]", norm):
+                continue
+            dup = -1
+            for ki, k_rid in enumerate(kept):
+                if " ".join(toks_l[k_rid]) != norm:
+                    continue
+                dd = _fast_km(lat_l[rid], lon_l[rid], lat_l[k_rid],
+                              lon_l[k_rid])
+                # 300 m for any same-name pair; unconditionally when
+                # both rows merely NAME an area ('saket' returned 8
+                # rows — macrohood, locality, place and the admin
+                # centroids all naming one place, and the typeahead
+                # shows no subtitle that could tell them apart anyway)
+                if (dd < 0.3 or
+                        (kinds_l[rid].lower() in _AC_AREA_NAME_KINDS and
+                         kinds_l[k_rid].lower() in _AC_AREA_NAME_KINDS)):
+                    dup = ki
                     break
-            if dup:
+            if dup >= 0:
+                # an admin row names the place it contains — a locality
+                # row of the same name is the actionable one and takes
+                # the slot (mirrors Gazetteer._collapse_same_named)
+                k_rid = kept[dup]
+                if (kinds_l[k_rid].lower() in _AC_ADMIN_KINDS and
+                        kinds_l[rid].lower() not in _AC_ADMIN_KINDS):
+                    kept[dup] = rid
                 continue
             kept.append(rid)
             if norm.startswith(qn):

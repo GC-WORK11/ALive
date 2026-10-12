@@ -605,7 +605,14 @@ async function chooseGps() {
   if (!navigator.geolocation) { CS.note = t('csNoGeo'); refreshSheetBits(); return; }
   CS.busy = true; CS.note = null; refreshSheetBits();
   try {
-    const pos = await A.geo.locate();
+    /* a locate() that never settles (silent provider, a coarse fix
+       that never sharpens, a denial the browser never reports) must
+       not hold the sheet open forever — cap the wait and say so */
+    const pos = await Promise.race([
+      A.geo.locate(),
+      new Promise((_, rej) => setTimeout(
+        () => rej(Object.assign(new Error('no fix'), { code: 3 })), 20000)),
+    ]);
     CS.busy = false;
     A.geo.consent = 'granted'; A.store.set('consent', 'granted'); A.store.set('consent_v', 2); A.store.set('onboarded', 1);
     cur.locErr = null; cur.picking = false;

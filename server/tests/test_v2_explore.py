@@ -52,11 +52,13 @@ def _seed_forecast(vals):
 
 
 def _dip_curve():
-    """120 h at 150 with a light stretch 60 µg/m³ across raw slots
-    30-39 — inside the next-24h window no matter which UTC hour the
-    test runs at."""
+    """120 h at 150 with a light stretch 60 µg/m³ — placed a few
+    hours ahead of NOW, not at fixed slots: the endpoint serves the
+    next 24 h from hour_index(0), so a t0-anchored dip lands outside
+    the window early in the UTC day."""
+    now_h = datetime.now(timezone.utc).hour
     vals = [150.0] * 120
-    for i in range(30, 40):
+    for i in range(now_h + 6, now_h + 16):
         vals[i] = 60.0
     return vals
 

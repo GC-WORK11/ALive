@@ -423,6 +423,72 @@ def test_search_merge_preserves_engine_landmark_order():
     assert min(lands) < min(plats)
 
 
+def test_search_generic_kind_names_never_lead():
+    """'hotel' must surface named hotels — a row literally named
+    'Hotel' is an unnamed feature (the corpus ships those), not a
+    pick; named rows always lead."""
+    r = client.get("/v2/search", params={"q": "hotel",
+                                         "lat": CP[0], "lon": CP[1]})
+    assert r.status_code == 200
+    res = r.json()["results"]
+    assert res
+    named = [i for i, x in enumerate(res)
+             if len((x.get("name") or "").split()) > 1
+             or (x.get("name") or "").strip().lower() != "hotel"]
+    generic = [i for i, x in enumerate(res)
+               if (x.get("name") or "").strip().lower() == "hotel"]
+    assert named and (not generic or min(named) < min(generic))
+
+
+def test_ac_same_named_areas_collapse():
+    """One row per place name: 'saket' used to return its locality,
+    macrohood, district and admin centroids as separate rows."""
+    v2search.AC.ensure()  # a cold index answers 'warming' + []
+    r = client.get("/v2/ac", params={"q": "saket",
+                                     "lat": CP[0], "lon": CP[1],
+                                     "limit": 10})
+    assert r.status_code == 200
+    res = r.json().get("results") or []
+    assert res
+    sakets = [x for x in res
+              if (x.get("name") or "").strip().lower() == "saket"]
+    areas = [x for x in sakets
+             if (x.get("kind") or "").lower() in
+             {"locality", "macrohood", "neighborhood", "neighbourhood",
+              "place", "administrative", "district", "political",
+              "city", "town", "village", "suburb"}]
+    assert len(areas) <= 1
+
+
+def test_providers_merge_drops_junk_and_dedupes():
+    """merge_results: '00' house-names and bare 'Hotel' rows out,
+    one row per place across providers, far-city partials out."""
+    from v2.providers import merge_results
+    ola = [
+        {"id": "a", "name": "00", "sub": "", "lat": 28.64, "lon": 77.21,
+         "kind": "address", "source": "ola", "distance_m": 300},
+        {"id": "b", "name": "Grand Hotel", "sub": "", "lat": 28.64,
+         "lon": 77.21, "kind": "lodging", "source": "ola",
+         "distance_m": 300},
+        {"id": "d", "name": "Hotel", "sub": "", "lat": 28.64,
+         "lon": 77.21, "kind": "lodging", "source": "ola",
+         "distance_m": 300},
+    ]
+    mappls = [
+        {"id": "c", "name": "Grand Hotel", "sub": "", "lat": 28.6405,
+         "lon": 77.2105, "kind": "lodging", "source": "mappls",
+         "distance_m": 300},
+        {"id": "e", "name": "Lake View Inn", "sub": "", "lat": 28.9,
+         "lon": 77.9, "kind": "lodging", "source": "mappls",
+         "distance_m": 80000},
+    ]
+    out = merge_results([ola, mappls], q="grand hotel", limit=10)
+    names = [x["name"] for x in out]
+    assert "00" not in names and "Hotel" not in names
+    assert names.count("Grand Hotel") == 1
+    assert "Lake View Inn" not in names  # 80 km partial is never the ask
+
+
 def test_search_platform_does_not_outrank_its_park():
     r = client.get("/v2/search", params={"q": "lodhi garden",
                                          "lat": CP[0], "lon": CP[1]})
