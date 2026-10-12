@@ -290,8 +290,13 @@ function paintRead(read, place) {
   const el = readCard();
   el.hidden = false;
   const resolved = read && typeof read === 'object';
-  const qualifier = resolved && (read.conf === 'lo' || read.conf === 'model') ? t('thinRead') : null;
-  const caption = [place || (resolved ? t('tapHere') : null), qualifier].filter(Boolean).join(' · ');
+  const thin = resolved && (read.conf === 'lo' || read.conf === 'model');
+  /* the /aqi read knows its nearest live monitor — say how far the number
+     travelled (same words the hero uses); thin reads say 'an estimate' */
+  const nearest = resolved && read.nearKm != null
+    ? t(thin ? 'spotNearestEst' : 'spotNearest', { n: Math.max(1, Math.round(read.nearKm)) })
+    : (thin ? t('thinRead') : null);
+  const caption = [place || (resolved ? t('tapHere') : null), nearest].filter(Boolean).join(' · ');
   if (resolved) {
     /* AQI + its band word up front (one scale), PM2.5 as the quiet
        second figure — never a µg number next to an AQI word */
@@ -352,7 +357,11 @@ async function tapRead(lat, lon) {
   paintRead('pending', st.tapPlace);
   tapPin('…', null, lon, lat);
   const j = await A.api.get(`/aqi?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`, 9000);
-  if (!st || st.readEl.hidden) return;
+  if (!st) return;
+  if (st.readEl.hidden) {                 // card dismissed mid-read — the pending pin goes with it
+    if (tapMarker) { tapMarker.remove(); tapMarker = null; }
+    return;
+  }
   const v = j ? aqiOf(j.pm25, j.pm10) : null;
   if (!v) {
     paintRead('outside', st.tapPlace);
@@ -360,7 +369,7 @@ async function tapRead(lat, lon) {
     return;
   }
   const read = { aqi: v.aqi, over: v.over, pm25: j.pm25, pm10: j.pm10, band: v.band,
-    conf: j.beyond_field_edge ? 'lo' : 'med' };
+    conf: j.beyond_field_edge ? 'lo' : 'med', nearKm: j.nearest_station_km ?? null };
   paintRead(read, st.tapPlace);
   tapPin(`${v.aqi}${v.over ? '+' : ''}`, read.band, lon, lat);
 }
@@ -544,6 +553,11 @@ function openPicker() {
       `${(st.place.label || '').toLowerCase()}|${st.place.lat.toFixed(3)}`);
     rs.unshift(st.place);
     A.store.set(PICK_KEY + '.recent', rs.slice(0, 6));
+    /* a pick here is the same answer the composer gives: the map flies,
+       the AQI pin drops, the readout answers — never a silent repick */
+    st.tapPlace = st.place.label;
+    flyToSpot(st.place, placeZoom(p));
+    tapRead(st.place.lat, st.place.lon);
     renderMain();
     planCard();
   };
@@ -881,6 +895,8 @@ function flyToSpot(pos, zoom) {
   const wide = window.matchMedia && window.matchMedia('(min-width: 720px)').matches;
   A.map.fly(pos.lat, pos.lon, zoom, wide ? {} : { offset: [0, -Math.round(window.innerHeight * 0.29)] });
 }
+/* a whole locality gets the wider frame, a point the street one */
+const placeZoom = (r) => /area|locality|suburb|neighbou?rhood|district|city|town|village|administrative|region|sector|colony|hamlet/i.test(`${(r && r.kind) || ''} ${(r && r.rawKind) || ''}`) ? 13.2 : 14.8;
 
 /* ── the search composer — the Where To row's twin, floating over the
    map: progressive /v2/ac + /v2/p/ac suggestions via A.search.live (the
@@ -974,7 +990,11 @@ function scRowHtml(r, i) {
 }
 function scBindRows() {
   sc.list.querySelectorAll('.am-srow').forEach((b) => {
-    b.addEventListener('pointerdown', (e) => e.preventDefault());   // row taps never steal the input's focus
+    /* mousedown (not pointerdown): canceling pointerdown suppresses the
+       synthesized click entirely on touch-first browsers (iOS Safari) —
+       the row looks tappable but never picks. mousedown keeps the focus
+       steal away and lets click fire on every engine. */
+    b.addEventListener('mousedown', (e) => e.preventDefault());
     b.addEventListener('click', () => { const r = sc.rows[+b.dataset.i]; if (r) scPick(r); });
   });
 }
@@ -1070,9 +1090,7 @@ function scPick(r) {
   sc.x.hidden = false;
   scHideList();
   sc.input.blur();
-  /* a whole locality gets the wider frame, a point the street one */
-  const areaKind = /area|locality|suburb|neighbou?rhood|district|city|town|village|administrative|region|sector|colony|hamlet/i.test(`${r.kind || ''} ${r.rawKind || ''}`);
-  flyToSpot(st.place, areaKind ? 13.2 : 14.8);
+  flyToSpot(st.place, placeZoom(r));
   tapRead(st.place.lat, st.place.lon);
   planCard();
   const lbl = st.body.querySelector('.am-place-label');
@@ -1151,9 +1169,14 @@ function mountComposer(el) {
     }
   };
   window.addEventListener('keydown', sc.onDocKey, true);
-  sc.input.addEventListener('focus', () => { scPaint(); scShowList(); });
+  /* focusing an empty composer with no recents must not flash a blank
+     card — show the list only when there's a query or rows to show */
+  sc.input.addEventListener('focus', () => {
+    scPaint();
+    if (sc.q.trim().length >= 2 || sc.rows.length) scShowList();
+  });
   sc.input.addEventListener('blur', () => { setTimeout(() => { if (sc) scHideList(); }, 120); });
-  sc.x.addEventListener('pointerdown', (e) => e.preventDefault());
+  sc.x.addEventListener('mousedown', (e) => e.preventDefault());
   sc.x.addEventListener('click', (e) => { e.stopPropagation(); scReset(); sc.input.blur(); });
 }
 function unmountComposer() {
@@ -1273,12 +1296,16 @@ A.screen('airmap', {
         A.search.reverse(p.lat, p.lon).then((n) => {
           if (n && st && st.place && st.place.label === 'dropped pin') {
             st.place.label = n;
+            st.tapPlace = n;
             A.store.set(PICK_KEY, st.place);
             const lbl = st.body.querySelector('.am-place-label');
             if (lbl) lbl.textContent = n;
           }
         }).catch(() => {});
         A.store.set(PICK_KEY, st.place);
+        /* the armed tap still drops the pin + readout like any map tap —
+           the point must answer on the map, not just in the sheet */
+        tapRead(p.lat, p.lon);
         renderMain();
         return;
       }
