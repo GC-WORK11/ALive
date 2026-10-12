@@ -458,6 +458,226 @@ def test_route_traffic_retries_without_road_names_on_400(monkeypatch):
     assert out["jams"][0]["road"] == "" and out["jams"][0]["delay_s"] == 60
 
 
+def _tt_rich_route(points, sections, summary=None, progress=None,
+                   instructions=None):
+    r = {"summary": summary or {"lengthInMeters": 2400, "travelTimeInSeconds": 900,
+                              "trafficDelayInSeconds": 240,
+                              "noTrafficTravelTimeInSeconds": 600},
+         "legs": [{"points": [{"latitude": a, "longitude": b} for a, b in points]}],
+         "sections": sections}
+    if progress is not None:
+        r["progress"] = progress
+    if instructions is not None:
+        r["legs"][0]["guidance"] = {"instructions": instructions}
+    return r
+
+
+def test_route_traffic_full_depth_fields(monkeypatch):
+    """Every TomTom feature the request asks for is returned, real."""
+    monkeypatch.setenv("TOMTOM_API_KEY", KEYS["TOMTOM_API_KEY"])
+    alt_pts = [(28.6305, 77.2105), (28.6315, 77.2115), (28.6325, 77.2125)]
+
+    def tt(req):
+        return {"formatVersion": "0.0.12", "routes": [
+            _tt_rich_route(PTS, [
+                {"startPointIndex": 0, "endPointIndex": 4,
+                 "sectionType": "IMPORTANT_ROAD_STRETCH",
+                 "streetName": {"text": "Ring Road"}},
+                {"startPointIndex": 1, "endPointIndex": 3, "sectionType": "TRAFFIC",
+                 "simpleCategory": "JAM", "effectiveSpeedInKmh": 8,
+                 "delayInSeconds": 120, "magnitudeOfDelay": 2},
+                {"startPointIndex": 2, "endPointIndex": 4, "sectionType": "TOLL",
+                 "tollPaymentTypes": ["ETC_TRANSPONDER"]},
+                {"startPointIndex": 0, "endPointIndex": 2,
+                 "sectionType": "SPEED_LIMIT", "maxSpeedLimitInKmh": 50},
+                {"startPointIndex": 0, "endPointIndex": 4, "sectionType": "URBAN"},
+                {"startPointIndex": 0, "endPointIndex": 4,
+                 "sectionType": "TRAVEL_MODE", "travelMode": "car"}],
+                summary={"lengthInMeters": 2400, "travelTimeInSeconds": 900,
+                         "trafficDelayInSeconds": 240,
+                         "noTrafficTravelTimeInSeconds": 600,
+                         "historicTrafficTravelTimeInSeconds": 800,
+                         "liveTrafficIncidentsTravelTimeInSeconds": 870,
+                         "trafficLengthInMeters": 320,
+                         "departureTime": "2026-10-12T12:00:00+05:30",
+                         "arrivalTime": "2026-10-12T12:15:00+05:30"},
+                progress=[{"pointIndex": 0, "travelTimeInSeconds": 0,
+                           "distanceInMeters": 0},
+                          {"pointIndex": 4, "travelTimeInSeconds": 900,
+                           "distanceInMeters": 2400}],
+                instructions=[{"message": "Head north on Ring Road",
+                               "maneuver": "DEPART", "street": "Ring Road",
+                               "routeOffsetInMeters": 0, "travelTimeInSeconds": 0,
+                               "point": {"latitude": 28.63, "longitude": 77.21}},
+                              {"message": "Turn left", "maneuver": "TURN_LEFT",
+                               "street": "Mahatma Gandhi Road",
+                               "routeOffsetInMeters": 1200,
+                               "travelTimeInSeconds": 400,
+                               "point": {"latitude": 28.632, "longitude": 77.212}}]),
+            _tt_rich_route(alt_pts, [
+                {"startPointIndex": 0, "endPointIndex": 2, "sectionType": "TOLL",
+                 "tollPaymentTypes": []},
+                {"startPointIndex": 0, "endPointIndex": 2,
+                 "sectionType": "MOTORWAY"}],
+                summary={"lengthInMeters": 2800, "travelTimeInSeconds": 960,
+                         "trafficDelayInSeconds": 0,
+                         "noTrafficTravelTimeInSeconds": 640,
+                         "deviationDistance": 300, "deviationTime": 60}),
+        ]}
+
+    up = _mock({("api.tomtom.com", "/routing/1/calculateRoute/"): tt})
+    out = _app().post("/v2/p/route_traffic", json={
+        "coords": [list(p) for p in PTS], "mode": "car",
+        "depart_at": "2026-10-13T08:30:00+05:30", "fuel_l100": 6.3}).json()
+    _no_secrets(json.dumps(out))
+    # request asks for the full surface
+    qs = up.calls[0].url.params
+    assert qs["maxAlternatives"] == str(P.TT_MAX_ALTS)
+    assert qs["alternativeType"] == "anyRoute"
+    assert qs["instructionsType"] == "text" and qs["language"] == "en-GB"
+    assert qs["includeTollPaymentTypes"] == "all"
+    assert set(qs.get_list("extendedRouteRepresentation")) == {"distance", "travelTime"}
+    secs = set(qs.get_list("sectionType"))
+    for want in ("traffic", "importantRoadStretch", "toll", "tollVignette",
+                 "urban", "tunnel", "motorway", "speedLimit", "unpaved"):
+        assert want in secs, want
+    assert qs["departAt"] == "2026-10-13T08:30:00+05:30"
+    assert qs["vehicleEngineType"] == "combustion"
+    assert "6.3" in qs["constantSpeedConsumptionInLitersPerHundredkm"]
+    # contract fields unchanged
+    assert (out["live_s"], out["freeflow_s"], out["delay_s"], out["length_m"]) == (900, 600, 240, 2400)
+    assert out["source"] == "tomtom"
+    # new summary fields — real values verbatim
+    assert out["historic_s"] == 800 and out["incidents_s"] == 870
+    assert out["traffic_length_m"] == 320
+    assert out["depart_at"] == "2026-10-12T12:00:00+05:30"
+    assert out["arrive_at"] == "2026-10-12T12:15:00+05:30"
+    # dense polyline + time profile + roads + instructions
+    assert out["polyline"][0] == [28.63, 77.21] and len(out["polyline"]) == 5
+    assert out["progress"] == [{"i": 0, "t_s": 0, "d_m": 0},
+                               {"i": 4, "t_s": 900, "d_m": 2400}]
+    assert out["roads"][0]["name"] == "Ring Road" and out["roads"][0]["from_m"] == 0
+    ins = out["instructions"]
+    assert len(ins) == 2 and ins[0]["text"] == "Head north on Ring Road"
+    assert ins[1]["maneuver"] == "TURN_LEFT" and ins[1]["offset_m"] == 1200
+    # tolls / speed limits / flags
+    assert out["tolls"][0]["payments"] == ["ETC_TRANSPONDER"]
+    assert out["tolls"][0]["from_m"] > 0 and out["tolls"][0]["to_m"] > out["tolls"][0]["from_m"]
+    assert out["speed_limits"][0]["kmh"] == 50 and out["speed_limits"][0]["from_m"] == 0
+    assert out["flags"]["toll"] is True and out["flags"]["urban"] is True
+    assert out["flags"]["tunnel"] is False          # asked, absent on route
+    # alternatives: same shape, own basis, deviation fields
+    alts = out["alternatives"]
+    assert len(alts) == 1
+    a = alts[0]
+    assert a["live_s"] == 960 and a["length_m"] == 2800
+    assert a["deviation_m"] == 300 and a["deviation_s"] == 60
+    assert a["flags"]["toll"] is True and a["flags"]["motorway"] is True
+    assert a["tolls"] and a["polyline"][0] == [28.6305, 77.2105]
+    assert "alternatives" not in a
+
+
+def test_route_traffic_fuel_and_depart_at_optional(monkeypatch):
+    """No consumption params -> no fuel keys asked, no fuel field back."""
+    monkeypatch.setenv("TOMTOM_API_KEY", KEYS["TOMTOM_API_KEY"])
+    up = _mock({("api.tomtom.com", "/routing/1/calculateRoute/"):
+                lambda r: _tt_route(PTS, [])})
+    out = _app().post("/v2/p/route_traffic",
+                      json={"coords": [list(p) for p in PTS]}).json()
+    qs = up.calls[0].url.params
+    assert "departAt" not in qs and "vehicleEngineType" not in qs
+    assert "fuel_l" not in out and "battery_kwh" not in out
+    assert "instructions" not in out        # provider returned none -> absent
+    # electric vehicle model
+    P.clear_caches()
+    _mock({("api.tomtom.com", "/routing/1/calculateRoute/"): lambda r: {"routes": [
+        _tt_rich_route(PTS, [], summary={"lengthInMeters": 2400,
+                                        "travelTimeInSeconds": 900,
+                                        "batteryConsumptionInkWh": 1.81})]}})
+    out = _app().post("/v2/p/route_traffic", json={
+        "coords": [list(p) for p in PTS], "kwh_100km": 14}).json()
+    assert out["battery_kwh"] == 1.81
+
+
+def test_ola_fallback_returns_steps_and_alternatives(monkeypatch):
+    """Ola directions now asks steps+alternatives; both reach the wire."""
+    monkeypatch.setenv("OLA_API_KEY", KEYS["OLA_API_KEY"])
+    monkeypatch.setenv("TOMTOM_API_KEY", KEYS["TOMTOM_API_KEY"])
+    monkeypatch.setenv("ALIVE_BUDGET_TOMTOM", "0")
+    line = [(28.6000 + i * 0.001, 77.2000) for i in range(11)]
+    our_len = sum(P.haversine_m(*a, *b) for a, b in zip(line, line[1:]))
+    alt_line = [(a, b + 0.0005) for a, b in line]
+    seen = []
+
+    def ola(req):
+        seen.append(req)
+        r0 = {"overview_polyline": _enc(line), "travel_advisory": "0,4,0|4,7,10",
+              "summary": "via Outer Ring Road", "warnings": ["tolls ahead"],
+              "legs": [{"distance": int(our_len), "duration": 300,
+                        "start_address": "CP", "end_address": "Nehru Place",
+                        "steps": [
+                            {"instructions": "Head north", "maneuver": "depart",
+                             "distance": 500, "duration": 60,
+                             "start_location": {"lat": 28.6, "lng": 77.2}},
+                            {"instructions": "Turn right onto Ring Road",
+                             "maneuver": "turn-right", "distance": 600,
+                             "duration": 240,
+                             "start_location": {"lat": 28.605, "lng": 77.2}}]}]}
+        r1 = {"overview_polyline": _enc(alt_line), "travel_advisory": "0,10,15",
+              "summary": "", "legs": [{"distance": int(our_len * 1.1),
+                                       "duration": 380, "steps": []}]}
+        return {"status": "SUCCESS", "routes": [r0, r1]}
+
+    _mock({("api.olamaps.io", "/routing/v1/directions"): ola})
+    out = _app().post("/v2/p/route_traffic",
+                      json={"coords": [list(p) for p in line]}).json()
+    q = seen[0].url.params
+    assert q["alternatives"] == "true" and q["steps"] == "true"
+    assert q["mode"] == "driving" and q["route_preference"] == "fastest"
+    assert out["source"] == "ola" and out["live_s"] == 300
+    assert out["summary"] == "via Outer Ring Road"
+    assert out["warnings"] == ["tolls ahead"]
+    assert out["advisory"] == "0,4,0|4,7,10"
+    assert out["instructions"][0]["text"] == "Head north"
+    assert out["instructions"][1]["maneuver"] == "turn-right"
+    assert out["instructions"][1]["lat"] == 28.605
+    assert out["polyline"][0] == [28.6, 77.2]
+    assert out["jams"][0]["level"] == 10      # raw advisory level surfaced
+    alts = out["alternatives"]
+    assert len(alts) == 1 and alts[0]["live_s"] == 380
+    assert alts[0]["length_m"] == int(our_len * 1.1)
+    assert alts[0]["jams"][0]["category"] == "jam" and alts[0]["jams"][0]["level"] == 15
+    assert alts[0]["polyline"][0][0] == pytest.approx(28.6, abs=1e-4)
+    _no_secrets(json.dumps(out))
+
+
+def test_ola_walking_mode_maps_through(monkeypatch):
+    monkeypatch.setenv("OLA_API_KEY", KEYS["OLA_API_KEY"])
+    monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
+    seen = []
+    line = [(28.6, 77.2), (28.61, 77.2)]
+    _mock({("api.olamaps.io", "/routing/v1/directions"): lambda r: (
+        seen.append(r) or _ola_dir(line, "", 1200, 900))})
+    _app().post("/v2/p/route_traffic",
+                json={"coords": [list(p) for p in line], "mode": "pedestrian"})
+    assert seen[0].url.params["mode"] == "walking"
+
+
+def test_reverse_exposes_pincode_and_state(monkeypatch):
+    monkeypatch.setenv("MAPPLS_API_KEY", KEYS["MAPPLS_API_KEY"])
+    _mock({("search.mappls.com", "/address/rev-geocode"): lambda r: {
+        "responseCode": 200, "results": [{
+            "poi": "Hanuman Mandir", "street": "Hanuman Mandir Road",
+            "subLocality": "Ashok Nagar", "locality": "Shahdara",
+            "district": "Shahdara District", "city": "Delhi", "state": "Delhi",
+            "pincode": "110093",
+            "formatted_address": "Hanuman Mandir Road, Ashok Nagar, Delhi"}]}})
+    body = _app().get("/v2/p/reverse", params={"lat": 28.684, "lon": 77.3}).json()
+    assert body["source"] == "mappls"
+    assert body["pincode"] == "110093" and body["state"] == "Delhi"
+    assert body["district"] == "Shahdara"
+
+
 def test_downsample_cap_ends_and_spacing():
     line = [tuple(p) for p in _line(5000)]
     sp = P.downsample(line, 150)
