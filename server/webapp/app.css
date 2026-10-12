@@ -36,6 +36,15 @@ a { color: var(--accent-ink); text-decoration: none }
 #map { position: fixed; inset: 0; background: var(--surface2); }
 #map .maplibregl-canvas { outline: none }
 
+/* the "basic map" note chip (map.js sets its box inline — the overrides
+   must carry !important). It has two faces on one class: the slim chip
+   and the full-veil no-WebGL wall — told apart by the veil's inline
+   "inset:" shorthand. */
+#map .map-nogl:not([style*="inset"]) {
+  /* phone: keep it in the top strip, clear of the mark pill at left */
+  left: 104px !important; right: 10px !important; transform: none !important;
+}
+
 /* ── chrome ── */
 #chrome { position: fixed; top: calc(10px + var(--sat)); left: 12px; right: 12px;
   display: flex; align-items: center; justify-content: space-between;
@@ -208,10 +217,36 @@ body[data-top]:not([data-top="home"]) #loc-chip { display: none; }
   color: var(--ink4); margin: 16px 0 7px }
 
 @media (min-width: 720px) {
+  /* the right rail — one width every "keep clear of the sheet" rule reads */
+  :root { --rail-w: 400px }
   .home-panel { left: auto; right: 18px; width: 400px; padding-right: 0 }
-  .sheet { left: auto; right: 0; width: 460px; top: 0; border-radius: 0;
+  .sheet { left: auto; right: 0; width: var(--rail-w); top: 0; border-radius: 0;
+    /* the seam: a real left edge so the map reads as running under a
+       panel, not ending at a hard paper wall */
+    border-left: 1px solid var(--ink10);
+    box-shadow: -18px 0 42px rgba(59,52,35,.12);
     transform: translateX(104%) }
   .sheet.on { transform: none }
+  /* the armed pin-drop sheet is a ghost (no surface) — no seam artifacts */
+  .wt-armed .sheet { border-left: 0; box-shadow: none }
+  /* the rail swallows the map's bottom-right corner — slide the zoom /
+     attribution cluster left of the seam so it stays real controls.
+     Once the cluster moves bottom-left (map lane) these go quiet. */
+  #map .maplibregl-ctrl-bottom-right { right: calc(var(--rail-w) + 10px) }
+  #map .leaflet-bottom.leaflet-right { right: calc(var(--rail-w) + 10px) }
+  /* the basic-map chip centers on the honest map region, not the
+     viewport — it can never slide under the rail */
+  #map .map-nogl:not([style*="inset"]) {
+    left: 0 !important; right: var(--rail-w) !important;
+    width: fit-content !important; margin-left: auto !important; margin-right: auto !important;
+    max-width: calc(100% - var(--rail-w) - 48px) !important;
+  }
+  /* …and the no-WebGL veil covers exactly that region, sheet excluded */
+  #map .map-nogl[style*="inset"] { right: var(--rail-w) !important }
+  /* toasts center on the visible map while a sheet screen is up */
+  body[data-top="whereto"] #toast, body[data-top="airmap"] #toast,
+  body[data-top="purest"] #toast, body[data-top="ledger"] #toast {
+    left: calc(50% - var(--rail-w) / 2) }
   .consent-card { width: 460px; margin: 0 auto 8vh; border-radius: var(--r-sheet) }
   #consent { align-items: center }
 }

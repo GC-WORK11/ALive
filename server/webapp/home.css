@@ -343,4 +343,7 @@ body[data-top="home"] #chrome { display: none; }
 /* wide screens: the sheet floats as a card */
 @media (min-width: 600px) {
   .cs-sheet { left: 50%; right: auto; width: 440px; margin-left: -220px; bottom: 24px; border-radius: 26px; }
+  /* pick mode: the hint card floats over the map it refers to —
+     a card in the corner, not a viewport-wide strip */
+  .hs-picking .hs-pickcard { right: auto; width: 440px; }
 }
