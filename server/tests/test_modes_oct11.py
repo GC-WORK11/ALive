@@ -568,3 +568,38 @@ def test_mode_picks_live_through_apply_not_just_the_asked_mode():
     assert mp["time_health"]["route_id"] == "alt"     # fastest
     assert block["one_pick"] is False
     assert block["pick_route_id"] == "main"
+
+
+def test_traffic_matched_flags_the_providers_own_road_read():
+    # a delay read whose length agrees with our geometry is THIS road's
+    # congestion; a differently-sized read is a nearby road's — the row
+    # must say which, not leave it ambiguous
+    o = {"mode": "car", "eta_s": 900, "freeflow_s": 600,
+         "distance_km": 5.0, "emissions": _em("car", "petrol", 2.31)}
+    o.update(me.option_fuel(o))
+    me._apply_traffic(o, {"delay_s": 200.0, "length_m": 5050.0,
+                          "jams": []}, "t")
+    assert o["traffic_matched"] is True
+    assert o["traffic_source"] == "t"
+    assert o["traffic_delay_s"] == 200
+    o2 = {"mode": "car", "eta_s": 900, "freeflow_s": 600,
+          "distance_km": 5.0, "emissions": _em("car", "petrol", 2.31)}
+    o2.update(me.option_fuel(o2))
+    me._apply_traffic(o2, {"delay_s": 200.0, "length_m": 12000.0,
+                           "jams": []}, "t")
+    assert o2["traffic_matched"] is False
+    assert o2["traffic_delay_s"] == 200
+
+
+def test_no_traffic_clears_source_and_matched_with_delay():
+    # trip mode wipes any pre-existing delay stamp — a row with no live
+    # reading must not keep a router-priced source/matched dangling on it
+    o = {"mode": "car", "eta_s": 900, "freeflow_s": 600,
+         "traffic_delay_s": 140, "traffic_source": "amazon-location",
+         "traffic_matched": True, "jams": [{"x": 1}]}
+    me._no_traffic(o)
+    assert o["traffic_delay_s"] is None
+    assert o["traffic_source"] is None
+    assert o["traffic_matched"] is None
+    assert o["jams"] == []
+    assert o["live_eta_s"] == 900

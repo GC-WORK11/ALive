@@ -399,6 +399,14 @@ export interface DoseBand {
   /** worst single-segment concentration along the option (µg/m³) —
       server emits it on every dose block (exposure.py, plan.py). */
   peak_conc?: number | null;
+  /** the average speed the served eta implies over the served
+      geometry — the dose engine's own sanity number; an implausible
+      value pairs with a 'speed_implausible' warning + low confidence */
+  implied_speed_kmh?: number | null;
+  /** exposure.py dose warnings verbatim (unknown_mode_defaulted,
+      negative_field_clamped, speed_implausible …); emitted only when
+      non-empty; leg-based (transit) doses carry the per-leg union */
+  warnings?: string[];
 }
 
 export interface EmissionBandValue {
@@ -520,10 +528,45 @@ export interface V2PlanOption {
                               // class speeds, no congestion feed (real
                               // Delhi traffic is slower → dose higher)
   via_names?: string[];         // engine rows: street names the path takes
+  /** street names this route actually uses — distance-weighted from the
+      served step list's `street` field (OSRM/AWS maneuver steps), else
+      the engine's traversed names when a row has no turn steps. This is
+      the server-side version of the where-to card's client-side derive
+      (viaOf prefers it over via_names). Absent when neither exists —
+      endpoint-only steps carry no street. */
+  via_streets?: string[];
+  /** additive digest of the served `steps` list — count covers every
+      entry incl. depart/arrive; absent only when the option carries no
+      step list at all */
+  steps_summary?: { count: number;
+                    first_instruction?: string | null };
+  /** other same-mode options this response offers — router '· alt N'
+      rows, engine least-smoke corridors and AWS alternative routes all
+      count; 0 = the only route its mode serves. Stamped post-dedup so
+      a merged-away dup never inflates it */
+  alternatives?: number;
+  /** congestion delay on this row's own basis. Non-trip plans: Amazon
+      rows carry the router-priced delay (traffic-aware Duration −
+      TypicalDuration), emitted ONLY when the router really returned a
+      TypicalDuration — other rows omit it (eta_s − freeflow_s stays
+      the honest signal there). Trip modes: the live provider's delay;
+      null = no live reading (modes_engine). */
+  traffic_delay_s?: number | null;
+  /** who priced traffic_delay_s — "amazon-location-routes" on router
+      rows, the live provider's name in trip modes; null when no
+      reading exists */
+  traffic_source?: string | null;
+  /** live reads: true = the provider timed THIS road (length-matched),
+      false = a nearby road's congestion; router-priced rows are
+      inherently matched; null = no live reading */
+  traffic_matched?: boolean | null;
+  /** Amazon route notice codes verbatim (tolls / access restrictions
+      the router reported for this route) */
+  notices?: string[];
   snap_m?: { from_m: number; to_m: number }; // engine rows: endpoint snap distance
-  alternative_index?: number | null;  // engine rows: 1..N on corridor-diverse
-                                      // least-dose alternatives; absent on the
-                                      // primary route
+  alternative_index?: number | null;  // engine/AWS rows: 1..N on
+                                      // corridor-diverse alternatives;
+                                      // absent on the primary route
   engine_dose_ug?: number | null;     // engine rows: inhaled µg summed over the
                                       // priced edges — the exact objective the
                                       // path minimized; server ranking keys on
@@ -657,7 +700,16 @@ export interface V2RerouteResponse {
   duration_s?: number | null;   // alias of eta_s
   distance_km?: number | null;
   steps?: V2PlanStep[];
+  steps_summary?: V2PlanOption["steps_summary"];  // same flattening
+                                // rule — the pick's own step digest
   segments?: V2PlanSegment[] | null; // same paint strip as the option rows
+  alternatives?: number;        // the pick's same-mode sibling count
+  via_streets?: string[];       // pick's via-street list when it has one
+  notices?: string[];           // pick's router notices when present
+  traffic_delay_s?: number | null;   // pick's delay reading (router on
+                                // plain reroute, live provider in trip mode)
+  traffic_source?: string | null;
+  traffic_matched?: boolean | null;
   dose?: DoseBand;
   emissions?: EmissionBand;
   mode?: string;
