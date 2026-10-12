@@ -1269,7 +1269,7 @@ function renderPlan() {
     paintRoutes();
   }));
   const go = root.querySelector('[data-act="go"]');
-  if (go) go.addEventListener('click', () => {
+  if (go) go.addEventListener('click', function startGo() {
     if (!S.plan) return;
     const o = S.plan.options[S.sel];
     if (!o) return;
@@ -1278,9 +1278,26 @@ function renderPlan() {
         options: S.plan && S.plan.options,
         mode: S.mode, vehicle: S.tripVeh ? S.tripVeh.cls : famOf(o),
         field_age_s: S.plan && S.plan.field && S.plan.field.age_s });
-    } else {
-      A.toast('journey is still landing');
+      return;
     }
+    /* journey.js may still be loading — or may have failed outright
+       (flaky radio, a 404). One real retry: re-inject the tag and say
+       honestly whether it landed; no toast that lies forever. */
+    if (S.journeyRetrying) { A.toast('journey is still landing'); return; }
+    S.journeyRetrying = true;
+    A.toast('journey is still landing');
+    const s = document.createElement('script');
+    s.src = `journey.js?retry=${Date.now()}`;
+    s.onload = () => {
+      S.journeyRetrying = false;
+      if (A.screensReady && A.screensReady.journey) startGo();
+      else A.toast("journey couldn't start — try again");
+    };
+    s.onerror = () => {
+      S.journeyRetrying = false;
+      A.toast("journey couldn't load — check the connection");
+    };
+    document.head.appendChild(s);
   });
 }
 
