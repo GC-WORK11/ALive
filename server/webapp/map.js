@@ -116,7 +116,7 @@ function noMapNote() {
   const n = document.createElement('div');
   n.className = 'map-nogl';
   n.setAttribute('role', 'note');
-  n.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font:15px/1.45 inherit;color:#4A4E57;background:#F2F3F0';
+  n.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-size:15px;line-height:1.45;color:#4A4E57;background:#F2F3F0';
   n.textContent = "This browser has graphics acceleration (WebGL) turned off, so the map can't draw. Turn on hardware acceleration in your browser settings, or open Alive on your phone — every number still works.";
   el.appendChild(n);
 }
