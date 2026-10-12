@@ -180,7 +180,8 @@ async function main() {
     if (cfg.denied) { await click('[data-cs="later"]'); await sleep(1000); }
     else { await click('[data-cs="gps"]'); await waitFor(`A.geo.consent==='granted'`, 15000, 'consent granted'); }
   }
-  await click('#hs-cta');
+  await waitFor(`document.querySelector('#hs-cta')`, 12000, 'home cta');
+  await click('#hs-cta'); await sleep(500);
   await waitFor(`document.querySelector('.wt-rin')`, 12000, 'whereto');
   await sleep(700);
   await type('.wt-rin', cfg.dest);
