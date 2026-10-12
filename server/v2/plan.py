@@ -438,10 +438,19 @@ def _dose_band(geometry: dict, duration_s: float, microenv: str,
     except Exception:
         return {"lo": None, "mid": None, "hi": None,
                 "note": "dose engine error"}
-    return {
+    out = {
         "lo": e.get("dose_ug_lo"), "mid": e.get("dose_ug"),
         "hi": e.get("dose_ug_hi"),
         "avg_conc_ugm3": e.get("avg_conc_ugm3"),
+        # worst single-segment inhaled-basis concentration along the
+        # path — exposure.dose already computes it; _leg_dose ships it
+        # for transit rows, road rows were the gap (the contract's
+        # DoseBand.peak_conc already declares this key)
+        "peak_conc": e.get("peak_conc"),
+        # the speed the served eta implies over the served geometry —
+        # the engine's own sanity number (dose warns
+        # 'speed_implausible' and drops confidence when it's off)
+        "implied_speed_kmh": e.get("implied_speed_kmh"),
         "confidence": e.get("confidence"),
         # fraction of sampled route points inside the field — a route
         # that leaves the field honestly reports <1, never clamps
@@ -449,6 +458,12 @@ def _dose_band(geometry: dict, duration_s: float, microenv: str,
         "sparse": e.get("sparse"),
         "basis": "est." if e.get("dose_ug") is not None else None,
     }
+    if e.get("warnings"):
+        # exposure.dose's own caveats verbatim (unknown_mode_defaulted,
+        # negative_field_clamped, speed_implausible, …) — the honest
+        # qualifier list the estimate was computed under
+        out["warnings"] = list(e["warnings"])
+    return out
 
 
 _CONF_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
@@ -479,6 +494,7 @@ def _leg_dose(legs: list) -> dict:
     conc_by_dist = 0.0
     dist_sum_m = 0.0
     peak = 0.0
+    warns = set()
     for leg in legs or []:
         geom = leg.get("geometry")
         if not geom:
@@ -524,13 +540,15 @@ def _leg_dose(legs: list) -> dict:
             peak = max(peak, e["peak_conc"])
         if e.get("coverage") is not None:
             cov_min = e["coverage"] if cov_min is None else min(cov_min, e["coverage"])
+        for w in e.get("warnings") or []:
+            warns.add(w)
         c = e.get("confidence") or "low"
         if _CONF_RANK.get(c, 0) < _CONF_RANK.get(conf, 3):
             conf = c
     if not have_mid:
         return {"lo": None, "mid": None, "hi": None,
                 "confidence": "low", "coverage": 0.0, "basis": "est."}
-    return {
+    out = {
         "lo": round(lo, 1) if have_band else None,
         "mid": round(mid, 1),
         "hi": round(hi, 1) if have_band else None,
@@ -542,6 +560,11 @@ def _leg_dose(legs: list) -> dict:
         "coverage": cov_min if cov_min is not None else None,
         "basis": "est.",
     }
+    if warns:
+        # union of the per-leg caveats the dose integral raised — same
+        # warnings vocabulary _dose_band surfaces on road rows
+        out["warnings"] = sorted(warns)
+    return out
 
 
 # --- steps --------------------------------------------------------------------
@@ -635,6 +658,38 @@ def _synthetic_steps(legs: list) -> list:
                           "modifier": "",
                           "line": ", ".join(leg.get("lines") or []) or None})
     return steps
+
+
+def _via_streets(steps: list, fallback: Optional[list] = None) -> list:
+    """The street names this route actually uses — distance-weighted
+    (longest stretch first) from the served turn list's `street` field
+    (OSRM/AWS maneuvers). This is exactly what the where-to card
+    derives client-side when `via_streets` is absent (whereto.js viaOf:
+    via_streets → via_names → re-derive from steps) — emitting it
+    server-side just saves the recomputation. Engine rows have no turn
+    steps but do carry the graph's traversed-name list (`via_names`),
+    which becomes the fallback. [] when neither exists — endpoint-only
+    steps carry no street and nothing is invented."""
+    acc: dict = {}
+    for s in steps or []:
+        try:
+            name = str(s.get("street") or "").strip()
+        except Exception:
+            continue
+        if name:
+            try:
+                d = float(s.get("distance_m") or 0.0)
+            except (TypeError, ValueError):
+                d = 0.0
+            acc[name] = acc.get(name, 0.0) + d
+    if acc:
+        return [n for n, _ in sorted(
+            acc.items(), key=lambda kv: (-kv[1], kv[0]))][:8]
+    out = []
+    for n in fallback or []:
+        if isinstance(n, str) and n.strip():
+            out.append(n.strip())
+    return out[:8]
 
 
 def _merge_geometry(legs: list) -> dict:
@@ -802,6 +857,24 @@ def _option(mode: str, label: str, geometry: dict, dist_km: float,
     }
     if extra:
         opt.update(extra)
+    # Additive route-depth fields — derived only from the data this row
+    # already carries (the served step list, the engine's traversed-name
+    # list); a paint failure must never sink a row, same rule as
+    # `segments` below.
+    try:
+        if steps:
+            opt["steps_summary"] = {
+                # count covers every entry the client walks —
+                # depart/arrive included
+                "count": len(steps),
+                "first_instruction": steps[0].get("instruction"),
+            }
+        if "via_streets" not in opt:
+            _vs = _via_streets(steps, opt.get("via_names"))
+            if _vs:
+                opt["via_streets"] = _vs
+    except Exception:
+        pass
     # Truncation honesty: when the served geometry stops short of the
     # requested destination (the dose field ends at ~28.95°N while the
     # service-area margin allows farther targets), the option must say
@@ -918,6 +991,44 @@ def _mode_cap_duration_s(mode: str, dist_km: float, dur_s: float) -> float:
     return dist_km / cap_kmh * 3600.0
 
 
+def _aws_extra(rt: dict, eta_s: float, freeflow_s, alt_i: int) -> dict:
+    """Additive meta for rows built on one Amazon geo-routes reply —
+    every field sourced from the router's own response:
+
+    alternative_index  the route's slot in the returned set, None on
+                       the primary — same convention engine/router
+                       '· alt N' rows use.
+    traffic_delay_s    the congestion the router itself priced in:
+                       traffic-aware Duration minus the TypicalDuration
+                       spans summed into rt.freeflow_s — only when AWS
+                       actually returned a TypicalDuration. When it
+                       didn't, the row's freeflow_s is just its eta
+                       restated and a computed 0 would fabricate 'no
+                       congestion'. For mode-scaled rows (auto ×1.25,
+                       bus ×1.6, capped bike) the delay is the
+                       difference of THIS row's own served numbers —
+                       eta_s − freeflow_s, exactly what a client would
+                       compute.
+    traffic_source     the router's own provenance string.
+    traffic_matched    always True here — the delay is computed on
+                       THIS route, never a nearby-road read (the same
+                       meaning modes_engine stamps on live reads).
+    notices            the router's own notice codes verbatim (toll /
+                       restricted-access flags the API reported).
+    """
+    extra = {"alternative_index": alt_i or None}
+    ff_rt = rt.get("freeflow_s")
+    if isinstance(ff_rt, (int, float)) and isinstance(
+            freeflow_s, (int, float)) and math.isfinite(freeflow_s):
+        extra["traffic_delay_s"] = max(
+            0, int(round(float(eta_s) - float(freeflow_s))))
+        extra["traffic_source"] = rt.get("source") or "amazon-location"
+        extra["traffic_matched"] = True
+    if rt.get("notices"):
+        extra["notices"] = list(rt["notices"])
+    return extra
+
+
 async def _motorized_options(flat, flon, tlat, tlon, vehicle, profile,
                              depart_at, want_alts: bool = False) -> list:
     """Car-family geometries: AWS CalculateRoutes when keyed (traffic +
@@ -963,6 +1074,7 @@ async def _motorized_options(flat, flon, tlat, tlon, vehicle, profile,
                 out.append(_option("car", label, geom, dist_km, dur, ff,
                                    "amazon-location", vehicle, profile,
                                    steps=steps, steps_source=src,
+                                   extra=_aws_extra(rt, dur, ff, i),
                                    origin=o, dest=d))
                 if i == 0:
                     out.append(_option("car_open", "Car (windows down)",
@@ -970,40 +1082,47 @@ async def _motorized_options(flat, flon, tlat, tlon, vehicle, profile,
                                        "amazon-location", vehicle,
                                        profile,
                                        steps=steps, steps_source=src,
+                                       extra=_aws_extra(rt, dur, ff, 0),
                                        origin=o, dest=d))
+                    a_eta = _mode_cap_duration_s(
+                        "auto", dist_km, dur * 1.25)
+                    a_ff = _mode_cap_duration_s(
+                        "auto", dist_km, (ff or dur) * 1.25)
                     out.append(_option("auto", "Auto-rickshaw", geom,
-                                       dist_km,
-                                       _mode_cap_duration_s(
-                                           "auto", dist_km, dur * 1.25),
-                                       _mode_cap_duration_s(
-                                           "auto", dist_km,
-                                           (ff or dur) * 1.25),
+                                       dist_km, a_eta, a_ff,
                                        "amazon-location+est", vehicle,
                                        profile, steps=steps,
-                                       steps_source=src, origin=o,
-                                       dest=d))
+                                       steps_source=src,
+                                       extra=_aws_extra(rt, a_eta,
+                                                        a_ff, 0),
+                                       origin=o, dest=d))
+                    b_eta, b_ff = dur * 1.6, (ff or dur) * 1.6
                     out.append(_option("bus", "Bus", geom, dist_km,
-                                       dur * 1.6, (ff or dur) * 1.6,
+                                       b_eta, b_ff,
                                        "amazon-location+est", vehicle,
                                        profile, steps=steps,
-                                       steps_source=src, origin=o,
-                                       dest=d))
+                                       steps_source=src,
+                                       extra=_aws_extra(rt, b_eta,
+                                                        b_ff, 0),
+                                       origin=o, dest=d))
             if sco_rts:
                 rt = sco_rts[0]
                 steps = rt.get("steps") or None
                 dist_b = rt["distance_m"] / 1000.0
                 ff_b = rt.get("freeflow_s")
+                eta_b = _mode_cap_duration_s(
+                    "bike", dist_b, rt["duration_s"])
+                ff_b_served = (_mode_cap_duration_s("bike", dist_b, ff_b)
+                               if ff_b else None)
                 out.append(_option("bike", "Bike / scooter",
-                                   rt["geometry"], dist_b,
-                                   _mode_cap_duration_s(
-                                       "bike", dist_b, rt["duration_s"]),
-                                   _mode_cap_duration_s("bike", dist_b,
-                                                        ff_b) if ff_b
-                                   else None,
+                                   rt["geometry"], dist_b, eta_b,
+                                   ff_b_served,
                                    "amazon-location", vehicle, profile,
                                    steps=steps,
                                    steps_source="amazon-location"
                                    if steps else "endpoints",
+                                   extra=_aws_extra(rt, eta_b,
+                                                    ff_b_served, 0),
                                    origin=o, dest=d))
             return out
         return await loop.run_in_executor(_ROWS_EXEC, _aws_rows)
@@ -1431,6 +1550,22 @@ def _route_deltas(options: list) -> None:
             # read is missing
             "band_drop": (bi - oi) if bi is not None and oi is not None else None,
         }
+
+
+def _stamp_alternatives(options: list) -> None:
+    """o["alternatives"] = how many OTHER same-mode options this response
+    offers — router '· alt N' rows, engine least-smoke corridors and AWS
+    alternative routes all count, since each is a real rideable route for
+    that mode. Runs after _engine_merge so a dup the merge dropped never
+    inflates the count; 0 means the only route this mode serves today.
+    Pure post-pass: adds one int, touches nothing else."""
+    counts: dict = {}
+    for o in options:
+        m = o.get("mode")
+        if m:
+            counts[m] = counts.get(m, 0) + 1
+    for o in options:
+        o["alternatives"] = max(0, counts.get(o.get("mode"), 1) - 1)
 
 
 # --- endpoints ------------------------------------------------------------------
@@ -2334,6 +2469,7 @@ async def plan(body: dict):
             flat, flon, tlat, tlon, vehicle, profile, depart_at)
     rank_options(options)
     _route_deltas(options)
+    _stamp_alternatives(options)
     mode_block = None
     if tmode is not None and options:
         mode_block = await _apply_trip_mode(options, tmode, vehicle,
@@ -2398,6 +2534,8 @@ async def _apply_trip_mode(options: list, tmode: str, vehicle: str,
             o.setdefault("fuel_l", None)
             o.setdefault("live_eta_s", o.get("eta_s"))
             o.setdefault("traffic_delay_s", None)
+            o.setdefault("traffic_source", None)
+            o.setdefault("traffic_matched", None)
             o.setdefault("jams", [])
             o["mode_pick"] = i == 0
             o["why"] = "top route; mode check failed" if i == 0 else ""
@@ -2501,6 +2639,7 @@ async def reroute(body: dict):
             flat, flon, tlat, tlon, vehicle, profile, depart_at)
     rank_options(options)
     _route_deltas(options)
+    _stamp_alternatives(options)
     if not options:
         out = {"route_id": None, "options": [], "option": None,
                "rerouted_from": rid,
@@ -2544,10 +2683,12 @@ async def reroute(body: dict):
         "duration_s": best["eta_s"],
         "distance_km": best["distance_km"],
         "steps": best["steps"],
+        "steps_summary": best.get("steps_summary"),
         "segments": best.get("segments"),   # flattened parity with
                                             # /v2/plan option rows —
                                             # the paint strip lives in
                                             # `option`/`options` too
+        "alternatives": best.get("alternatives"),
         "dose": best["dose"],
         "emissions": best["emissions"],
         "mode": best["mode"],
@@ -2557,6 +2698,13 @@ async def reroute(body: dict):
         "field": _field_status(),
         "took_ms": round((time.perf_counter() - t0) * 1000.0, 1),
     }
+    for k in ("via_streets", "notices", "traffic_delay_s",
+              "traffic_source", "traffic_matched"):
+        # same flattening rule as above — surface the pick's own
+        # additive fields when the row actually carries them (absent
+        # stays absent, never a fabricated null)
+        if k in best:
+            resp[k] = best[k]
     if depart_at is not None:
         resp["depart_at_parsed"] = _depart_at_parsed(depart_at)
     if tmode is not None:

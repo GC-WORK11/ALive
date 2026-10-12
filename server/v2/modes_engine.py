@@ -19,6 +19,12 @@ With a mode, every option gains:
                    No live reading -> live_eta_s == eta_s.
   traffic_delay_s  live delay in seconds; null = no live reading (never 0
                    standing in for "unknown").
+  traffic_source   who priced that delay — the live provider's name;
+                   null when no live reading exists.
+  traffic_matched  true when the provider timed THIS road (its length
+                   agrees with our geometry), false when the delay is a
+                   nearby road's congestion priced onto this route;
+                   null when no live reading exists.
   jams             provider jam list ([] when none / unavailable).
   mode_pick        exactly one True per response.
   why              <= 8 plain words.
@@ -278,6 +284,12 @@ def _clean_jams(jams) -> list:
 def _no_traffic(o: dict) -> None:
     o["live_eta_s"] = o.get("eta_s")
     o["traffic_delay_s"] = None
+    # a no-live-reading row must not keep a source/match stamp from
+    # whatever priced the delay before (plan rows can carry an Amazon
+    # router delay into trip mode — the trip-mode contract for these
+    # fields is strictly 'the live provider's reading')
+    o["traffic_source"] = None
+    o["traffic_matched"] = None
     o["jams"] = []
 
 
@@ -319,6 +331,11 @@ def _apply_traffic(o: dict, res: dict, source) -> None:
                             else int(round(max(0.0, live - base))))
     o["jams"] = _clean_jams(res.get("jams"))
     o["traffic_source"] = source or "live"
+    # whether the provider timed THIS road (matched = its length agrees
+    # with our geometry) — on an unmatched read the delay is a nearby
+    # road's congestion priced onto this route, and the client should
+    # be able to tell
+    o["traffic_matched"] = bool(matched)
     _idle_topup(o, max(0.0, live - eta))
 
 

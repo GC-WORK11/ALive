@@ -963,3 +963,159 @@ def test_route_deltas_engine_only_rows_stay_null():
              "engine": "alive_core-path", "alternative_index": 1}]
     v2plan._route_deltas(rows)
     assert rows[0]["delta"] is None
+
+
+# --- additive route-depth fields (plan-api lane) ---------------------------
+def test_steps_summary_mirrors_the_served_step_list():
+    # the digest is read off the row's own served steps — never a second
+    # count invented elsewhere
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert body["options"]
+    for o in body["options"]:
+        steps = o.get("steps") or []
+        if not steps:
+            assert "steps_summary" not in o
+            continue
+        ss = o["steps_summary"]
+        assert ss["count"] == len(steps)
+        assert ss["first_instruction"] == steps[0].get("instruction")
+
+
+def test_via_streets_distance_weighted_from_osrm_steps():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    osrm_rows = [o for o in body["options"]
+                 if o.get("steps_source") == "osrm"]
+    assert osrm_rows
+    for o in osrm_rows:
+        # OSRM_ROUTE: 3.2 km on KG Marg vs 3.0 km on Rajpath — longest
+        # stretch first; the unnamed arrive step contributes nothing
+        assert o["via_streets"] == ["KG Marg", "Rajpath"]
+    for o in body["options"]:
+        # endpoint-only steps carry no street — with no via_names to
+        # fall back on, via_streets must stay absent, never invented
+        if o.get("steps_source") == "endpoints" and not o.get("via_names"):
+            assert "via_streets" not in o
+
+
+def test_via_streets_falls_back_to_engine_via_names():
+    # an engine-style row: no turn steps but the graph's traversed-name
+    # list — via_streets serves those names verbatim
+    o = v2plan._option("car", "engine row", LINE, 6.2, 700, 600,
+                       "estimated", "car", {},
+                       extra={"via_names": ["Outer Ring Rd", "Inner Rd"]})
+    assert o["via_streets"] == ["Outer Ring Rd", "Inner Rd"]
+    o = v2plan._option("car", "plain", LINE, 6.2, 700, 600,
+                       "estimated", "car", {})
+    assert "via_streets" not in o
+
+
+def test_dose_band_carries_peak_conc_implied_speed_and_warnings():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    assert body["options"]
+    for o in body["options"]:
+        d = o.get("dose") or {}
+        if d.get("mid") is None:
+            continue
+        # real reads from the same dose integral — peak is the worst
+        # single segment so it can never sit below the path average
+        assert isinstance(d.get("peak_conc"), (int, float))
+        assert d["peak_conc"] >= (d.get("avg_conc_ugm3") or 0) - 0.15
+        if not o.get("legs"):
+            # leg-based (transit) doses carry no implied speed — waiting
+            # time makes it meaningless there; road rows always emit it
+            assert isinstance(d.get("implied_speed_kmh"), (int, float))
+            assert 0 < d["implied_speed_kmh"] < 130
+        if "warnings" in d:
+            assert isinstance(d["warnings"], list)
+            assert all(isinstance(w, str) for w in d["warnings"])
+
+
+def test_alternatives_counts_same_mode_siblings_post_merge():
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    opts = body["options"]
+    assert opts
+    counts = {}
+    for o in opts:
+        counts[o["mode"]] = counts.get(o["mode"], 0) + 1
+    for o in opts:
+        assert o["alternatives"] == counts[o["mode"]] - 1
+    # a lone row honestly reports 0 and never counts another mode's rows
+    for o in opts:
+        if counts[o["mode"]] == 1:
+            assert o["alternatives"] == 0
+
+
+class _AwsLocWithTraffic:
+    """Location client returning the real Amazon shape: a primary route
+    plus one alternative, both traffic-priced (Duration > TypicalDuration)
+    with a notice — what calculate_routes emits when AWS answers."""
+    enabled = True
+
+    def __init__(self, with_freeflow=True):
+        self._ff = with_freeflow
+
+    async def calculate_routes(self, flat, flon, tlat, tlon,
+                               travel_mode=None, alternatives=0,
+                               depart_at=None):
+        rt = {"distance_m": 9800.0, "duration_s": 1080.0,
+              "geometry": {"type": "LineString", "coordinates": [
+                  [77.2167, 28.6315], [77.2050, 28.6400],
+                  [77.1907, 28.6519]]},
+              "notices": ["Toll"],
+              "source": "amazon-location-routes"}
+        if self._ff:
+            rt["freeflow_s"] = 840.0
+        if alternatives:
+            alt = dict(rt)
+            alt["distance_m"] = 10600.0
+            alt["duration_s"] = 1240.0
+            if self._ff:
+                alt["freeflow_s"] = 960.0
+            return [rt, alt]
+        return [rt]
+
+
+def test_aws_rows_carry_router_priced_delay_notices_and_alt_index(
+        monkeypatch):
+    deps.set_location(_AwsLocWithTraffic())
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    car_rows = [o for o in body["options"] if o["mode"] == "car"
+                and o.get("eta_model") == "amazon-location"]
+    assert len(car_rows) == 2
+    primary = next(o for o in car_rows if " · alt" not in o["label"])
+    alt = next(o for o in car_rows if " · alt" in o["label"])
+    # the router's own congestion: traffic-aware Duration − TypicalDuration
+    assert primary["traffic_delay_s"] == round(1080.0 - 840.0)
+    assert primary["traffic_source"] == "amazon-location-routes"
+    assert primary["traffic_matched"] is True
+    assert primary["notices"] == ["Toll"]
+    assert primary["alternative_index"] is None
+    assert alt["traffic_delay_s"] == round(1240.0 - 960.0)
+    assert alt["alternative_index"] == 1
+    # derived rows report the delay on their own served numbers — the
+    # same eta_s − freeflow_s a client would compute
+    for mode in ("auto", "bus"):
+        o = next(x for x in body["options"]
+                 if x["mode"] == mode
+                 and x.get("eta_model") == "amazon-location+est")
+        assert o["traffic_delay_s"] == round(o["eta_s"] - o["freeflow_s"])
+
+
+def test_aws_rows_without_typical_duration_emit_no_delay():
+    deps.set_location(_AwsLocWithTraffic(with_freeflow=False))
+    body = _post({"from": {"lat": CP[0], "lon": CP[1]},
+                  "to": {"lat": KB[0], "lon": KB[1]}, "vehicle": "car"})
+    aws_rows = [o for o in body["options"]
+                if "amazon" in (o.get("eta_model") or "")]
+    assert aws_rows
+    for o in aws_rows:
+        # freeflow_s is just eta restated when AWS sends no
+        # TypicalDuration — stamping 0 would fabricate 'no congestion'
+        assert "traffic_delay_s" not in o
+        assert "traffic_source" not in o
+        assert "traffic_matched" not in o
