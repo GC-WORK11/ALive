@@ -1,0 +1,844 @@
+{
+  "base": "http://localhost:8909/app/?internal=1",
+  "chrome": "/home/govinda/.local/bin/google-chrome",
+  "nogl": false,
+  "playwright": "/home/govinda/re/node_modules",
+  "ranAt": "2026-10-12T06:56:41.769Z",
+  "runs": [
+    {
+      "preset": "desktop",
+      "scen": "boot",
+      "ms": 8948,
+      "out": {
+        "mapInfo": {
+          "hasA": true,
+          "basemap": "openfreemap",
+          "zoom": 10.2,
+          "center": [
+            28.6139,
+            77.209
+          ],
+          "engine": "leaflet",
+          "webgl": true,
+          "leaflet": false,
+          "maplibre": true,
+          "noglNote": false,
+          "layers": []
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": []
+    },
+    {
+      "preset": "desktop",
+      "scen": "zoom",
+      "ms": 18331,
+      "out": {
+        "home": {
+          "controls": [
+            {
+              "sel": ".maplibregl-ctrl-zoom-in",
+              "present": true,
+              "rect": {
+                "x": 1327,
+                "y": 714,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.hs-scroll(in .screen)"
+            },
+            {
+              "sel": ".maplibregl-ctrl-zoom-out",
+              "present": true,
+              "rect": {
+                "x": 1327,
+                "y": 743,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.hs-scroll(in .screen)"
+            },
+            {
+              "sel": ".leaflet-control-zoom-in",
+              "present": false
+            },
+            {
+              "sel": ".leaflet-control-zoom-out",
+              "present": false
+            }
+          ],
+          "sheet": null,
+          "mapProbe": {
+            "point": null,
+            "probed": 420,
+            "free": 0,
+            "freeFrac": 0,
+            "topCover": [
+              "button.hs-doorrow×60",
+              "div.hs-scroll×60",
+              "div.hs-hero#hs-hero×40",
+              "div.hs-pm×21",
+              "header.hs-head×20"
+            ]
+          },
+          "clickIn": {
+            "present": true,
+            "at": {
+              "x": 1341.5,
+              "y": 728.5
+            },
+            "zoomBefore": 10.2,
+            "zoomAfter": 10.2,
+            "worked": false
+          }
+        },
+        "whereto": {
+          "controls": [
+            {
+              "sel": ".maplibregl-ctrl-zoom-in",
+              "present": true,
+              "rect": {
+                "x": 1327,
+                "y": 714,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.wt-list(in .sheet)"
+            },
+            {
+              "sel": ".maplibregl-ctrl-zoom-out",
+              "present": true,
+              "rect": {
+                "x": 1327,
+                "y": 743,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.wt-list(in .sheet)"
+            },
+            {
+              "sel": ".leaflet-control-zoom-in",
+              "present": false
+            },
+            {
+              "sel": ".leaflet-control-zoom-out",
+              "present": false
+            }
+          ],
+          "sheet": {
+            "x": 906,
+            "y": 0,
+            "w": 460,
+            "h": 850
+          },
+          "mapProbe": {
+            "point": {
+              "x": 27,
+              "y": 0,
+              "hit": "canvas.maplibregl-canvas < div.maplibregl-canvas-container.maplibregl-interactive < div.maplibregl-map#map < body < html"
+            },
+            "probed": 420,
+            "free": 259,
+            "freeFrac": 0.62,
+            "topCover": [
+              "div.wt-list×106",
+              "null×20",
+              "button.wt-abtn×7",
+              "div.sheet.on×5",
+              "span.wt-rval×5"
+            ]
+          },
+          "clickIn": {
+            "present": true,
+            "at": {
+              "x": 1341.5,
+              "y": 728.5
+            },
+            "zoomBefore": 10.2,
+            "zoomAfter": 10.2,
+            "worked": false
+          },
+          "wheel": {
+            "zoomBefore": 10.2,
+            "zoomAfter": 10.66,
+            "worked": true
+          }
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": []
+    },
+    {
+      "preset": "desktop",
+      "scen": "from",
+      "ms": 13456,
+      "out": {
+        "race": {
+          "atMount": {
+            "rows": [
+              {
+                "which": "from",
+                "armed": false,
+                "text": "Where from?",
+                "ph": true
+              },
+              {
+                "which": "to",
+                "armed": true,
+                "text": "Where to?",
+                "ph": false
+              }
+            ],
+            "geoPos": null
+          },
+          "afterFix": {
+            "rows": [
+              {
+                "which": "from",
+                "armed": false,
+                "text": "Where from?",
+                "ph": true
+              },
+              {
+                "which": "to",
+                "armed": true,
+                "text": "Where to?",
+                "ph": false
+              }
+            ],
+            "geoPos": {
+              "lat": 28.6139,
+              "acc": 32,
+              "t": 1791788233503
+            }
+          }
+        },
+        "warm": {
+          "rows": [
+            {
+              "which": "from",
+              "text": "Your location"
+            },
+            {
+              "which": "to",
+              "text": ""
+            }
+          ]
+        }
+      },
+      "errors": [],
+      "consoleErr": []
+    },
+    {
+      "preset": "desktop",
+      "scen": "routes",
+      "ms": 16179,
+      "out": {
+        "steps": [
+          "search rows painted; picking first: \"Nehru Place\n      area\n    \n    8.5 km\"",
+          "modes shown",
+          "vehicle car+petrol",
+          "waiting for /v2/plan options…",
+          "options=1 engine=openfreemap routeLayers=[\"route-wt0-casing\",\"route-wt0-line\"]",
+          "endPins={\"pinEls\":3,\"wtPins\":2,\"center\":[28.5121,77.2261],\"zoom\":11.04} (delhi default cam = 28.6139,77.209 z11/10.2)",
+          "occlusion: {\"engine\":\"maplibre\",\"srcs\":[\"route-wt0\"],\"per\":{\"route-wt0\":{\"pts\":165,\"underSheet\":0,\"bbox\":{\"x\":609,\"y\":76,\"w\":147,\"h\":229}}},\"totalPts\":165,\"underSheetPts\":0,\"sheet\":{\"x\":906,\"w\":460},\"view\":{\"w\":1366,\"h\":850},\"center\":{\"lng\":77.22609549999993,\"lat\":28.51214065910034},\"zoom\":11.04}"
+        ],
+        "map": {
+          "hasA": true,
+          "basemap": "openfreemap",
+          "zoom": 11.04,
+          "center": [
+            28.5121,
+            77.2261
+          ],
+          "engine": "leaflet",
+          "webgl": true,
+          "leaflet": false,
+          "maplibre": true,
+          "noglNote": false,
+          "layers": [
+            "route-wt0-casing",
+            "route-wt0-line"
+          ]
+        },
+        "sheet": {
+          "x": 906,
+          "y": 323,
+          "w": 460,
+          "h": 527
+        },
+        "endPins": {
+          "pinEls": 3,
+          "wtPins": 2,
+          "center": [
+            28.5121,
+            77.2261
+          ],
+          "zoom": 11.04
+        },
+        "occlusion": {
+          "engine": "maplibre",
+          "srcs": [
+            "route-wt0"
+          ],
+          "per": {
+            "route-wt0": {
+              "pts": 165,
+              "underSheet": 0,
+              "bbox": {
+                "x": 609,
+                "y": 76,
+                "w": 147,
+                "h": 229
+              }
+            }
+          },
+          "totalPts": 165,
+          "underSheetPts": 0,
+          "sheet": {
+            "x": 906,
+            "w": 460
+          },
+          "view": {
+            "w": 1366,
+            "h": 850
+          },
+          "center": {
+            "lng": 77.22609549999993,
+            "lat": 28.51214065910034
+          },
+          "zoom": 11.04
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": [
+        "http://localhost:8909/v2/p/flow_tile/12/2926/1706.png :: net::ERR_ABORTED",
+        "http://localhost:8909/v2/p/flow_tile/12/2927/1706.png :: net::ERR_ABORTED",
+        "http://localhost:8909/v2/p/flow_tile/12/2925/1706.png :: net::ERR_ABORTED",
+        "http://localhost:8909/v2/p/flow_tile/12/2926/1711.png :: net::ERR_ABORTED",
+        "http://localhost:8909/v2/p/flow_tile/12/2927/1711.png :: net::ERR_ABORTED",
+        "http://localhost:8909/v2/p/flow_tile/12/2923/1708.png :: net::ERR_ABORTED",
+        "http://localhost:8909/v2/p/flow_tile/12/2923/1709.png :: net::ERR_ABORTED"
+      ]
+    },
+    {
+      "preset": "desktop",
+      "scen": "airmap",
+      "ms": 28770,
+      "out": {
+        "map": {
+          "hasA": true,
+          "basemap": "openfreemap",
+          "zoom": 14.2,
+          "center": [
+            28.6139,
+            77.209
+          ],
+          "engine": "leaflet",
+          "webgl": true,
+          "leaflet": false,
+          "maplibre": true,
+          "noglNote": false,
+          "layers": []
+        },
+        "sheet": {
+          "x": 906,
+          "y": 0,
+          "w": 460,
+          "h": 850
+        },
+        "search": {
+          "listHidden": false,
+          "rows": 10,
+          "firstRows": [
+            "Connaught",
+            "Connaught Place",
+            "Connaught Place",
+            "Connaught Palace (Cannaught Palace)"
+          ],
+          "quiet": null,
+          "prog": false,
+          "apiHits": [
+            "200 http://localhost:8909/v2/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/p/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/p/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/search?q=connaught&lat=28.6139&lon=77.2090"
+          ]
+        },
+        "picked": {
+          "read": "358 AQI — very poor\n          PM2.5 194\n          PM10 206\n        \n        \n      \n      Connaught",
+          "pin": true,
+          "inputVal": "Connaught"
+        },
+        "mapProbe": {
+          "point": {
+            "x": 27,
+            "y": 0,
+            "hit": "canvas.maplibregl-canvas < div.maplibregl-canvas-container.maplibregl-interactive < div.maplibregl-map#map < body < html"
+          },
+          "probed": 420,
+          "free": 251,
+          "freeFrac": 0.6,
+          "topCover": [
+            "div.sheet-body×29",
+            "null×20",
+            "div.am-plan×12",
+            "div.am-bw×10",
+            "div.am-hero×9"
+          ]
+        },
+        "tap": {
+          "pin": true,
+          "read": "305 AQI — very poor\n          PM2.5 125\n          PM10 204\n        \n        \n      \n      Vande Mataram Marg"
+        },
+        "pickerSearch": {
+          "rows": 10,
+          "first": [
+            "Connaught",
+            "Connaught Place",
+            "Connaught Place",
+            "Connaught Palace (Cannaught Palace)"
+          ],
+          "note": null
+        },
+        "picker": true,
+        "armedPin": {
+          "label": "Vande Mataram Marg",
+          "labelEl": true,
+          "reachableFrac": 0.56
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": []
+    },
+    {
+      "preset": "phone",
+      "scen": "boot",
+      "ms": 6609,
+      "out": {
+        "mapInfo": {
+          "hasA": true,
+          "basemap": "openfreemap",
+          "zoom": 10.2,
+          "center": [
+            28.6139,
+            77.209
+          ],
+          "engine": "leaflet",
+          "webgl": true,
+          "leaflet": false,
+          "maplibre": true,
+          "noglNote": false,
+          "layers": []
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": []
+    },
+    {
+      "preset": "phone",
+      "scen": "zoom",
+      "ms": 14133,
+      "out": {
+        "home": {
+          "controls": [
+            {
+              "sel": ".maplibregl-ctrl-zoom-in",
+              "present": true,
+              "rect": {
+                "x": 351,
+                "y": 708,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "section.hs-fade(in .screen)"
+            },
+            {
+              "sel": ".maplibregl-ctrl-zoom-out",
+              "present": true,
+              "rect": {
+                "x": 351,
+                "y": 737,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.hs-scroll(in .screen)"
+            },
+            {
+              "sel": ".leaflet-control-zoom-in",
+              "present": false
+            },
+            {
+              "sel": ".leaflet-control-zoom-out",
+              "present": false
+            }
+          ],
+          "sheet": null,
+          "mapProbe": {
+            "point": null,
+            "probed": 420,
+            "free": 0,
+            "freeFrac": 0,
+            "topCover": [
+              "div.hs-scroll×86",
+              "button.hs-doorrow×42",
+              "span.hs-aqinum×33",
+              "span.hs-doorlbl×26",
+              "header.hs-head×23"
+            ]
+          },
+          "clickIn": {
+            "present": true,
+            "at": {
+              "x": 365.5,
+              "y": 722.5
+            },
+            "zoomBefore": 10.2,
+            "zoomAfter": 10.2,
+            "worked": false
+          }
+        },
+        "whereto": {
+          "controls": [
+            {
+              "sel": ".maplibregl-ctrl-zoom-in",
+              "present": true,
+              "rect": {
+                "x": 351,
+                "y": 708,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.wt-list(in .sheet)"
+            },
+            {
+              "sel": ".maplibregl-ctrl-zoom-out",
+              "present": true,
+              "rect": {
+                "x": 351,
+                "y": 737,
+                "w": 29,
+                "h": 29
+              },
+              "visibleCss": true,
+              "coveredBy": "div.wt-list(in .sheet)"
+            },
+            {
+              "sel": ".leaflet-control-zoom-in",
+              "present": false
+            },
+            {
+              "sel": ".leaflet-control-zoom-out",
+              "present": false
+            }
+          ],
+          "sheet": {
+            "x": 0,
+            "y": 52,
+            "w": 390,
+            "h": 792
+          },
+          "mapProbe": {
+            "point": {
+              "x": 8,
+              "y": 0,
+              "hit": "canvas.maplibregl-canvas < div.maplibregl-canvas-container.maplibregl-interactive < div.maplibregl-map#map < body < html"
+            },
+            "probed": 420,
+            "free": 29,
+            "freeFrac": 0.07,
+            "topCover": [
+              "div.wt-list×262",
+              "button.wt-rrow×32",
+              "button.wt-abtn×20",
+              "null×20",
+              "span×16"
+            ]
+          },
+          "clickIn": {
+            "present": true,
+            "at": {
+              "x": 365.5,
+              "y": 722.5
+            },
+            "zoomBefore": 10.2,
+            "zoomAfter": 10.2,
+            "worked": false
+          },
+          "wheel": {
+            "zoomBefore": 10.2,
+            "zoomAfter": 10.66,
+            "worked": true
+          }
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": []
+    },
+    {
+      "preset": "phone",
+      "scen": "from",
+      "ms": 9582,
+      "out": {
+        "race": {
+          "atMount": {
+            "rows": [
+              {
+                "which": "from",
+                "armed": false,
+                "text": "Where from?",
+                "ph": true
+              },
+              {
+                "which": "to",
+                "armed": true,
+                "text": "Where to?",
+                "ph": false
+              }
+            ],
+            "geoPos": null
+          },
+          "afterFix": {
+            "rows": [
+              {
+                "which": "from",
+                "armed": false,
+                "text": "Where from?",
+                "ph": true
+              },
+              {
+                "which": "to",
+                "armed": true,
+                "text": "Where to?",
+                "ph": false
+              }
+            ],
+            "geoPos": {
+              "lat": 28.6139,
+              "acc": 32,
+              "t": 1791788312759
+            }
+          }
+        },
+        "warm": {
+          "rows": [
+            {
+              "which": "from",
+              "text": "Your location"
+            },
+            {
+              "which": "to",
+              "text": ""
+            }
+          ]
+        }
+      },
+      "errors": [],
+      "consoleErr": []
+    },
+    {
+      "preset": "phone",
+      "scen": "routes",
+      "ms": 18960,
+      "out": {
+        "steps": [
+          "search rows painted; picking first: \"Nehru Place\n      area\n    \n    8.5 km\"",
+          "modes shown",
+          "vehicle car+petrol",
+          "waiting for /v2/plan options…",
+          "options=1 engine=openfreemap routeLayers=[\"route-wt0-casing\",\"route-wt0-line\"]",
+          "endPins={\"pinEls\":3,\"wtPins\":2,\"center\":[28.5121,77.2261],\"zoom\":11.03} (delhi default cam = 28.6139,77.209 z11/10.2)",
+          "occlusion: {\"engine\":\"maplibre\",\"srcs\":[\"route-wt0\"],\"per\":{\"route-wt0\":{\"pts\":165,\"underSheet\":0,\"bbox\":{\"x\":122,\"y\":76,\"w\":146,\"h\":227}}},\"totalPts\":165,\"underSheetPts\":0,\"sheet\":{\"x\":0,\"w\":390},\"view\":{\"w\":390,\"h\":844},\"center\":{\"lng\":77.22609549999993,\"lat\":28.512126488248313},\"zoom\":11.03}"
+        ],
+        "map": {
+          "hasA": true,
+          "basemap": "openfreemap",
+          "zoom": 11.03,
+          "center": [
+            28.5121,
+            77.2261
+          ],
+          "engine": "leaflet",
+          "webgl": true,
+          "leaflet": false,
+          "maplibre": true,
+          "noglNote": false,
+          "layers": [
+            "route-wt0-casing",
+            "route-wt0-line"
+          ]
+        },
+        "sheet": {
+          "x": 0,
+          "y": 321,
+          "w": 390,
+          "h": 523
+        },
+        "endPins": {
+          "pinEls": 3,
+          "wtPins": 2,
+          "center": [
+            28.5121,
+            77.2261
+          ],
+          "zoom": 11.03
+        },
+        "occlusion": {
+          "engine": "maplibre",
+          "srcs": [
+            "route-wt0"
+          ],
+          "per": {
+            "route-wt0": {
+              "pts": 165,
+              "underSheet": 0,
+              "bbox": {
+                "x": 122,
+                "y": 76,
+                "w": 146,
+                "h": 227
+              }
+            }
+          },
+          "totalPts": 165,
+          "underSheetPts": 0,
+          "sheet": {
+            "x": 0,
+            "w": 390
+          },
+          "view": {
+            "w": 390,
+            "h": 844
+          },
+          "center": {
+            "lng": 77.22609549999993,
+            "lat": 28.512126488248313
+          },
+          "zoom": 11.03
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": []
+    },
+    {
+      "preset": "phone",
+      "scen": "airmap",
+      "ms": 24692,
+      "out": {
+        "map": {
+          "hasA": true,
+          "basemap": "openfreemap",
+          "zoom": 14.2,
+          "center": [
+            28.6059,
+            77.209
+          ],
+          "engine": "leaflet",
+          "webgl": true,
+          "leaflet": false,
+          "maplibre": true,
+          "noglNote": false,
+          "layers": []
+        },
+        "sheet": {
+          "x": 0,
+          "y": 354,
+          "w": 390,
+          "h": 490
+        },
+        "search": {
+          "listHidden": false,
+          "rows": 10,
+          "firstRows": [
+            "Connaught",
+            "Connaught Place",
+            "Connaught Place",
+            "Connaught Palace (Cannaught Palace)"
+          ],
+          "quiet": null,
+          "prog": false,
+          "apiHits": [
+            "200 http://localhost:8909/v2/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/p/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/p/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/ac?q=connaught&lat=28.6139&lon=77.209",
+            "200 http://localhost:8909/v2/search?q=connaught&lat=28.6139&lon=77.2090"
+          ]
+        },
+        "picked": {
+          "read": "358 AQI — very poor\n          PM2.5 194\n          PM10 206\n        \n        \n      \n      Connaught",
+          "pin": true,
+          "inputVal": "Connaught"
+        },
+        "mapProbe": {
+          "point": {
+            "x": 8,
+            "y": 0,
+            "hit": "canvas.maplibregl-canvas < div.maplibregl-canvas-container.maplibregl-interactive < div.maplibregl-map#map < body < html"
+          },
+          "probed": 420,
+          "free": 159,
+          "freeFrac": 0.38,
+          "topCover": [
+            "div.sheet-body×42",
+            "div.sheet-title×23",
+            "span×23",
+            "null×20",
+            "input.am-sc-in×17"
+          ]
+        },
+        "tap": {
+          "pin": true,
+          "read": "369 AQI — very poor\n          PM2.5 209\n          PM10 239\n        \n        \n      \n      All India Forward Bloc"
+        },
+        "pickerSearch": {
+          "rows": 10,
+          "first": [
+            "Connaught",
+            "Connaught Place",
+            "Connaught Place",
+            "Connaught Palace (Cannaught Palace)"
+          ],
+          "note": null
+        },
+        "picker": true,
+        "armedPin": {
+          "label": "All India Forward Bloc",
+          "labelEl": true,
+          "reachableFrac": 0.33
+        }
+      },
+      "err": null,
+      "errors": [],
+      "consoleErr": [],
+      "failedReq": [
+        "https://tiles.openfreemap.org/planet/20261004_113936_pt/13/5852/3416.pbf :: net::ERR_ABORTED",
+        "https://tiles.openfreemap.org/planet/20261004_113936_pt/13/5853/3416.pbf :: net::ERR_ABORTED",
+        "https://tiles.openfreemap.org/planet/20261004_113936_pt/13/5852/3415.pbf :: net::ERR_ABORTED",
+        "https://tiles.openfreemap.org/planet/20261004_113936_pt/13/5853/3415.pbf :: net::ERR_ABORTED"
+      ]
+    }
+  ]
+}

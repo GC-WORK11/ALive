@@ -60,6 +60,7 @@ const T = {
   viaStreets: 'via {streets}',
   vehicleQ1: 'What are you taking?', vehicleQ2: 'Fuel?',
   vehicleQ3: 'Roughly when was it bought?',
+  runTitle: 'a run, on foot', runSub: 'the purest path there — lowest dose',
   vehicleQ_back: 'back', vehicleQ_skip: 'skip — a typical Delhi ride', puc_skip: 'skip',
   vehicle_likeYours: 'a typical Delhi ride',
   veh_grp_own: 'your own', veh_grp_shared: 'shared', veh_grp_noengine: 'no engine',
@@ -1025,18 +1026,35 @@ function renderModes() {
         <span class="wt-mt"><b>${esc(m.title)}</b><span>${esc(modeSub(m))}</span></span>
         ${CHEV_SVG(m.id === cur ? ACCENT : INK3, 20)}
       </button>`).join('')}
+      <button class="wt-mode wt-run" type="button" data-act="run">
+        <span class="wt-mg">${icon('walk', 26, INK2)}</span>
+        <span class="wt-mt"><b>${esc(t('runTitle'))}</b><span>${esc(t('runSub'))}</span></span>
+        ${CHEV_SVG(INK3, 20)}
+      </button>
     </div>
     <div class="wt-vfoot"><button class="wt-vfb" type="button" data-act="back">${t('vehicleQ_back')}</button><span></span></div>
   </div>`;
   const root = S.body.querySelector('.wt');
   bindTrip(root);
   root.querySelectorAll('.wt-mode').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.act === 'run') return;   /* the run row is bound below */
     S.mode = b.dataset.mode;
+    S.activity = null;
     A.store.set(K_MODE, S.mode);
     S.modeChosen = true;
     if (S.vehChosen) plan();
     else openVehicle('trip');
   }));
+  const runBtn = root.querySelector('[data-act="run"]');
+  if (runBtn) runBtn.addEventListener('click', () => {
+    /* a run asks nothing: on foot, scored for the lowest dose — the
+       journey screen turns it into the live run */
+    S.mode = 'health_max';
+    S.activity = 'run';
+    S.tripVeh = { cls: 'walk' };
+    S.vehChosen = true; S.modeChosen = true;
+    plan();
+  });
   root.querySelector('[data-act="back"]').addEventListener('click', () => {
     if (S.plan && S.vehChosen) { S.phase = 'plan'; renderPlan(); paintRoutes(); return; }
     S.armed = 'to'; S.q = ''; S.results = null; S.final = true;
@@ -1058,6 +1076,7 @@ async function plan() {
     to: { lat: S.to.lat, lon: S.to.lon },
     mode: S.mode,
   };
+  if (S.activity) body.activity = S.activity;
   const veh = planVehicle(S.tripVeh), prof = planVehicleProfile(S.tripVeh);
   if (veh) body.vehicle = veh;
   if (prof) body.vehicle_profile = prof;
@@ -1475,6 +1494,7 @@ function renderPlan() {
       A.show('journey', { option: o, from: S.from, to: S.to,
         options: S.plan && S.plan.options,
         mode: S.mode, vehicle: S.tripVeh ? S.tripVeh.cls : famOf(o),
+        activity: S.activity || null,
         field_age_s: S.plan && S.plan.field && S.plan.field.age_s });
       return;
     }
@@ -1817,7 +1837,7 @@ A.screen('whereto', {
       recents: (loadJ(K_RECENT, []) || []).map((r) => ({ name: r.name || r.label, sub: r.sub, lat: r.lat, lon: r.lon })).filter((r) => r.name != null && r.name !== 'dropped pin' && r.name !== t('yourLocation')),
       veh: loadJ(K_VEH, null),
       mode: MODES.some((m) => m.id === m0) ? m0 : 'health_max',
-      modeChosen: false, vehChosen: false, tripVeh: null,
+      modeChosen: false, vehChosen: false, tripVeh: null, activity: null,
       plan: null, view: null, planning: false, planErr: null, sel: 0, pseq: 0, partial: null, plans: {},
       showOther: false, paintedIds: [], segIds: [], jamIds: [], trafficOn: false,
       wiz: null, _tapOff: null, _anim: null,

@@ -146,6 +146,10 @@ VENTILATION_LPM = {
     "bicycle":            22.0,
     "walk":               14.0,
     "on_foot":            14.0,
+    # running/jogging — same activity-adjusted scale [3]: ~3× walking
+    "run":                45.0,
+    "running":            45.0,
+    "jogging":            45.0,
 }
 
 # --- Near-road uplift ------------------------------------------------------

@@ -578,8 +578,17 @@ A.screen('journey', {
     const glyph = vehicleGlyph(params.vehicle || opt.mode || '');
     const vehKey = String(params.vehicle || glyph);
     const tripMode = ['health_max', 'petrol_health', 'time_health'].includes(params.mode) ? params.mode : null;
+    /* running mode: the same engine, on foot — the route draws green,
+       the HUD reads pace not ETA, the screen stays awake, and the air
+       re-reads itself every five minutes */
+    const isRun = !!(params && params.activity === 'run');
+    const FOLLOW_Z = isRun ? 17.4 : 16;
     const toName = to.label || 'your destination';
     const plan0 = buildPlan(opt);
+    /* a runner ventilates ~3× a walker (exposure.py VENTILATION_LPM —
+       walk 14 → run 45 L/min): the plan priced a walker's minute, so
+       the run's own intake constant scales by the same ratio */
+    if (isRun && plan0.k != null) plan0.k *= 45 / 14;
 
     const S = {
       P: plan0,
@@ -593,6 +602,7 @@ A.screen('journey', {
       offSince: 0, rerouting: false, lastReroute: 0, rerouteFail: false, reroutes: 0,
       slowSince: 0, stuckOpen: null, stuck: [],
       traffic: null, jams: [], jamT: 0, jamBusy: false, jamPins: 0, trafficDown: false,
+      airNow: null,                     // a live re-read mid-run beats the plan strip
       follow: true, bearing: null, cueKey: null, camInit: false,
       done: false, dead: false, simulated: false,
       timer: 0, simTimer: 0, geoPulse: 0,
@@ -663,7 +673,17 @@ A.screen('journey', {
     A.map.setFieldVisible(false);
     function drawRoute() {
       A.map.hideRoute('journey');
-      A.map.showRoute('journey', S.P.geom, paintSegs(S.P.o.segments));
+      /* a run draws one honest green line — the dose reads live in the
+         HUD instead of colouring the path */
+      A.map.showRoute('journey', S.P.geom, isRun ? null : paintSegs(S.P.o.segments));
+      if (isRun) A.map.ready((m) => {
+        try {
+          if (m.getLayer('route-journey-line'))
+            m.setPaintProperty('route-journey-line', 'line-color', '#35614B');
+          if (m.getLayer('route-journey-casing'))
+            m.setPaintProperty('route-journey-casing', 'line-color', '#EAF3EC');
+        } catch (_) {}
+      });
       const e = S.P.route.pts[S.P.route.n - 1];
       A.map.pin('jto', e[0], e[1],
         `<div class="pin-chip">${esc(toName.length > 18 ? toName.slice(0, 17) + '…' : toName)}</div>`);
@@ -738,7 +758,7 @@ A.screen('journey', {
           try {
             if (!S.camInit) {
               S.camInit = true;
-              m.flyTo([lat, lon], Math.max(16, m.getZoom()), { duration: 0.9 });
+              m.flyTo([lat, lon], Math.max(FOLLOW_Z, m.getZoom()), { duration: 0.9 });
               return;
             }
             m.panInside([lat, lon], {
@@ -758,7 +778,7 @@ A.screen('journey', {
            desktop it parks the puck at the middle of the area left of
            the bottom-right card, low like a nav HUD. (Not `padding` —
            easeTo padding mutates transform.padding permanently.) */
-        m.easeTo({ center: [lon, lat], zoom: Math.max(16, m.getZoom()), bearing: b,
+        m.easeTo({ center: [lon, lat], zoom: Math.max(FOLLOW_Z, m.getZoom()), bearing: b,
           offset: [wide ? -RIGHT_PAD / 2 : 0, 70], duration: instant ? 300 : 800 });
       });
     }
@@ -796,6 +816,31 @@ A.screen('journey', {
           if (done) done();
         }, opts);
       } catch (e) { if (done) done(); }
+    }
+    /* the screen must stay on through a run — the watch can't navigate
+       a locked phone, and every run app says this the same honest way */
+    let wakeLock = null, onVisLock = null;
+    async function lockScreen() {
+      if (!isRun || !navigator.wakeLock || wakeLock) return;
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      } catch (_) { wakeLock = null; }
+    }
+    lockScreen();
+    if (isRun) {
+      onVisLock = () => { if (!document.hidden) lockScreen(); };
+      document.addEventListener('visibilitychange', onVisLock);
+      /* the air along the run re-reads every five minutes — the strip
+         was priced at plan time, the world isn't */
+      S.airNow = null;
+      S._airBeat = A.beat ? A.beat('journey.air', () => {
+        const p = S.pos || A.geo.pos;
+        if (!p || S.done || S.dead) return;
+        A.aqiSpot(p.lat, p.lon, 8000).then((j) => {
+          if (j && isNum(j.pm25)) S.airNow = j.pm25;
+        }).catch(() => {});
+      }, 300000) : null;
     }
     /* nudge acquisition while the watch is silent — the next fix that
        lands (onFix) clears it, as does a permission denial */
@@ -1094,11 +1139,22 @@ A.screen('journey', {
       const pf = `scaleX(${(tot > 0 ? clamp(S.odo / tot, 0, 1) : 0).toFixed(4)})`;
       if (last.pf !== pf) { ui.progFill.style.transform = pf; last.pf = pf; }
       const remS = remainingS(remM);
-      set(ui.etaV, 'ev', remS == null ? '—' : fmtDur(remS));
-      set(ui.etaS, 'es', distToStr(remM) +
-        (remS != null ? ` · arrive ${clockLabel(Date.now() + remS * 1000)}` : ''));
+      if (isRun) {
+        /* pace is the runner's number: measured km so far ÷ moving time,
+           shown as min/km — never the ETA a driver would watch */
+        const kmDone = S.odo / 1000;
+        const paceS = S.odo >= 40 && S.t1 ? (Date.now() - S.t1) / kmDone : null;
+        const pmm = paceS == null ? null : Math.floor(paceS / 60000);
+        const pss = paceS == null ? null : String(Math.round((paceS % 60000) / 1000)).padStart(2, '0');
+        set(ui.etaV, 'ev', pmm == null ? '—' : `${pmm}:${pss}`);
+        set(ui.etaS, 'es', `min/km · ${kmDone < 10 ? kmDone.toFixed(1) : Math.round(kmDone)} km · ${distToStr(remM)} left`);
+      } else {
+        set(ui.etaV, 'ev', remS == null ? '—' : fmtDur(remS));
+        set(ui.etaS, 'es', distToStr(remM) +
+          (remS != null ? ` · arrive ${clockLabel(Date.now() + remS * 1000)}` : ''));
+      }
       set(ui.spdV, 'sv', S.vShown == null ? '—' : String(Math.round(S.vShown * 3.6)));
-      const b = A.fmt.band(P.dose.pmAt(S.s));
+      const b = A.fmt.band(S.airNow != null ? S.airNow : P.dose.pmAt(S.s));
       const bc = b ? b.color : 'var(--ink4)';
       if (last.bc !== bc) { ui.adot.style.background = bc; last.bc = bc; }
       set(ui.aword, 'aw', b ? `${b.name[0].toUpperCase()}${b.name.slice(1)} air` : 'Air here');
@@ -1169,6 +1225,9 @@ A.screen('journey', {
       if (S.watchId != null) { try { navigator.geolocation.clearWatch(S.watchId); } catch (e) {} S.watchId = null; }
       clearInterval(S.timer); clearInterval(S.simTimer); clearInterval(S.geoPulse);
       S.timer = 0; S.simTimer = 0; S.geoPulse = 0;
+      if (S._airBeat) { S._airBeat(); S._airBeat = null; }
+      if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+      if (onVisLock) { document.removeEventListener('visibilitychange', onVisLock); onVisLock = null; }
     }
 
     function finish(arrived) {
@@ -1201,6 +1260,8 @@ A.screen('journey', {
           vehicle: params.vehicle || (opt.mode || '').split('_')[0] || null,
           label: opt.label || opt.mode || null,
           mode: tripMode,
+          activity: isRun ? 'run' : null,
+          pace_s_km: isRun && km > 0.05 ? Math.round(takenS / km) : null,
           km_plan: opt.distance_km ?? null, eta_plan_s: opt.eta_s ?? null,
           covered_km: r2(km), taken_s: takenS,
           dose_ug: r2(intake), dose_lo_ug: lo != null ? r2(lo) : null, dose_hi_ug: hi != null ? r2(hi) : null,
@@ -1246,10 +1307,18 @@ A.screen('journey', {
       A.map.hideAllRoutes();
       A.map.unpin('jfrom'); A.map.unpin('jto');
       A.map.puckRemove();
-      const chip = modeLabel(opt.mode || '', opt.label || '');
+      const chip = isRun && x.measured
+        ? (() => {
+            const km = S.odo / 1000, ts = x.takenS;
+            const pace = km > 0.05 ? Math.round(ts / km) : null;
+            const pm = pace == null ? null : Math.floor(pace / 60);
+            const ps = pace == null ? null : String(pace % 60).padStart(2, '0');
+            return `run · ${km < 10 ? km.toFixed(1) : Math.round(km)} km${pm != null ? ` · ${pm}:${ps} /km` : ''}`;
+          })()
+        : modeLabel(opt.mode || '', opt.label || '');
       const head = `
         <div class="jr-head">
-          <div class="jr-title">${x.arrived ? "You're here." : 'Trip ended.'}</div>
+          <div class="jr-title">${isRun ? (x.arrived ? 'Run done.' : 'Run ended early.') : (x.arrived ? "You're here." : 'Trip ended.')}</div>
           ${chip ? `<div class="jr-chip">${ic(glyph, 14, 'var(--ink2)')}<span>${esc(chip)}</span></div>` : ''}
         </div>`;
       const rc = document.createElement('div');

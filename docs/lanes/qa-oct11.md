@@ -273,7 +273,23 @@ Box load average 16–18 on 12 cores the whole cycle (11 lanes) — absolute tim
   ≈ 60 g CO₂"; bars all `--b1` = the stated band. No "simulated/preview" text. No "jammed here" marker (prod has no
   `/v2/p/route_traffic` → 404, also `/v2/p/flow_tile` 404). Only maplibre attribution links <40 px.
   Shots `qa/shots/c3j/018-journey-moving.png`, `023-journey-stopped.png`, `024-receipt.png`.
-- :8108 still had no worker at 18:27 (`curl /health` → timeout, backlog 250) — the :8111 re-runs of Time + Health,
-  Neelanchal, C-12 and the journey-with-live-jams path are blocked on lane P restarting it.
-  Re-run when it is back: `bash qa/run.sh c3 search,route http://localhost:8111` and
-  `BASE=http://localhost:8111 node qa/extra.mjs c3x modes,parity,purest,drawer`.
+- :8108 had no worker until someone restarted it at **18:32:26** (fresh log, no reloader). Re-runs on :8111 at 18:33:
+- **Modes ×3 (c3x): PASS.** `/v2/plan` 200 in **2.5 s / 0.9 s / 0.9 s** (Health Maxer / Petrol + Health / Time + Health),
+  cards 0.25–1.8 s after the vehicle tap, 2 car cards each: "19 min · 6 µg breathed · satisfactory air · **+2 min
+  traffic · 0.8 L petrol**" + why ("cleanest air on this trip" / "least petrol and the cleanest air" / "fastest now and
+  the cleanest air"); no "routes timed out" notice any more (so P1 #5 was load/provider timeouts); no ₹; console clean.
+- **NEW [P1][E/W] Petrol + Health contradicts itself on screen:** the picked card carries the "least petrol" badge and
+  why "least petrol and the cleanest air" at **0.8 L**, while the card right below reads "**0.7 L petrol** · 17% more
+  smoke, 0.07 L less petrol" (excluded by the +15 % dose rule — correct engine, misleading words). Say "least petrol
+  for clean air" / show the trade-off. Shot `qa/shots/c3x/005-modes-petrol_health-cards.png`, plan `plan-petrol_health.json`.
+- **Pawan Bakery per keystroke (c3s): PASS** — #1 "Pawan Bakery — C-543, Hanuman Mandir Rd, West Jyoti Nagar (1.2 km)"
+  from "pawan bak" (9th key) to the end; 1/56 keystrokes blank >1 s; **no Overpass/Photon calls** with a healthy API.
+  Still 8/56 keystrokes where rows vanish ≈0.45 s when the new word doesn't match the old rows (P1 #2, milder).
+- **[P1][S] Neelanchal Dham Sant Nagar: FAIL in the browser although the server has it.** `curl /v2/p/ac` (18:34) →
+  #1 "Nilanchal Dhaam Bace · Sant Nagar, East Of Kailash" (mappls, kind `lodging`); the To list shows "Neelachal Dham
+  Center — Asola, Fatehpur Beri (28 km)", "Neelanchal Dham — Faridabad", "ISKCON Neelachal Dham — Sector 18" and drops
+  it. Likely search.js ranking: "nilanchal" ≠ "neelanchal" (2 edits > one-typo rule) and `kind: lodging` hits
+  `NOISY_KIND`. Provider rank #1 + locality-token match ("sant nagar") should win. Shot `qa/shots/c3s/007-whereto-q-neelanchal_dham_sant_nagar.png`.
+- **C-12 Ashok Nagar Shahdara: PARTIAL** — #1 "12/214 — Street Number 20, Block D, Ashok Nagar Mandoli (1.6 km)"
+  (house-level, right area); `/v2/p/ac` itself has no exact C-12 row (top: "1284, Street Number 7/C — West Jyoti Nagar,
+  Ashok Nagar Mandoli, Ashok Nagar, Shahdara").
