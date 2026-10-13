@@ -757,9 +757,12 @@ def purest_places(F, district_rows: list, lat: Optional[float],
     # when a live-monitor layer is actually up, "solid" means a named
     # monitor nearby. when every station feed is down (keys/sources
     # unavailable) the field still reads real satellite+model values —
-    # places rank on that and say so, rather than the screen going dark
-    monitors_up = bool(getattr(F, "_stations_live", None)
-                       or getattr(F, "_station_count", 0))
+    # places rank on that and say so, rather than the screen going dark.
+    # Probe the field itself: nearest_station_km answers non-None from
+    # any in-bounds point when monitors exist, None when none are up.
+    monitors_up = _station_km(F,
+        lat if lat is not None else 28.6139,
+        lon if lon is not None else 77.2090) is not None
     for _r, (la, lo, nm, cls) in buckets.values():
         skm = _station_km(F, la, lo)
         if _beyond(F, la, lo):
