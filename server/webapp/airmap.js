@@ -1084,6 +1084,7 @@ function scPick(r) {
   st.armed = false;
   st.tapPlace = r.name;
   st.place = { lat: +r.lat, lon: +r.lon, label: r.name };
+  st.pickedPlace = true;
   A.store.set(PICK_KEY, st.place);
   scPushRecent(st.place);
   sc.input.value = r.name;
@@ -1108,6 +1109,7 @@ function scReset() {
   const pos = spotPos();
   st.place = pos ? { lat: pos.lat, lon: pos.lon, label: 'where you are' }
     : { ...A.DELHI, label: 'central delhi' };
+  st.pickedPlace = false;
   A.store.set(PICK_KEY, st.place);
   if (pos) flyToSpot(pos, 14.2);
   const lbl = st.body.querySelector('.am-place-label');
@@ -1242,10 +1244,12 @@ A.screen('airmap', {
   mount(el) {
     const chrome = A.sheetChrome(el, 'air around me');
     el.classList.add('am-host');
+    const restored = A.store.get(PICK_KEY, null);
     st = {
       el, body: chrome.body,
-      place: A.store.get(PICK_KEY, null)
+      place: restored
         || (A.geo.pos ? { lat: A.geo.pos.lat, lon: A.geo.pos.lon, label: 'where you are' } : { ...A.DELHI, label: 'central delhi' }),
+      pickedPlace: !!(restored && restored.label !== 'where you are' && restored.label !== 'central delhi'),
       armed: false, pickOpen: false,
       readEl: null, chipEl: null, cityData: null,
       spot: null, spotKey: null,
@@ -1259,16 +1263,17 @@ A.screen('airmap', {
     el.appendChild(st.chipEl);
     mountComposer(el);
 
-    /* the live dot — and the map opens on it, at street level */
+    /* the live dot — the map opens on the picked place if there is one,
+       else on you, at street level */
     const pos0 = spotPos();
-    if (pos0) {
-      A.map.puckMove(pos0.lat, pos0.lon, pos0.acc || null);
-      flyToSpot(pos0, 14.2);
-    } else A.map.fly(A.DELHI.lat, A.DELHI.lon, 10.4);
+    if (pos0) A.map.puckMove(pos0.lat, pos0.lon, pos0.acc || null);
+    if (st.pickedPlace && st.place) flyToSpot(st.place, 14.2);
+    else if (pos0) flyToSpot(pos0, 14.2);
+    else A.map.fly(A.DELHI.lat, A.DELHI.lon, 10.4);
     const follow = (p) => {
       if (!st || !p) return;
       A.map.puckMove(p.lat, p.lon, p.acc || null);
-      A.map.ready((m) => {
+      if (!st.pickedPlace) A.map.ready((m) => {
         const b = m.getBounds();
         if (!b.contains([p.lon, p.lat])) flyToSpot(p, Math.max(13, m.getZoom()));
       });
@@ -1293,6 +1298,7 @@ A.screen('airmap', {
         st.armed = false;
         const p = e.detail;
         st.place = { lat: p.lat, lon: p.lon, label: 'dropped pin' };
+        st.pickedPlace = true;
         A.search.reverse(p.lat, p.lon).then((n) => {
           if (n && st && st.place && st.place.label === 'dropped pin') {
             st.place.label = n;
@@ -1314,6 +1320,7 @@ A.screen('airmap', {
          the air there now, and the day card below reads that same spot */
       const tp = e.detail;
       st.place = { lat: tp.lat, lon: tp.lon, label: 'pinned spot' };
+      st.pickedPlace = true;
       A.store.set(PICK_KEY, st.place);
       A.search.reverse(tp.lat, tp.lon).then((n) => {
         if (n && st && st.place && st.place.lat === tp.lat && st.place.lon === tp.lon) {

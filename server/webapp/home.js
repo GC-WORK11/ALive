@@ -184,6 +184,7 @@ const S = {
   plain5: 'Affects healthy people; serious for those with lung or heart disease.',
   provFromAway: 'measured by the {s} air monitor, {k} km from you', provFrom: 'measured by the {s} air monitor',
   provKmAway: 'nearest air monitor ~{k} km from you', provAge: 'updated {m} min ago',
+  fixAgo: '{m} min ago',
   provEdge: "outside the live air map — the nearest edge's read",
   offNote: 'Location is off — this is central Delhi, not your spot.',
   locatingNote: 'Showing central Delhi until your location comes in.',
@@ -297,6 +298,8 @@ function heroData() {
     station: j && at ? stationLabel(nearestStationName(j, at.lat, at.lon)) : null,
     edge: !!(j && j.beyond_field_edge),
     readMin: ageS != null ? Math.max(0, Math.floor(ageS / 60)) : null,
+    fixMin: ps.state === 'stale' && ps.pos && ps.pos.t
+      ? Math.max(1, Math.floor((Date.now() - ps.pos.t) / 60000)) : null,
     dose: todayDose(),
   };
 }
@@ -309,13 +312,18 @@ function provLine(d) {
 }
 function heroHtml(d) {
   const eyebrow = { live: 'eyeLive', stale: 'eyeStale', pin: 'eyePin', locating: 'eyeLocating', off: 'eyeOff' }[d.state];
+  const eyeTxt = d.state === 'stale' && d.fixMin != null
+    ? `${t(eyebrow)} · ${t('fixAgo', { m: d.fixMin })}` : t(eyebrow);
   const locBtn = d.state === 'off'
     ? `<button class="hs-locbtn" type="button" data-act="consent">${ic('locate', 16)}<span>${esc(t('setLoc'))}</span></button>`
     : d.state === 'pin'
       ? `<button class="hs-locbtn" type="button" data-act="consent">${ic('pin', 16)}<span>${esc(t('changeSpot'))}</span></button>`
       : '';
-  const head = `<div class="hs-eyerow"><span class="hs-eyebrow">${esc(t(eyebrow))}</span>${locBtn}</div>`;
-  const note = d.state === 'off' ? (cur.locErr === 'denied' ? t('blockedNote') : t('offNote'))
+  const head = `<div class="hs-eyerow"><span class="hs-eyebrow">${esc(eyeTxt)}</span>${locBtn}</div>`;
+  /* a stale fix paints 'last fix' — but if the device stopped answering
+     (locErr set) the note says so instead of letting the card lie */
+  const note = (d.state === 'off' || (d.state === 'stale' && cur.locErr))
+    ? (cur.locErr === 'denied' ? t('blockedNote') : t('offNote'))
     : d.state === 'locating' ? t('locatingNote') : null;
   const noteHtml = note ? `<div class="hs-note">${esc(note)}</div>` : '';
 
@@ -477,7 +485,12 @@ function relocate() {
     if (p && A.geo.consent === 'granted') { applyPos(p); startRefine(); }
   }).catch((e) => {
     relocating = false;
-    if (e && e.code === 1) { cur.locErr = 'denied'; paint(); }
+    /* code 1 = the site is blocked; 2 = the device's location is off;
+       3 = no fix in time. all three surface honestly — and a sentinel
+       watch re-tries the moment location comes back, no refresh */
+    cur.locErr = e && e.code === 1 ? 'denied' : 'off';
+    if (A.geo.armRecovery) A.geo.armRecovery();
+    paint();
   });
 }
 async function refresh() {
@@ -777,8 +790,12 @@ A.screen('home', {
     A.map.setFieldVisible(false);
     paint();
     refresh();
-    const poll = setInterval(refresh, POLL_MS);
-    const tick = setInterval(paint, TICK_MS);
+    /* shared heartbeat when present: ticks while visible, catches up
+       on return — otherwise plain intervals */
+    const poll = A.beat ? A.beat('home.poll', refresh, POLL_MS)
+      : (() => { const i = setInterval(refresh, POLL_MS); return () => clearInterval(i); })();
+    const tick = A.beat ? A.beat('home.tick', paint, TICK_MS)
+      : (() => { const i = setInterval(paint, TICK_MS); return () => clearInterval(i); })();
 
     const onLoc = (e) => {
       const pos = e.detail;
@@ -799,7 +816,7 @@ A.screen('home', {
     document.addEventListener('alive:maptap', onTap);
 
     return () => {
-      clearInterval(poll); clearInterval(tick); clearInterval(clockTimer);
+      poll(); tick(); clearInterval(clockTimer);
       document.removeEventListener('alive:location', onLoc);
       document.removeEventListener('alive:maptap', onTap);
       A.map.puckRemove();

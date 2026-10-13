@@ -70,13 +70,16 @@ const store = {
 const geo = {
   consent: store.get('consent'),            // 'granted' | 'picked' | null
   pos: store.get('pos'),                    // {lat,lon,label?,t}
+  lastErr: null,                            // last geolocation error code
   granted() { return geo.consent === 'granted'; },
   /* a FRESH fix, never a cached one: laptops/phones often answer first
      with a coarse Wi-Fi/IP fix (±1–3 km) and sharpen within seconds —
-     take the best fix of a short window, return early once it is tight */
+     take the best fix of a short window, return early once it is tight.
+     tight means street-tight (~35 m): the satellite fix takes a few
+     seconds longer than the instant Wi-Fi guess — worth the wait */
   async locate(opts) {
     if (!navigator.geolocation) throw new Error('no geolocation');
-    const goodM = (opts && opts.goodM) || 100, waitMs = (opts && opts.waitMs) || 5000;
+    const goodM = (opts && opts.goodM) || 35, waitMs = (opts && opts.waitMs) || 9000;
     return new Promise((res, rej) => {
       let best = null, done = false, id = null, tm = null, tm2 = null;
       const end = (err) => {
@@ -93,9 +96,55 @@ const geo = {
         const pos = { lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now(), acc: p.coords.accuracy };
         if (!best || !(best.acc <= pos.acc)) best = pos;
         if (pos.acc != null && pos.acc <= goodM) end();
-      }, (e) => { if (!best || (e && e.code === 1)) end(e); },
+      }, (e) => { geo.lastErr = e && e.code; if (!best || (e && e.code === 1)) end(e); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
     });
+  },
+  /* what the position of record is worth right now —
+     fresh < 2 min, stale ≤ 15 min, aged ≤ 24 h, absent otherwise */
+  posNow() {
+    const p = geo.pos;
+    if (!p || !isFinite(p.lat) || !isFinite(p.lon)) return { stale: 'absent' };
+    const age = Date.now() - (p.t || 0);
+    const stale = age < 120e3 ? 'fresh' : age <= 15 * 60e3 ? 'stale' : age <= 24 * 3600e3 ? 'aged' : 'absent';
+    return { lat: p.lat, lon: p.lon, acc: p.acc ?? null, label: p.label || null, t: p.t || 0, age_ms: age, stale };
+  },
+  /* 'on' | 'off' | 'denied' | 'unknown' — is location actually usable */
+  async state() {
+    if (!navigator.geolocation) return 'off';
+    if (geo.pos && Date.now() - (geo.pos.t || 0) < 120e3) return 'on';
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const s = await navigator.permissions.query({ name: 'geolocation' });
+        if (s && s.state === 'denied') return 'denied';
+      }
+    } catch (_) {}
+    if (geo.lastErr === 2) return 'off';
+    return 'unknown';
+  },
+  /* when a locate fails but consent stands, keep a cheap low-power watch
+     armed: the first real fix that arrives (user turned location on,
+     stepped outside) immediately becomes a locate — no refresh needed */
+  armRecovery() {
+    if (geo._recovery || !navigator.geolocation || !geo.granted()) return;
+    const disarm = () => {
+      geo._recovery = null;
+      navigator.geolocation.clearWatch(id);
+      document.removeEventListener('visibilitychange', onShow);
+      window.removeEventListener('focus', onShow);
+      window.removeEventListener('pageshow', onShow);
+    };
+    const wake = () => geo.locate().then((pos) => {
+      document.dispatchEvent(new CustomEvent('alive:location', { detail: pos }));
+      disarm();
+    }).catch(() => {});
+    const onShow = () => { if (!document.hidden) wake(); };
+    const id = navigator.geolocation.watchPosition(wake, () => {},
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 20000 });
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    window.addEventListener('pageshow', onShow);
+    geo._recovery = disarm;
   },
   /* keep sharpening after the first answer: cb fires only when the fix
      gets meaningfully tighter (or the device really moved) */
@@ -263,7 +312,7 @@ function boot() {
     });
   } else if (geo.granted() && (!geo.pos || Date.now() - geo.pos.t > 120000)) {
     geo.locate().then((pos) => document.dispatchEvent(new CustomEvent('alive:location', { detail: pos })))
-      .catch(() => {});
+      .catch(() => geo.armRecovery());
   }
   window.addEventListener('hashchange', () => {
     const id = location.hash.slice(2) || 'home';
@@ -271,9 +320,28 @@ function boot() {
   });
 }
 
+/* the shared heartbeat: one scheduler for every "refresh me every
+   N minutes" need — ticks only while the tab is visible and catches
+   up the moment the user comes back; returns an unregister fn */
+const beats = new Map();
+function beat(name, fn, ms) {
+  if (beats.has(name)) return () => {};
+  const it = { fn, ms, last: 0 };
+  const tick = () => {
+    if (document.hidden) return;
+    const now = Date.now();
+    if (now - it.last >= it.ms) { it.last = now; try { it.fn(); } catch (_) {} }
+  };
+  const id = setInterval(tick, Math.min(ms, 30000));
+  const onVis = () => { if (!document.hidden) tick(); };
+  document.addEventListener('visibilitychange', onVis);
+  beats.set(name, it);
+  return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); beats.delete(name); };
+}
+
 window.A = {
   api: { get, post }, aqiSpot, geo, store, fmt, toast, screen, show, back, current, stackIds,
-  sheetChrome, DELHI, BOUNDS, screensReady: SCREENS,
+  sheetChrome, DELHI, BOUNDS, screensReady: SCREENS, beat,
 };
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
