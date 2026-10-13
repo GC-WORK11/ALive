@@ -25,7 +25,9 @@
    the 0-5 index — both paint. */
 (() => {
 'use strict';
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+/* liberty — OpenFreeMap's flagship cartography: 2× the layers of positron,
+   denser roads/labels/POIs, the nav-app read. Same planet tiles, no key. */
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const OMT = 'openmaptiles';                 // the vector source id in the style
 const BANDS = ['#6E93AE', '#C7A34F', '#CF8A50', '#C05F3A', '#A83D30', '#6E2D28'];
 const CONF_W = { hi: 1, med: 0.72, lo: 0.22 };   // tint alpha per cell confidence
@@ -87,8 +89,8 @@ function offlineStyle() {
   };
 }
 
-/* quiet Uber-light tweaks on top of Positron: streets a touch firmer so
-   the grid reads at street zoom; labels keep Positron's soft greys */
+/* basemap touch-ups — ids from positron kept as guarded no-ops (the
+   offline style still uses them); liberty's roads need no repaint */
 function tuneBasemap(m) {
   const set = (id, k, v) => { try { if (m.getLayer(id)) m.setPaintProperty(id, k, v); } catch (e) { /* layer shape changed upstream — keep the stock paint */ } };
   set('highway_minor', 'line-color', '#ffffff');
