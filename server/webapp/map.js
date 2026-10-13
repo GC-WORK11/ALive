@@ -531,7 +531,7 @@ async function loadField(first) {
       const b = [[L.y0, L.x0], [L.y1, L.x1]];
       if (fieldImg) { fieldImg.setUrl(url); fieldImg.setBounds(b); }
       else {
-        fieldImg = window.L.imageOverlay(url, b, { opacity: 0.42, interactive: false });
+        fieldImg = window.L.imageOverlay(url, b, { opacity: 0.28, interactive: false });
         if (fieldWanted) fieldImg.addTo(m);
       }
       return;
@@ -547,8 +547,9 @@ async function loadField(first) {
         layout: { visibility: fieldWanted ? 'visible' : 'none' },
         paint: {
           /* the tint carries the city view; at street zoom the coloured
-             roads carry it and the tint steps back */
-          'raster-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.46, 11.5, 0.34, 13.5, 0.14, 16, 0.1],
+             roads carry it and the tint steps back. kept soft — a full-
+             field flood of severe colour was unreadable, not honest */
+          'raster-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.30, 11.5, 0.22, 13.5, 0.10, 16, 0.07],
           'raster-resampling': 'linear', 'raster-fade-duration': 0,
         },
       }, firstRoadLayer(m));

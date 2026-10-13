@@ -265,6 +265,7 @@ const cur = {
   locErr: null,       /* 'denied' when the browser blocks a granted re-lock */
   picking: false,     /* the map is the picker right now */
   seq: 0,
+  spotShown: true,    /* the spot line reads openly until you hide it */
 };
 
 /* which position the read is for, named honestly:
@@ -385,13 +386,16 @@ function spotHtml(d) {
   const dp = A.digipin && A.digipin.encode ? A.digipin.encode(p.lat, p.lon) : null;
   const acc = d.state !== 'pin' && isNum(p.acc) ? `±${Math.max(1, Math.round(p.acc))} m` : null;
   /* the place is NAMED openly — knowing "Seth Sarai, Mehrauli" is the
-     whole confidence. only the DIGIPIN stays behind a tap (it's the
-     most pinpoint datum); accuracy reads plain */
+     whole confidence. one tap masks the whole spot for recording —
+     name, pin, the works — the dot stays, the words go */
   const nameTxt = near ? cur.addr.text : null;
   if (!nameTxt && !dp && !acc) return '';
+  if (!cur.spotShown) {
+    return `<button class="hs-spot" type="button" data-act="spot" aria-label="show your location">${ic('pin', 14, 'hs-spotic')}<span><b class="hs-spotk">You are here</b> <span class="hs-spothint">hidden — tap to show</span></span></button>`;
+  }
   const shown = [nameTxt, acc].filter(Boolean).join(' · ');
   const blur = dp ? `<span class="hs-blur">DIGIPIN ${esc(dp)}</span>` : '';
-  return `<button class="hs-spot${cur.spotShown ? ' shown' : ''}" type="button" data-act="spot" aria-label="${cur.spotShown ? 'hide' : 'show'} your DIGIPIN">${ic('pin', 14, 'hs-spotic')}<span><b class="hs-spotk">You are here</b> ${esc(shown)}${blur ? ` · ${blur}` : ''}${dp ? `<span class="hs-spothint">${cur.spotShown ? 'tap to hide' : 'tap to show'}</span>` : ''}</span></button>`;
+  return `<button class="hs-spot shown" type="button" data-act="spot" aria-label="hide your location">${ic('pin', 14, 'hs-spotic')}<span><b class="hs-spotk">You are here</b> ${esc(shown)}${blur ? ` · ${blur}` : ''}<span class="hs-spothint">tap to hide</span></span></button>`;
 }
 let addrSeq = 0;
 async function refreshAddr(p) {

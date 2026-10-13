@@ -977,10 +977,12 @@ function disarmPin() {
 
 /* ═══════════════ trip row — shared by modes / vehicle / routes ═════ */
 function tripRow() {
+  /* start = the you-are-here ring, destination = the drop pin — the
+     universal A→B read; the two identical dots before read as noise */
   return `<div class="wt-trip">
-    <button class="wt-th" type="button" data-arm="from"><i class="wt-tdot"></i><span class="wt-tt">${esc(S.from ? S.from.label : t('searchFromPlaceholder'))}</span></button>
+    <button class="wt-th" type="button" data-arm="from">${icon('locate', 15, 'var(--accent-ink)')}<span class="wt-tt">${esc(S.from ? S.from.label : t('searchFromPlaceholder'))}</span></button>
     <span class="wt-tarr" aria-hidden="true">→</span>
-    <button class="wt-th" type="button" data-arm="to"><i class="wt-tdot to"></i><span class="wt-tt">${esc(S.to ? S.to.label : t('searchPlaceholder'))}</span></button>
+    <button class="wt-th" type="button" data-arm="to">${icon('pin', 15, 'var(--ink2)')}<span class="wt-tt">${esc(S.to ? S.to.label : t('searchPlaceholder'))}</span></button>
   </div>`;
 }
 function bindTrip(root) {

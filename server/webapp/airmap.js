@@ -1247,12 +1247,16 @@ A.screen('airmap', {
   mount(el) {
     const chrome = A.sheetChrome(el, 'air around me');
     el.classList.add('am-host');
-    const restored = A.store.get(PICK_KEY, null);
+    /* a live fix outranks the remembered pin — "air around me" means
+       around ME; the stored pick is the fallback for a cold open */
+    const fresh = A.geo.pos && A.geo.pos.t && (Date.now() - A.geo.pos.t) < 10 * 60000 ? A.geo.pos : null;
+    const restored = !fresh ? A.store.get(PICK_KEY, null) : null;
     st = {
       el, body: chrome.body,
-      place: restored
+      place: fresh ? { lat: fresh.lat, lon: fresh.lon, label: 'where you are' }
+        : restored
         || (A.geo.pos ? { lat: A.geo.pos.lat, lon: A.geo.pos.lon, label: 'where you are' } : { ...A.DELHI, label: 'central delhi' }),
-      pickedPlace: !!(restored && restored.label !== 'where you are' && restored.label !== 'central delhi'),
+      pickedPlace: !fresh && !!(restored && restored.label !== 'where you are' && restored.label !== 'central delhi'),
       armed: false, pickOpen: false,
       readEl: null, chipEl: null, cityData: null,
       spot: null, spotKey: null,

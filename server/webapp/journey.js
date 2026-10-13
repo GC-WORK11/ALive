@@ -22,6 +22,7 @@ const STORE_LAST = 'journey.last';
 const STORE_HIST = 'journey.history';
 const HIST_CAP = 20;
 const ARRIVE_M = 55;          // puck this close to the destination → arrived
+const ARRIVE_HOLD_MS = 4000;  // …and it must stay true this long first
 const OFF_M = 60;             // farther than this from the line …
 const OFF_HOLD_MS = 10000;    // … for longer than this → ask /v2/reroute
 const REROUTE_GAP_MS = 30000; // never hammer the router
@@ -980,10 +981,14 @@ A.screen('journey', {
       pushTrack(px.lat, px.lon);
       paintDone();
       const remM = P.route.L - S.s;
-      if (remM <= 35 || (remM < 250 && havM(f.lat, f.lon, to.lat, to.lon) < ARRIVE_M)) {
-        finish(true);
-        return;
-      }
+      /* arrival needs the reading to hold ~4 s — one noisy fix inside
+         the arrive circle (GPS wobble lands ±50 m easy on foot) must not
+         end the trip. sustained proximity or near-zero remaining does. */
+      const atEnd = remM <= 35 || (remM < 250 && havM(f.lat, f.lon, to.lat, to.lon) < ARRIVE_M);
+      if (atEnd) {
+        if (!S.arriveSince) { S.arriveSince = now; render(); return; }
+        if (now - S.arriveSince >= ARRIVE_HOLD_MS) { finish(true); return; }
+      } else if (S.arriveSince) S.arriveSince = 0;
       render();
     }
     function pushTrack(lat, lon) {
@@ -1331,6 +1336,8 @@ A.screen('journey', {
           <div class="jr-title">${isRun ? (x.arrived ? 'Run done.' : 'Run ended early.') : (x.arrived ? "You're here." : 'Trip ended.')}</div>
           ${chip ? `<div class="jr-chip">${ic(glyph, 14, 'var(--ink2)')}<span>${esc(chip)}</span></div>` : ''}
         </div>`;
+      const part = !x.arrived && x.measured
+        ? `<div class="jr-part">${distToStr(S.odo)} of ${distToStr(plan0.route.L)} covered — what went in so far:</div>` : '';
       const rc = document.createElement('div');
       rc.className = 'jr';
       if (!x.measured) {
@@ -1420,13 +1427,15 @@ A.screen('journey', {
         const stuckTot = S.stuck.reduce((a, st) => a + st.dur_s, 0);
         const ex = opt.emissions && opt.emissions.co2_kg;
         let fuel = null;
-        if (ex && ex.hi != null && ex.hi <= 0) fuel = 'No exhaust from this ride';
-        else if (opt.fuel_l > 0) fuel = `≈ ${r2(opt.fuel_l * x.frac)} L fuel${x.co2 > 0 ? ` · ${x.co2 < 1 ? `${Math.round(x.co2 * 1000)} g` : `${r1(x.co2)} kg`} CO₂` : ''}`;
-        else if (x.co2 > 0) fuel = `≈ ${x.co2 < 1 ? `${Math.round(x.co2 * 1000)} g` : `${r1(x.co2)} kg`} CO₂ from the ride`;
+        /* a run emits nothing — the fuel/emission line is ride talk,
+           wrong on a running receipt */
+        if (!isRun && ex && ex.hi != null && ex.hi <= 0) fuel = 'No exhaust from this ride';
+        else if (!isRun && opt.fuel_l > 0) fuel = `≈ ${r2(opt.fuel_l * x.frac)} L fuel${x.co2 > 0 ? ` · ${x.co2 < 1 ? `${Math.round(x.co2 * 1000)} g` : `${r1(x.co2)} kg`} CO₂` : ''}`;
+        else if (!isRun && x.co2 > 0) fuel = `≈ ${x.co2 < 1 ? `${Math.round(x.co2 * 1000)} g` : `${r1(x.co2)} kg`} CO₂ from the ride`;
 
         rc.innerHTML = `
           <div class="jr-sheet">
-            ${head}
+            ${head}${part}
             <div class="jr-hero">
               <div class="jr-hk">You breathed</div>
               <div class="jr-hv">≈ ${doseUgRound(x.intake)}<span> µg</span></div>
