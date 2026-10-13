@@ -1144,9 +1144,8 @@ A.screen('journey', {
            shown as min/km — never the ETA a driver would watch */
         const kmDone = S.odo / 1000;
         const paceS = S.odo >= 40 && S.t1 ? (Date.now() - S.t1) / kmDone : null;
-        const pmm = paceS == null ? null : Math.floor(paceS / 60000);
-        const pss = paceS == null ? null : String(Math.round((paceS % 60000) / 1000)).padStart(2, '0');
-        set(ui.etaV, 'ev', pmm == null ? '—' : `${pmm}:${pss}`);
+        const pTot = paceS == null ? null : Math.round(paceS / 1000);
+        set(ui.etaV, 'ev', pTot == null ? '—' : `${Math.floor(pTot / 60)}:${String(pTot % 60).padStart(2, '0')}`);
         set(ui.etaS, 'es', `min/km · ${kmDone < 10 ? kmDone.toFixed(1) : Math.round(kmDone)} km · ${distToStr(remM)} left`);
       } else {
         set(ui.etaV, 'ev', remS == null ? '—' : fmtDur(remS));
