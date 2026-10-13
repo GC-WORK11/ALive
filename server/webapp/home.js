@@ -37,6 +37,7 @@ const ICONS = {
   "pin": ["M480-186q122-112 181-203.5T720-552q0-109-69.5-178.5T480-800q-101 0-170.5 69.5T240-552q0 71 59 162.5T480-186Zm0 79q-14 0-28-5t-25-15q-65-60-115-117t-83.5-110.5q-33.5-53.5-51-103T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 45-17.5 94.5t-51 103Q698-301 648-244T533-127q-11 10-25 15t-28 5Zm0-453Zm0 80q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Z"],
   "chevron": ["M504-480 348-636q-11-11-11-28t11-28q11-11 28-11t28 11l184 184q6 6 8.5 13t2.5 15q0 8-2.5 15t-8.5 13L404-268q-11 11-28 11t-28-11q-11-11-11-28t11-28l156-156Z"],
   "locate": ["M440-82v-40q-125-14-214.5-103.5T122-440H82q-17 0-28.5-11.5T42-480q0-17 11.5-28.5T82-520h40q14-125 103.5-214.5T440-838v-40q0-17 11.5-28.5T480-918q17 0 28.5 11.5T520-878v40q125 14 214.5 103.5T838-520h40q17 0 28.5 11.5T918-480q0 17-11.5 28.5T878-440h-40q-14 125-103.5 214.5T520-122v40q0 17-11.5 28.5T480-42q-17 0-28.5-11.5T440-82Zm40-118q116 0 198-82t82-198q0-116-82-198t-198-82q-116 0-198 82t-82 198q0 116 82 198t198 82Zm0-120q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47Zm0-80q33 0 56.5-23.5T560-480q0-33-23.5-56.5T480-560q-33 0-56.5 23.5T400-480q0 33 23.5 56.5T480-400Zm0-80Z"],
+  "run": "M436-364 371-72q-3 14-14.5 23T330-40q-20 0-32-15t-8-34l102-515-72 28v96q0 17-11.5 28.5T280-440q-17 0-28.5-11.5T240-480v-122q0-12 6.5-21.5T264-638l178-76q14-6 29.5-7t29.5 4q14 5 26.5 14t20.5 23l40 64q13 20 30.5 38t39.5 31q14 8 31 14.5t34 9.5q16 3 26.5 14.5T760-480q0 17-12 28t-29 9q-56-8-100.5-35T541-543l-25 123 72 68q6 6 9 13.5t3 15.5v243q0 17-11.5 28.5T560-40q-17 0-28.5-11.5T520-80v-220l-84-64Zm104-376q-33 0-56.5-23.5T460-820q0-33 23.5-56.5T540-900q33 0 56.5 23.5T620-820q0 33-23.5 56.5T540-740Z",
   "dust": ["M460-160q-32 0-59.5-16T356-220q-11-20-.5-40t32.5-20q13 0 23 8t18 18q5 7 13.5 10.5T460-240q17 0 28.5-11.5T500-280q0-17-11.5-28.5T460-320H120q-17 0-28.5-11.5T80-360q0-17 11.5-28.5T120-400h340q50 0 85 35t35 85q0 50-35 85t-85 35ZM120-560q-17 0-28.5-11.5T80-600q0-17 11.5-28.5T120-640h500q25 0 42.5-17.5T680-700q0-25-17.5-42.5T620-760q-16 0-30 7.5T568-731q-7 12-17 21.5t-24 9.5q-20 0-32.5-15t-6.5-32q14-42 50.5-67.5T620-840q58 0 99 41t41 99q0 58-41 99t-99 41H120Zm678 308q-20 9-39-2.5T740-288q0-14 9.5-23.5T771-328q14-8 21.5-22t7.5-30q0-25-17.5-42.5T740-440H120q-17 0-28.5-11.5T80-480q0-17 11.5-28.5T120-520h620q58 0 99 41t41 99q0 42-22 76.5T798-252Z"]
 };
 function ic(name, size, cls) {
@@ -195,7 +196,7 @@ const S = {
   waiting: 'Reading the air here…',
   noRead: "Couldn't read the air just now.", retry: 'Try again',
   outOfArea: 'Alive covers Delhi and the NCR — this spot is outside it.',
-  doorAir: 'Air around me', doorPurest: 'Purest places', doorTrips: 'Trips',
+  doorAir: 'Air around me', doorRun: 'A run, on foot', doorPurest: 'Purest places', doorTrips: 'Trips',
   pickHint: 'Tap the map where you are — the air reads there.',
   pickGps: 'Use my location', pickCancel: 'Cancel',
   /* consent */
@@ -406,13 +407,14 @@ async function refreshAddr(p) {
 /* ══ DOORS — one grouped list card ══ */
 const DOORS = [
   { glyph: 'explore', key: 'doorAir', id: 'airmap' },
+  { glyph: 'run', key: 'doorRun', id: 'whereto', run: true },
   { glyph: 'city', key: 'doorPurest', id: 'purest' },
   { glyph: 'history', key: 'doorTrips', id: 'ledger' },
 ];
 function doorsHtml() {
   const rows = DOORS.filter((d) => A.screensReady[d.id]).map((d, i) => `
     ${i > 0 ? '<div class="hs-doorsep"></div>' : ''}
-    <button class="hs-doorrow" type="button" data-go="${d.id}">
+    <button class="hs-doorrow" type="button" data-go="${d.id}"${d.run ? ' data-run="1"' : ''}>
       ${ic(d.glyph, 24, 'hs-dooric')}<span class="hs-doorlbl">${esc(t(d.key))}</span>${ic('chevron', 18, 'hs-doorchev')}
     </button>`).join('');
   return rows ? `<div class="hcard hs-doorcard">${rows}</div>` : '';
@@ -759,7 +761,11 @@ A.screen('home', {
     elm.querySelector('#hs-cta').addEventListener('click', () => { location.hash = '#/whereto'; });
     elm.addEventListener('click', (e) => {
       const go = e.target.closest('[data-go]');
-      if (go) { location.hash = `#/${go.dataset.go}`; return; }
+      if (go) {
+        if (go.dataset.run) A.show('whereto', { run: true });
+        else location.hash = `#/${go.dataset.go}`;
+        return;
+      }
       const act = e.target.closest('[data-act]');
       if (!act) return;
       const a = act.dataset.act;

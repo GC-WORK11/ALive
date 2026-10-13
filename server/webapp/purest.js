@@ -269,6 +269,8 @@ async function loadPlaces() {
     rows = d.places.filter((p) => p && isNum(p.lat) && isNum(p.lon));
     state.pickWhy = d.pick ? d.pick.why : null;
     state.placesErr = d.error || null;
+    state.monitorsUp = d.monitors_up !== false;
+    state.fieldAgeS = isNum(d.field_age_s) ? d.field_age_s : null;
   } else {
     /* /v2/purest not deployed yet: same honesty flags on district rows */
     const [dd, idx] = await Promise.all([A.api.get('/v2/districts', 20000), areaCentroids()]);
@@ -285,6 +287,8 @@ async function loadPlaces() {
     state.placesSrc = 'areas';
     state.pickWhy = scope === 'ncr' ? 'cleanest air in NCR right now' : 'cleanest air near you right now';
     state.placesErr = null;
+    state.monitorsUp = true;
+    state.fieldAgeS = dd && isNum(dd.field_age_s) ? dd.field_age_s : null;
   }
   /* distance = our haversine from you; "15 km" means within 15 km */
   rows.forEach((p) => { p.dist_km = distFrom(ref, p.lat, p.lon); });
@@ -526,6 +530,18 @@ function renderBody() {
     loadPlaces();
   }));
   body.appendChild(head);
+
+  /* the field's own honesty: how fresh the read is, and when no live
+     monitors are up that these are satellite+model reads — never left
+     for the user to guess */
+  if (state.places !== null || state.monitorsUp === false) {
+    const ageM = state.fieldAgeS != null ? Math.max(0, Math.floor(state.fieldAgeS / 60)) : null;
+    const src = state.monitorsUp === false
+      ? 'satellite + model field — live monitors down'
+      : 'live-monitor field';
+    body.insertAdjacentHTML('beforeend',
+      `<div class="pm-plain" style="padding-top:0">${src}${ageM != null ? ` · updated ${ageM} min ago` : ''}</div>`);
+  }
 
   if (!state.places) {
     body.insertAdjacentHTML('beforeend',

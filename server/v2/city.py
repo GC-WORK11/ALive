@@ -754,9 +754,18 @@ def purest_places(F, district_rows: list, lat: Optional[float],
 
     thin = 0
     scored = []
+    # when a live-monitor layer is actually up, "solid" means a named
+    # monitor nearby. when every station feed is down (keys/sources
+    # unavailable) the field still reads real satellite+model values —
+    # places rank on that and say so, rather than the screen going dark
+    monitors_up = bool(getattr(F, "_stations_live", None)
+                       or getattr(F, "_station_count", 0))
     for _r, (la, lo, nm, cls) in buckets.values():
         skm = _station_km(F, la, lo)
-        if skm is None or skm > PUREST_SOLID_KM or _beyond(F, la, lo):
+        if _beyond(F, la, lo):
+            thin += 1
+            continue
+        if monitors_up and (skm is None or skm > PUREST_SOLID_KM):
             thin += 1
             continue
         try:
@@ -808,6 +817,8 @@ def purest_places(F, district_rows: list, lat: Optional[float],
             "dist_km": (round(_haversine_m(lat, lon, la, lo) / 1000.0, 1)
                         if lat is not None and lon is not None else None),
             "nearest_station_km": skm,
+            "monitored": monitors_up and skm is not None
+                and skm <= PUREST_SOLID_KM,
             "basis": "now",
         })
 
@@ -820,8 +831,11 @@ def purest_places(F, district_rows: list, lat: Optional[float],
         if hv is not None:
             hv = round(float(hv), 1)
             here = {"pm25": hv, "aqi": _d.us_aqi(hv),
-                    "solid": (_station_km(F, lat, lon) or 1e9)
-                    <= PUREST_SOLID_KM and not _beyond(F, lat, lon)}
+                    "solid": (monitors_up
+                        and (_station_km(F, lat, lon) or 1e9)
+                        <= PUREST_SOLID_KM
+                        or (not monitors_up))
+                        and not _beyond(F, lat, lon)}
     pick = None
     if places:
         pick = {"index": 0,
@@ -832,8 +846,12 @@ def purest_places(F, district_rows: list, lat: Optional[float],
         "pick": pick,
         "here": here,
         "excluded": {"thin_data": thin, "partial_area": partial},
+        "monitors_up": bool(monitors_up),
         "solid_rule": (f"named live monitor within {PUREST_SOLID_KM:g} km, "
-                       "inside the field, area fully covered"),
+                       "inside the field, area fully covered")
+            if monitors_up else
+            ("satellite + model field read at each place — no live "
+             "monitors are up right now"),
     }
 
 

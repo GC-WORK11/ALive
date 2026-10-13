@@ -1854,8 +1854,16 @@ A.screen('whereto', {
        A caller-passed From counts as deliberate (manual) for auto-fill. */
     if (params.from) { S.from = params.from; S.fromManual = true; }
     if (params.to) S.to = params.to;
+    /* a direct run entry (home's Run door): no mode/vehicle questions —
+       on foot, scored for lowest dose; picking the destination plans it */
+    if (params.run) {
+      S.activity = 'run';
+      S.mode = 'health_max';
+      S.tripVeh = { cls: 'walk' };
+      S.vehChosen = true; S.modeChosen = true;
+    }
     S.armed = params.arm || 'to';
-    if (S.from && S.to) showModes();
+    if (S.from && S.to) afterBoth();
     else renderSearch(true);
     kickFromGeo();                 /* locating starts the moment the composer opens */
     A.map.setFieldVisible(false);
