@@ -211,6 +211,7 @@ const S = {
   csPin: 'Drop a point on the map', csLater: 'Not now',
   csLaterToast: "Showing central Delhi's air — not your exact spot",
   csDenied: 'Location is blocked for this site in your browser (site settings → Location → Allow). Or drop your exact spot on the map — it works the same.',
+  csOffNote: "Your phone's location is off — turn it on, then tap below. Or drop your exact spot on the map — it works the same.",
   csNoFix: "This browser couldn't find you (some browsers, like Brave on a computer, turn off location lookup). Drop your exact spot on the map — it works the same.",
   csNoGeo: "This browser can't share location — drop a point instead.",
   csPinToast: 'Tap the map where you are',
@@ -793,6 +794,17 @@ A.screen('home', {
     if (!A.geo.consent) {
       const el = document.getElementById('consent');
       if (!el || el.hidden || !el.dataset.cs) openConsent({ intro: !A.store.get('onboarded') });
+    }
+    /* an accidental denial or a switched-off device must not hide behind
+       a stored 'granted': every open re-asks the OS — only a real
+       'denied' or 'off' resurfaces the sheet; a working fix never prompts */
+    else if (A.geo.consent === 'granted' && typeof A.geo.state === 'function') {
+      A.geo.state().then((s) => {
+        if (document.hidden || s !== 'denied' && s !== 'off') return;
+        openConsent({ intro: false });
+        CS.note = s === 'denied' ? t('csDenied') : t('csOffNote');
+        refreshSheetBits();
+      }).catch(() => {});
     }
 
     A.map.setFieldVisible(false);
