@@ -866,6 +866,10 @@ A.map = { init, ready: onReady, loadField,
   showRoute: (id, g, s) => basicMode ? leafShowRoute(id, g, s) : showRoute(id, g, s),
   hideRoute: (id) => basicMode ? leafHideRoute(id) : hideRoute(id),
   hideAllRoutes: () => basicMode ? leafHideAll() : hideAllRoutes(),
+  /* is a painted line actually on the map right now — lets a screen
+     re-assert its route after a style swap or a stray hideAll */
+  hasRoute: (id) => basicMode ? lfRoutes.has(id)
+    : !!(map && map.getLayer && map.getLayer(`route-${id}-line`)),
   pin: (id, lon, lat, html, cls) => basicMode ? leafPin(id, lon, lat, html, cls) : pin(id, lon, lat, html, cls),
   unpin, clearPins,
   puckMove: (lat, lon, acc) => basicMode ? leafPuckMove(lat, lon, acc) : puckMove(lat, lon, acc),

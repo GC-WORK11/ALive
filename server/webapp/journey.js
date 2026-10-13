@@ -685,6 +685,16 @@ A.screen('journey', {
     }
     drawRoute();
     A.map.pin('jfrom', plan0.route.pts[0][0], plan0.route.pts[0][1], '<div class="pin-dot"></div>');
+    /* self-heal: a style swap or a stray hideAll mid-run can drop the
+       line and nothing would re-add it — re-assert on every styledata
+       and inside the per-fix paint below */
+    A.map.ready((m) => {
+      if (!m.on) return;
+      m.on('styledata', () => {
+        if (S.dead || S.done) return;
+        if (A.map.hasRoute && !A.map.hasRoute('journey')) { drawRoute(); doneS = -1; }
+      });
+    });
     /* frame the whole line once — on wide screens the cards own the
        top-left strip and the bottom-right corner, so the fit pads them
        (Leaflet takes the same insets as two corner points) */
@@ -720,6 +730,9 @@ A.screen('journey', {
        GL-only (basic mode's plain casing+line still flattens the bands
        it covers). Always re-added after 'journey' so it stays on top. */
     function paintDone() {
+      /* the main line went missing (style reload, a hideAll from under
+         us) — put it back, then re-lay the ridden stretch on top */
+      if (A.map.hasRoute && !A.map.hasRoute('journey')) { drawRoute(); doneS = -1; }
       if (S.s < DONE_MIN_M) {
         if (doneS >= 0) { A.map.hideRoute('journey-done'); doneS = -1; }
         return;
