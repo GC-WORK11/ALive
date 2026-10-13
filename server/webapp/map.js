@@ -323,6 +323,7 @@ function init() {
   map.on('style.load', () => {
     if (!styleOk) { styleOk = true; clearTimeout(guard); }
     tuneBasemap(map);
+    addDepth(map);
     /* overlays + camera can start as soon as the style is in — 'load'
        also waits for every first tile, and a stalled or failed basemap
        source would otherwise hold the whole app's map hostage */
@@ -348,6 +349,28 @@ function init() {
 }
 
 function onReady(cb) { ready ? cb(map) : queue.push(cb); }
+
+/* free depth: the vector tiles already carry building footprints with
+   render_height (OpenMapTiles schema) — extruding them costs no extra
+   API. Visible only where the camera tilts (the run view, pinch-tilt),
+   flat everywhere else — same layer on the offline style when its
+   tiles have the schema */
+function addDepth(m) {
+  try {
+    const src = m.getSource && m.getSource(OMT);
+    if (!src || m.getLayer('alive-bldg3d')) return;
+    m.addLayer({
+      id: 'alive-bldg3d', type: 'fill-extrusion', source: OMT,
+      'source-layer': 'building', minzoom: 14.5,
+      paint: {
+        'fill-extrusion-color': 'rgb(227,225,219)',
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['*', ['coalesce', ['get', 'levels'], 3], 3.1]],
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-opacity': 0.9,
+      },
+    }, firstSymbol(m));
+  } catch (e) { /* no building schema — the map stays flat, honest */ }
+}
 
 /* first road layer of the basemap — the tint sits under every street */
 function firstRoadLayer(m) {

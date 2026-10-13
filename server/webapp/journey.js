@@ -774,6 +774,9 @@ A.screen('journey', {
            the bottom-right card, low like a nav HUD. (Not `padding` —
            easeTo padding mutates transform.padding permanently.) */
         m.easeTo({ center: [lon, lat], zoom: Math.max(FOLLOW_Z, m.getZoom()), bearing: b,
+          /* a run tilts into the street — buildings extrude, the line
+             reads like a nav HUD; a ride stays flat */
+          pitch: isRun ? 50 : 0,
           offset: [wide ? -RIGHT_PAD / 2 : 0, 70], duration: instant ? 300 : 800 });
       });
     }
@@ -1463,8 +1466,8 @@ A.screen('journey', {
       });
       rc.querySelector('.jr-done').addEventListener('click', () => A.back());
       A.map.ready((m) => {
-        if (typeof m.getBearing === 'function' && m.getBearing() !== 0) {
-          m.easeTo({ bearing: 0, duration: 500 });
+        if (typeof m.getBearing === 'function' && (m.getBearing() !== 0 || (m.getPitch && m.getPitch() !== 0))) {
+          m.easeTo({ bearing: 0, pitch: 0, duration: 500 });
         }
       });
     }
@@ -1548,8 +1551,8 @@ A.screen('journey', {
       A.map.unpin('jfrom'); A.map.unpin('jto');
       A.map.puckRemove();
       A.map.ready((m) => {
-        if (typeof m.getBearing === 'function' && m.getBearing() !== 0) {
-          m.easeTo({ bearing: 0, duration: 500 });
+        if (typeof m.getBearing === 'function' && (m.getBearing() !== 0 || (m.getPitch && m.getPitch() !== 0))) {
+          m.easeTo({ bearing: 0, pitch: 0, duration: 500 });
         }
       });
     };
