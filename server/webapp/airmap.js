@@ -989,13 +989,16 @@ function scRowHtml(r, i) {
   </button>`;
 }
 function scBindRows() {
-  sc.list.querySelectorAll('.am-srow').forEach((b) => {
-    /* mousedown (not pointerdown): canceling pointerdown suppresses the
-       synthesized click entirely on touch-first browsers (iOS Safari) —
-       the row looks tappable but never picks. mousedown keeps the focus
-       steal away and lets click fire on every engine. */
-    b.addEventListener('mousedown', (e) => e.preventDefault());
-    b.addEventListener('click', () => { const r = sc.rows[+b.dataset.i]; if (r) scPick(r); });
+  /* delegated: rows re-render while results stream in — a finger that
+     lands mid-paint would otherwise tap a detached row and the pick
+     would silently die (real on phones, invisible in devtools) */
+  if (sc._bound) return;
+  sc._bound = true;
+  sc.list.addEventListener('mousedown', (e) => { if (e.target.closest('.am-srow')) e.preventDefault(); });
+  sc.list.addEventListener('click', (e) => {
+    const b = e.target.closest('.am-srow');
+    if (!b) return;
+    const r = sc.rows[+b.dataset.i]; if (r) scPick(r);
   });
 }
 function scShowList() { sc.open = true; sc.list.hidden = false; }

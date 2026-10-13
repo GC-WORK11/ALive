@@ -671,19 +671,14 @@ A.screen('journey', {
     /* ── map: the line coloured by its air, both ends ─────────────── */
     A.map.hideAllRoutes();
     A.map.setFieldVisible(false);
+    /* one unmissable run-green stretch across the whole line — both
+       engines honour a segment's own color (map.js color passthrough) */
+    const RUN_SEGS = [{ start_frac: 0, end_frac: 1, color: '#2F8F5B' }];
     function drawRoute() {
       A.map.hideRoute('journey');
       /* a run draws one honest green line — the dose reads live in the
          HUD instead of colouring the path */
-      A.map.showRoute('journey', S.P.geom, isRun ? null : paintSegs(S.P.o.segments));
-      if (isRun) A.map.ready((m) => {
-        try {
-          if (m.getLayer('route-journey-line'))
-            m.setPaintProperty('route-journey-line', 'line-color', '#35614B');
-          if (m.getLayer('route-journey-casing'))
-            m.setPaintProperty('route-journey-casing', 'line-color', '#EAF3EC');
-        } catch (_) {}
-      });
+      A.map.showRoute('journey', S.P.geom, isRun ? RUN_SEGS : paintSegs(S.P.o.segments));
       const e = S.P.route.pts[S.P.route.n - 1];
       A.map.pin('jto', e[0], e[1],
         `<div class="pin-chip">${esc(toName.length > 18 ? toName.slice(0, 17) + '…' : toName)}</div>`);

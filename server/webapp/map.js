@@ -246,11 +246,12 @@ function leafShowRoute(id, geojson, segments) {
     window.L.polyline(leafLL(coords), { color: '#2A4D3B', weight: 5, opacity: 0.85, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
     const n = coords.length;
     for (const s of segments || []) {
+      const own = typeof s.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(s.color) ? s.color : null;
       const bi = segBandIdx(s);
-      if (bi == null) continue;
+      if (!own && bi == null) continue;
       const a = Math.floor((s.start_frac ?? 0) * (n - 1));
       const b = Math.max(a + 1, Math.ceil((s.end_frac ?? 1) * (n - 1)));
-      window.L.polyline(leafLL(coords.slice(a, b + 1)), { color: BANDS[bi], weight: 5, opacity: 0.9, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+      window.L.polyline(leafLL(coords.slice(a, b + 1)), { color: own || BANDS[bi], weight: 5, opacity: 0.9, interactive: false, lineCap: 'round', lineJoin: 'round' }).addTo(g);
     }
     lfRoutes.set(id, g);
   });
@@ -743,7 +744,8 @@ function paintSegments(srcId, geojson, segments) {
       const bi = segBandIdx(s);
       return {
         type: 'Feature',
-        properties: { band: bi == null ? -1 : bi, pm25: s.pm25 },
+        properties: { band: bi == null ? -1 : bi, pm25: s.pm25,
+          color: (typeof s.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(s.color)) ? s.color : null },
         geometry: { type: 'LineString', coordinates: coords.slice(a, b + 1) },
       };
     });
@@ -762,9 +764,10 @@ function paintSegments(srcId, geojson, segments) {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.4, 14, 6.4],
-        'line-color': ['match', ['get', 'band'],
-          0, BANDS[0], 1, BANDS[1], 2, BANDS[2],
-          3, BANDS[3], 4, BANDS[4], 5, BANDS[5], '#2A4D3B'],
+        'line-color': ['coalesce', ['get', 'color'],
+          ['match', ['get', 'band'],
+            0, BANDS[0], 1, BANDS[1], 2, BANDS[2],
+            3, BANDS[3], 4, BANDS[4], 5, BANDS[5], '#2A4D3B']],
         'line-opacity': 0.9,
       },
     }, above);

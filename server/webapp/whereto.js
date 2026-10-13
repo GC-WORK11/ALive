@@ -500,7 +500,7 @@ function rrowHtml(which) {
     const locating = which === 'from' && !S[which] && S.locating;
     return `<button class="wt-rrow" type="button" data-arm="${which}">
       <i class="wt-rdot${dot}"></i><span class="wt-rkey">${key}</span>
-      <span class="wt-rval${S[which] ? '' : ' ph'}"${locating ? ' style="animation:wtPulse 1.2s ease-in-out infinite alternate"' : ''}>${esc(phOf())}</span>
+      <span class="wt-rval${S[which] ? '' : ' ph'}">${esc(phOf())}</span>
     </button>`;
   }
   return `<div class="wt-rrow on edit" data-arm="${which}">
@@ -825,8 +825,7 @@ function relabelEnd(which) {
     if (v) {
       v.textContent = txt;
       v.classList.toggle('ph', !p);
-      v.style.animation = !p && which === 'from' && S.locating
-        ? 'wtPulse 1.2s ease-in-out infinite alternate' : '';
+      v.style.animation = '';
     }
     const inp = row.querySelector('.wt-rin');
     if (inp) inp.placeholder = txt;
@@ -919,7 +918,13 @@ function kickFromGeo() {
 }
 async function locateFill() {
   const which = S.armed;
-  let pos = A.geo && A.geo.pos;
+  /* only a FRESH stored fix may answer instantly — a stale one was
+     somebody's yesterday, not your where-you-are */
+  let pos = null;
+  if (A.geo && A.geo.pos) {
+    const pn = A.geo.posNow ? A.geo.posNow() : null;
+    if (pn ? pn.stale === 'fresh' : (A.geo.pos.t && Date.now() - A.geo.pos.t < 120000)) pos = A.geo.pos;
+  }
   if (!pos) {
     try { pos = await A.geo.locate(); } catch (e) { pos = null; }
   }
