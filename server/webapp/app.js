@@ -162,13 +162,21 @@ const geo = {
     const tm = setTimeout(() => navigator.geolocation.clearWatch(id), ms);
     return () => { clearTimeout(tm); navigator.geolocation.clearWatch(id); };
   },
+  /* persistent the way maps apps do it: only a fix that sharpens the
+     answer or proves real movement becomes the app's position — GPS
+     wobble never repaints the pin or re-reads the air */
   watch(cb) {
     if (!navigator.geolocation) return null;
+    let best = geo.pos;
     return navigator.geolocation.watchPosition(
       (p) => {
         const pos = { lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now(),
                       acc: p.coords.accuracy, speed: p.coords.speed, heading: p.coords.heading };
-        geo.pos = pos; cb(pos);
+        const bAcc = best && best.acc != null ? best.acc : Infinity;
+        const dM = best ? Math.hypot((pos.lat - best.lat) * 111320, (pos.lon - best.lon) * 111320 * Math.cos(pos.lat * Math.PI / 180)) : Infinity;
+        if (pos.acc != null && (pos.acc < bAcc * 0.7 || dM > Math.max(80, pos.acc + (isFinite(bAcc) ? bAcc : 0)))) {
+          best = pos; geo.pos = pos; store.set('pos', pos); cb(pos);
+        }
       },
       () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
   },
@@ -299,6 +307,7 @@ function boot() {
       try {
         const pos = await geo.locate();
         document.dispatchEvent(new CustomEvent('alive:location', { detail: pos }));
+        if (!geo._watched) geo._watched = geo.watch((p2) => document.dispatchEvent(new CustomEvent('alive:location', { detail: p2 })));
       } catch (e) {
         toast('location refused — pick a point on the map instead');
         document.dispatchEvent(new CustomEvent('alive:location', { detail: null }));
@@ -310,12 +319,20 @@ function boot() {
       toast('tap the map where you are');
       document.dispatchEvent(new CustomEvent('alive:location', { detail: null }));
     });
-  } else if (geo.granted() && (!geo.pos || Date.now() - geo.pos.t > 30000)) {
+  } else if (geo.granted()) {
     /* every open re-proves the foot: anything older than half a minute
        gets re-located quietly — the stored pos paints honestly while
        the satellites sharpen */
-    geo.locate().then((pos) => document.dispatchEvent(new CustomEvent('alive:location', { detail: pos })))
-      .catch(() => geo.armRecovery());
+    if (!geo.pos || Date.now() - geo.pos.t > 30000) {
+      geo.locate().then((pos) => document.dispatchEvent(new CustomEvent('alive:location', { detail: pos })))
+        .catch(() => geo.armRecovery());
+    }
+    /* and keep listening for as long as the app is open: a real move
+       or a sharper fix lands as alive:location → the pin, the address
+       and the air read follow atomically */
+    if (!geo._watched) {
+      geo._watched = geo.watch((pos) => document.dispatchEvent(new CustomEvent('alive:location', { detail: pos })));
+    }
   }
   window.addEventListener('hashchange', () => {
     const id = location.hash.slice(2) || 'home';

@@ -184,7 +184,7 @@ const S = {
   plain5: 'Affects healthy people; serious for those with lung or heart disease.',
   provFromAway: 'measured by the {s} air monitor, {k} km from you', provFrom: 'measured by the {s} air monitor',
   provKmAway: 'nearest air monitor ~{k} km from you', provAge: 'updated {m} min ago',
-  provStationKm: '{s} · ~{k} km away',
+  provStation: 'monitor · {s}',
   fixAgo: '{m} min ago',
   provEdge: "outside the live air map — the nearest edge's read",
   offNote: 'Location is off — this is central Delhi, not your spot.',
@@ -305,11 +305,10 @@ function heroData() {
   };
 }
 function provLine(d) {
-  /* the monitor's name + km is shown: on your own device the real
-     station IS the confidence — knowing the read came from Mandir
-     Marg 1.2 km away beats an untraceable number */
+  /* the read is the field's interpolation AT YOUR SPOT — the named
+     monitor is cited as the trace, never as "the AQI is from there" */
   const src = d.edge ? t('provEdge')
-    : d.station ? (d.km != null ? t('provStationKm', { s: d.station, k: A.fmt.km(d.km) }) : d.station)
+    : d.station ? t('provStation', { s: d.station })
     : null;
   return [src, d.readMin != null ? t('provAge', { m: d.readMin }) : null].filter(Boolean).join(' · ');
 }
