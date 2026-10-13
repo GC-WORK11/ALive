@@ -184,6 +184,7 @@ const S = {
   plain5: 'Affects healthy people; serious for those with lung or heart disease.',
   provFromAway: 'measured by the {s} air monitor, {k} km from you', provFrom: 'measured by the {s} air monitor',
   provKmAway: 'nearest air monitor ~{k} km from you', provAge: 'updated {m} min ago',
+  provStationKm: '{s} · ~{k} km away',
   fixAgo: '{m} min ago',
   provEdge: "outside the live air map — the nearest edge's read",
   offNote: 'Location is off — this is central Delhi, not your spot.',
@@ -304,10 +305,12 @@ function heroData() {
   };
 }
 function provLine(d) {
-  /* the monitor's name + distance would place the user to within a km
-     on a shared screen — only the reading's age (and the honest
-     outside-the-map note) is shown */
-  const src = d.edge ? t('provEdge') : null;
+  /* the monitor's name + km is shown: on your own device the real
+     station IS the confidence — knowing the read came from Mandir
+     Marg 1.2 km away beats an untraceable number */
+  const src = d.edge ? t('provEdge')
+    : d.station ? (d.km != null ? t('provStationKm', { s: d.station, k: A.fmt.km(d.km) }) : d.station)
+    : null;
   return [src, d.readMin != null ? t('provAge', { m: d.readMin }) : null].filter(Boolean).join(' · ');
 }
 function heroHtml(d) {
@@ -496,7 +499,7 @@ function relocate() {
 async function refresh() {
   const ps = posState();
   const at = ps.pos || A.DELHI;
-  if (A.geo.consent === 'granted' && (!ps.pos || !ps.pos.t || Date.now() - ps.pos.t > 60000)) relocate();
+  if (A.geo.consent === 'granted' && (!ps.pos || !ps.pos.t || Date.now() - ps.pos.t > 30000)) relocate();
   const seq = ++cur.seq;
   const j = await A.aqiSpot(at.lat, at.lon, 8000);
   if (seq !== cur.seq) return;          /* a newer position superseded this read */

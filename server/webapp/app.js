@@ -310,7 +310,10 @@ function boot() {
       toast('tap the map where you are');
       document.dispatchEvent(new CustomEvent('alive:location', { detail: null }));
     });
-  } else if (geo.granted() && (!geo.pos || Date.now() - geo.pos.t > 120000)) {
+  } else if (geo.granted() && (!geo.pos || Date.now() - geo.pos.t > 30000)) {
+    /* every open re-proves the foot: anything older than half a minute
+       gets re-located quietly — the stored pos paints honestly while
+       the satellites sharpen */
     geo.locate().then((pos) => document.dispatchEvent(new CustomEvent('alive:location', { detail: pos })))
       .catch(() => geo.armRecovery());
   }
