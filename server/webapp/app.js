@@ -338,6 +338,19 @@ function boot() {
     const id = location.hash.slice(2) || 'home';
     if (id !== current() && SCREENS[id]) { while (stack.length > 1) back(); if (current() !== id) show(id, {}, true); }
   });
+  /* mobile keeps the page in bfcache — reopening the app or coming back
+     from another tab restores it WITHOUT a boot: re-prove the foot each
+     time we surface again, exactly how a maps app behaves */
+  const reprove = () => {
+    if (document.hidden || !geo.granted()) return;
+    if (!geo.pos || Date.now() - geo.pos.t > 30000) {
+      geo.locate().then((pos) => document.dispatchEvent(new CustomEvent('alive:location', { detail: pos })))
+        .catch(() => geo.armRecovery());
+    }
+  };
+  window.addEventListener('pageshow', (e) => { if (e.persisted) reprove(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) reprove(); });
+  window.addEventListener('focus', reprove);
 }
 
 /* the shared heartbeat: one scheduler for every "refresh me every

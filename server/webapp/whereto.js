@@ -60,7 +60,7 @@ const T = {
   viaStreets: 'via {streets}',
   vehicleQ1: 'What are you taking?', vehicleQ2: 'Fuel?',
   vehicleQ3: 'Roughly when was it bought?',
-  runTitle: 'a run, on foot', runSub: 'the purest path there — lowest dose',
+  runTitle: 'Run there', runSub: 'the lowest-dose path, on foot',
   vehicleQ_back: 'back', vehicleQ_skip: 'skip — a typical Delhi ride', puc_skip: 'skip',
   vehicle_likeYours: 'a typical Delhi ride',
   veh_grp_own: 'your own', veh_grp_shared: 'shared', veh_grp_noengine: 'no engine',
@@ -1398,9 +1398,11 @@ function optionCard(o, i, other) {
       ? `${amt(o.emissions.co2_kg)} kg CO₂` : null,
   ].filter(Boolean).join(' · ');
   const why = o.why ? String(o.why).trim() : '';
-  const vs = pick && !other ? vsLine(o) : '';
+  /* a run compares to other FOOT routes, not to cars — the server's
+     vehicle-mode deltas ('+1083% smoke vs Bike') are noise here */
+  const vs = pick && !other && S.activity !== 'run' ? vsLine(o) : '';
   const tag = !pick ? otherPickTag(o) : '';
-  const dl = vs ? '' : deltaLine(o);
+  const dl = (vs || S.activity === 'run') ? '' : deltaLine(o);
   /* honest edge note: the router snapped a far point to the coverage
      edge — the line on the map really does start/end short. Say so on
      the card, never let '15 km' read as a 25 km trip. */
@@ -1412,7 +1414,7 @@ function optionCard(o, i, other) {
     <span class="wt-selbg"></span>
     <span class="wt-well">${icon(vehicleGlyph(o.mode), 24, sel ? ACCENT : INK2)}</span>
     <span class="wt-omid">
-      ${pick ? `<span class="wt-badge">${icon(md.glyph, 12, ACC_INK)}<span>${esc(md.badge)}</span></span>` : ''}
+      ${pick ? `<span class="wt-badge">${icon(S.activity === 'run' ? 'walk' : md.glyph, 12, ACC_INK)}<span>${esc(S.activity === 'run' ? 'cleanest for a run' : md.badge)}</span></span>` : ''}
       ${tag ? `<span class="wt-otag">${esc(tag)}</span>` : ''}
       <span class="wt-otop">${lead}</span>
       ${rest.length ? `<span class="wt-oext">${rest.join('<span class="wt-osep">·</span>')}</span>` : ''}
@@ -1453,12 +1455,17 @@ function renderPlan() {
   /* the pill stays short: fuel + ride ("petrol car") — the year lives in the wizard */
   const vehTxt = S.tripVeh ? vehicleLabel({ cls: S.tripVeh.cls, fuel: S.tripVeh.fuel }) : t('vehicle_likeYours');
   const inCls = S._anim !== 'plan' ? ' wt-in' : ''; S._anim = 'plan';
-  S.body.innerHTML = `<div class="wt${inCls}">
-    ${tripRow()}
-    <div class="wt-pills">
+  /* a run has no mode/vehicle questions — one honest context pill, not
+     car-mode controls that can't apply on foot */
+  const pills = S.activity === 'run'
+    ? `<div class="wt-pills"><span class="wt-pill wt-pmode">${icon('walk', 16, ACCENT)}<span>run · lowest dose</span></span></div>`
+    : `<div class="wt-pills">
       <button class="wt-pill wt-pmode" type="button" data-act="mode">${icon(md.glyph, 16, ACCENT)}<span>${esc(md.title)}</span>${CHEV_SVG(INK3, 14)}</button>
       <button class="wt-pill" type="button" data-act="veh">${icon(vehicleGlyph(S.tripVeh && S.tripVeh.cls), 16, INK2)}<span>${esc(vehTxt)}</span>${CHEV_SVG(INK3, 14)}</button>
-    </div>
+    </div>`;
+  S.body.innerHTML = `<div class="wt${inCls}">
+    ${tripRow()}
+    ${pills}
     ${mid}
     <div class="wt-foot"><button class="wt-go" type="button" data-act="go" ${S.plan && S.view ? '' : 'disabled'}>${t('startJourney')}</button></div>
   </div>`;
@@ -1468,8 +1475,12 @@ function renderPlan() {
   if (retry) retry.addEventListener('click', () => plan());
   const edit = root.querySelector('[data-act="edit"]');
   if (edit) edit.addEventListener('click', () => { S.armed = 'to'; S.q = ''; S.results = null; S.final = true; renderSearch(true); });
-  root.querySelector('[data-act="mode"]').addEventListener('click', showModes);
-  root.querySelector('[data-act="veh"]').addEventListener('click', () => openVehicle('edit'));
+  /* runs don't render mode/vehicle pills — guard so a run plan never
+     dies on a null bind */
+  const modeBtn = root.querySelector('[data-act="mode"]');
+  if (modeBtn) modeBtn.addEventListener('click', showModes);
+  const vehBtn = root.querySelector('[data-act="veh"]');
+  if (vehBtn) vehBtn.addEventListener('click', () => openVehicle('edit'));
   const oth = root.querySelector('[data-act="other"]');
   if (oth) oth.addEventListener('click', () => {
     S.showOther = !S.showOther;

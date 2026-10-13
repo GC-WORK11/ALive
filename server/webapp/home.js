@@ -196,7 +196,7 @@ const S = {
   waiting: 'Reading the air here…',
   noRead: "Couldn't read the air just now.", retry: 'Try again',
   outOfArea: 'Alive covers Delhi and the NCR — this spot is outside it.',
-  doorAir: 'Air around me', doorRun: 'A run, on foot', doorPurest: 'Purest places', doorTrips: 'Trips',
+  doorAir: 'Air around me', doorRun: 'Run', doorPurest: 'Purest places', doorTrips: 'Trips',
   pickHint: 'Tap the map where you are — the air reads there.',
   pickGps: 'Use my location', pickCancel: 'Cancel',
   /* consent */
