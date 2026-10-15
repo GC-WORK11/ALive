@@ -34,17 +34,20 @@
 }
 @keyframes akfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 .ak-eye {
-  width: calc(var(--ak-s) * 0.16); height: calc(var(--ak-s) * 0.22);
-  background: #fff; border-radius: 999px;
-  display: inline-flex; align-items: center; justify-content: center;
+  width: calc(var(--ak-s) * 0.19); height: calc(var(--ak-s) * 0.26);
+  /* glossy black bead — kawaii, not cyborg */
+  background: radial-gradient(circle at 38% 28%, #3a4354 0%, #141922 55%, #05070b 100%);
+  border-radius: 999px;
+  display: inline-flex; align-items: flex-start; justify-content: center;
   overflow: hidden;
-  box-shadow: inset 0 1px 2px rgba(120,140,170,0.5);
+  box-shadow: inset 0 -2px 3px rgba(255,255,255,0.12);
   transition: height 0.12s ease, border-radius 0.12s ease;
 }
 .ak-eye i {
-  display: block; width: 46%; height: 56%;
-  background: radial-gradient(circle at 38% 30%, #6b7c99 0%, #2c3648 60%, #1c2431 100%);
-  border-radius: 999px;
+  /* the catchlight — it rides the eye's gaze, reads as the pupil */
+  display: block; width: 34%; height: 30%; margin-top: 18%;
+  background: #fff; border-radius: 999px;
+  box-shadow: 0 0 3px rgba(255,255,255,0.9);
   transition: transform 0.12s ease-out;
 }
 .ak-mouth {

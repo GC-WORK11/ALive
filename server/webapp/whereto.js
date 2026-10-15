@@ -54,7 +54,7 @@ const T = {
   locFail: 'couldn’t get your location — pick a place, or tap the map',
   recommendedTag: 'recommended', walkBit: '{d} walk',
   compare_doseNA: 'no air estimate', compare_fuelNA: 'fuel not known',
-  breathed: 'breathed', traffic: 'traffic', otherWays: 'other ways to go',
+  breathed: "you'd breathe", traffic: 'traffic', otherWays: 'other ways to go',
   startJourney: 'Start', arriveAt: 'arrive {t}',
   unitsKm: 'km', minUnit: 'min',
   viaStreets: 'via {streets}',
@@ -1240,8 +1240,8 @@ function vsLine(o) {
     const rd = doseMidOf(ref);
     if (myDose == null || rd == null || rd <= 0) return null;
     const p = Math.round((myDose - rd) / rd * 100);
-    if (Math.abs(p) < 3) return `about the same smoke as ${word}`;
-    return `${p > 0 ? '+' : ''}${p}% smoke vs ${word}`;
+    if (Math.abs(p) < 3) return `about the same air as ${word}`;
+    return p < 0 ? `${-p}% cleaner than ${word}` : `${p}% smokier than ${word}`;
   };
   const etaSeg = (ref, word) => {
     if (!ref) return null;
