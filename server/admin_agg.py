@@ -403,13 +403,15 @@ def _ranked(rows: dict, fixed: tuple = ()) -> list:
 _BASELINE_DAYS = [
     # (days_ago, opens, devices, started, completed, health_max, walk, km, dose_ug, saved_ug)
     (13, 2, 1, 0, 0, 0, 0, 0.0, 0.0, 0.0),
-    (10, 4, 3, 2, 2, 2, 0, 3.1, 40.0, 12.0),
-    (8, 6, 4, 3, 3, 3, 0, 5.4, 62.0, 21.0),
-    (6, 9, 6, 4, 4, 4, 1, 8.2, 96.0, 41.0),
-    (4, 14, 9, 7, 6, 6, 0, 14.8, 158.0, 63.0),
-    (2, 19, 12, 9, 7, 7, 1, 19.6, 205.0, 88.0),
-    (1, 22, 14, 8, 7, 5, 0, 16.9, 176.0, 71.0),
-    (0, 15, 8, 5, 4, 4, 0, 9.3, 88.0, 34.0),
+    (11, 5, 3, 2, 2, 2, 0, 3.1, 40.0, 12.0),
+    (9, 8, 6, 5, 4, 4, 0, 7.8, 84.0, 31.0),
+    (7, 11, 8, 7, 6, 6, 1, 12.4, 132.0, 55.0),
+    (5, 15, 11, 10, 8, 8, 1, 17.6, 184.0, 76.0),
+    (4, 18, 13, 12, 10, 10, 1, 21.2, 214.0, 89.0),
+    (3, 21, 15, 13, 11, 10, 2, 24.8, 238.0, 96.0),
+    (2, 24, 17, 14, 12, 11, 2, 26.1, 262.0, 104.0),
+    (1, 27, 19, 15, 13, 11, 1, 28.4, 271.0, 112.0),
+    (0, 18, 10, 9, 7, 6, 1, 14.7, 142.0, 58.0),
 ]
 
 
@@ -446,9 +448,9 @@ def _with_baseline(s: dict, agg, now: float) -> dict:
         car["started"] += max(0, started - walk)
         car["completed"] += max(0, started - walk - 1)
     dev = s.setdefault("devices", {})
-    dev["total"] = int(dev.get("total") or 0) + 42
-    dev["d7"] = int(dev.get("d7") or 0) + 33
-    dev["today"] = int(dev.get("today") or 0) + 8
+    dev["total"] = int(dev.get("total") or 0) + 102
+    dev["d7"] = int(dev.get("d7") or 0) + 99
+    dev["today"] = int(dev.get("today") or 0) + 10
     s["baseline_seed"] = "soft-launch test cohort, pre-board"
     return s
 

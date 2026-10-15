@@ -1374,7 +1374,8 @@ function optionCard(o, i, other) {
   const fLead = fuelLead(o);
   const fuelHtml = fLead != null ? `<b class="wt-oeta">${fLead}</b>` : `<span class="wt-na">${t('compare_fuelNA')}</span>`;
   const traf = typeof o.traffic_delay_s === 'number' && o.traffic_delay_s > 60
-    ? `<span class="wt-otraf">+${Math.round(o.traffic_delay_s / 60)} min ${t('traffic')}</span>` : '';
+    ? `<span class="wt-otraf">+${Math.round(o.traffic_delay_s / 60)} min ${t('traffic')}</span>`
+    : (o.traffic_delay_s === null ? `<span class="wt-otraf na">no live traffic</span>` : '');
   const fBits = fuelBits(o);
   const savedBit = fBits.find((x) => /^saves/.test(x));
   const fuelChip = (x) => x ? `<span class="wt-ofuel">${x}</span>` : '';
