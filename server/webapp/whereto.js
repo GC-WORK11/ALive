@@ -1311,7 +1311,8 @@ function deltaLine(o) {
   const p = num(d.air_pct), m = num(d.min_added);
   const vs = d.vs_label ? ` vs ${String(d.vs_label).split(' · ')[0].trim()}` : '';
   const bits = [];
-  if (p != null && Math.abs(p) >= 3) bits.push(`${p > 0 ? '+' : '−'}${Math.abs(Math.round(p))}% smoke`);
+  if (p != null && Math.abs(p) >= 3)
+    bits.push(p < 0 ? `${Math.abs(Math.round(p))}% cleaner` : `+${Math.round(p)}% smokier`);
   if (m != null && Math.abs(m) >= 0.9) bits.push(`${m > 0 ? '+' : '−'}${Math.abs(Math.round(m))} min`);
   return bits.length ? bits.join(' · ') + vs : '';
 }
