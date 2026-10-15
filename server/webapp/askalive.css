@@ -1,0 +1,176 @@
+/* Ask ALive — the companion bot + chat sheet */
+
+/* ── the floating face ─────────────────────────────────── */
+.ak-fab {
+  position: fixed;
+  /* header row, right side — the search CTA sits ~64px lower, the back
+     buttons live top-left. nothing native occupies this corner. */
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 12px;
+  z-index: 70;
+  width: 52px; height: 52px;
+  border: 0; padding: 0; background: none; cursor: pointer;
+  filter: drop-shadow(0 6px 16px rgba(10, 12, 16, 0.28));
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.ak-fab:active { transform: scale(0.92); }
+
+.ak-face {
+  --ak-s: 44px;
+  display: inline-flex; position: relative;
+  width: var(--ak-s); height: var(--ak-s);
+  background: linear-gradient(160deg, #3a3f4a 0%, #22262e 62%, #191c23 100%);
+  border-radius: 46% 46% 50% 50% / 52% 52% 44% 44%;
+  box-shadow: inset 0 2px 3px rgba(255,255,255,0.14),
+              inset 0 -3px 6px rgba(0,0,0,0.35);
+  align-items: center; justify-content: center;
+  gap: calc(var(--ak-s) * 0.13);
+}
+.ak-eye {
+  width: calc(var(--ak-s) * 0.17); height: calc(var(--ak-s) * 0.24);
+  background: #EDEBE4; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  transition: height 0.12s ease, border-radius 0.12s ease;
+}
+.ak-eye i {
+  display: block; width: 42%; height: 52%;
+  background: #22262e; border-radius: 999px;
+  transition: transform 0.12s ease-out;
+}
+.ak-mouth {
+  position: absolute; left: 50%; bottom: calc(var(--ak-s) * 0.2);
+  width: calc(var(--ak-s) * 0.2); height: calc(var(--ak-s) * 0.05);
+  background: #EDEBE4; border-radius: 999px;
+  transform: translateX(-50%);
+  transition: width 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
+}
+.ak-blink .ak-eye { height: calc(var(--ak-s) * 0.04); }
+.ak-m-think .ak-mouth { width: calc(var(--ak-s) * 0.1); height: calc(var(--ak-s) * 0.1); border-radius: 50%; }
+.ak-m-love .ak-mouth, .ak-m-happy .ak-mouth {
+  width: calc(var(--ak-s) * 0.26); height: calc(var(--ak-s) * 0.12);
+  border-radius: 0 0 999px 999px;
+}
+.ak-m-love .ak-eye { height: calc(var(--ak-s) * 0.28); }
+
+/* ── the sheet ─────────────────────────────────────────── */
+/* a full-surface chat — .sheet's slide-in transform + top offset both
+   fight the composer on small screens, so the ask sheet owns the whole
+   screen itself (header still sits below the status bar via padding) */
+.ak-sheet {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+  border-radius: 0; transform: none !important;
+}
+.ak-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.ak-head .back-btn { flex: 0 0 auto; }
+.ak-hface .ak-face { --ak-s: 40px; }
+.ak-ht { font-weight: 650; font-size: 16px; letter-spacing: 0.01em; }
+.ak-hs { font-size: 12px; color: #6E7278; margin-top: 1px; }
+
+.ak-thread {
+  flex: 1; overflow-y: auto; padding: 14px 14px 8px;
+  display: flex; flex-direction: column; gap: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.ak-row { display: flex; gap: 8px; align-items: flex-end; }
+.ak-row.me { justify-content: flex-end; }
+.ak-ava .ak-face { --ak-s: 30px; }
+
+.ak-bub {
+  max-width: 82%;
+  background: #fff; border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 16px 16px 16px 5px;
+  padding: 10px 12px; font-size: 14px; line-height: 1.45; color: #20242b;
+  box-shadow: 0 1px 2px rgba(20,22,26,0.05);
+}
+.ak-bub.me {
+  background: #20242b; color: #EDEBE4;
+  border-radius: 16px 16px 5px 16px; border-color: transparent;
+}
+.ak-say { white-space: pre-line; }
+
+.ak-dots { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.ak-dots i {
+  width: 5px; height: 5px; border-radius: 50%; background: #9AA0AA;
+  animation: akdot 1.1s ease-in-out infinite;
+}
+.ak-dots i:nth-child(2) { animation-delay: 0.18s; }
+.ak-dots i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes akdot { 0%,100% { opacity: 0.3; transform: translateY(0); } 45% { opacity: 1; transform: translateY(-3px); } }
+
+/* ── the recommendation card inside the bubble ─────────── */
+.ak-card {
+  margin-top: 9px; border-top: 1px solid rgba(0,0,0,0.07);
+  padding-top: 9px;
+}
+.ak-card-t { font-weight: 650; font-size: 15px; }
+.ak-card-m { font-size: 12px; color: #6E7278; margin: 2px 0 8px; }
+.ak-card-row { display: flex; align-items: center; gap: 8px; }
+.ak-aqi {
+  display: inline-flex; align-items: baseline; gap: 3px;
+  color: #fff; font-weight: 700; font-size: 15px;
+  border-radius: 999px; padding: 3px 10px;
+}
+.ak-aqi span { font-size: 10px; font-weight: 600; opacity: 0.85; }
+.ak-pm { font-size: 12px; color: #6E7278; }
+.ak-win { margin-top: 8px; font-size: 13px; font-weight: 600; }
+.ak-win-s { font-weight: 400; color: #6E7278; }
+.ak-map {
+  display: block; width: 100%; margin-top: 9px;
+  background: #F3F2EE; border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.ak-why { margin-top: 8px; font-size: 11.5px; color: #8A8D94; }
+.ak-go {
+  margin-top: 9px; width: 100%;
+  background: #F0EFEa; border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 10px; padding: 8px 10px;
+  font-size: 13px; font-weight: 600; color: #20242b; cursor: pointer;
+}
+.ak-go:active { transform: scale(0.98); }
+
+/* suggestions + composer */
+.ak-sugg {
+  display: flex; gap: 6px; overflow-x: auto;
+  padding: 8px 12px 4px; scrollbar-width: none;
+}
+.ak-sugg::-webkit-scrollbar { display: none; }
+.ak-chip {
+  flex: 0 0 auto; font-size: 12.5px; padding: 7px 12px;
+  background: #fff; border: 1px solid rgba(0,0,0,0.09);
+  border-radius: 999px; color: #4A4E57; cursor: pointer;
+}
+.ak-composer {
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 10px);
+}
+.ak-in {
+  flex: 1; border: 1px solid rgba(0,0,0,0.12); border-radius: 999px;
+  padding: 11px 16px; font-size: 14.5px; background: #fff; color: #20242b;
+  outline: none;
+}
+.ak-in:focus { border-color: #20242b; }
+.ak-send {
+  width: 42px; height: 42px; flex: 0 0 auto;
+  border: 0; border-radius: 50%; background: #20242b; color: #EDEBE4;
+  font-size: 18px; cursor: pointer;
+}
+.ak-send:active { transform: scale(0.92); }
+
+/* hide the fab while the ask sheet is the top screen */
+body[data-top="ask"] .ak-fab { transform: scale(0.6); opacity: 0; pointer-events: none; }
+
+@media (min-width: 720px) {
+  .ak-fab { right: 26px; }
+  .ak-bub { max-width: 64%; }
+}
+.ak-extra { margin-top: 7px; font-size: 12.5px; color: #4A4E57; border-top: 1px dashed rgba(0,0,0,0.08); padding-top: 7px; }
+
+/* ask sheet is full-surface — the global chrome duels with its header */
+body[data-top="ask"] #chrome { display: none; }

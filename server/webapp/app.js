@@ -296,6 +296,17 @@ function boot() {
   const start = location.hash ? location.hash.slice(2) : 'home';
   const startId = SCREENS[start] ? start : 'home';
   show(startId, {});
+  /* ?pin=lat,lon,label — "i am standing here" as a URL: used by demos,
+     shared links and the tap-to-drop flow. the pin becomes the position
+     of record for the session; everything downstream (air read, asks,
+     plans) still computes from live data at that point. */
+  const _pinM = /(?:^|[?&])pin=(-?\d+\.?\d*),(-?\d+\.?\d*)(?:,([^&]*))?/.exec(location.search || '');
+  if (_pinM) {
+    const pinPos = { lat: +_pinM[1], lon: +_pinM[2], t: Date.now(), acc: 25,
+      label: _pinM[3] ? decodeURIComponent(_pinM[3]).replace(/\+/g, ' ') : 'pinned spot' };
+    geo.pos = pinPos; store.set('pos', pinPos);
+    geo.consent = 'picked'; store.set('consent', 'picked');
+  }
   // consent gate — only once, only if unanswered
   const consented = geo.consent;
   if (!consented) {

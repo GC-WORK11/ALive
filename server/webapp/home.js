@@ -427,6 +427,54 @@ function doorsHtml() {
   return rows ? `<div class="hcard hs-doorcard">${rows}</div>` : '';
 }
 
+/* ── your days — the real ledger of what this air did to you.
+   reads journey.history receipts (measured, GPS-backed) and groups by
+   IST calendar day: how much you breathed in, where it happened. no
+   trips → a quiet empty card that invites the first one. nothing here
+   is invented; a day without a measured trip simply isn't listed. */
+function daysHtml() {
+  const hist = A.store.get('journey.history', []) || [];
+  if (!hist.length) return '';
+  const dayKey = (ms) => {
+    const d = new Date(ms + 5.5 * 3600e3);            /* IST */
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  };
+  const dayName = (ms) => {
+    const d = new Date(ms + 5.5 * 3600e3);
+    const today = dayKey(Date.now()), yest = dayKey(Date.now() - 86400e3);
+    const k = dayKey(ms);
+    if (k === today) return 'today';
+    if (k === yest) return 'yesterday';
+    return `${WEEKDAY[d.getUTCDay() % 7].toLowerCase()} ${d.getUTCDate()}`;
+  };
+  const byDay = {};
+  for (const r of hist) {
+    if (!r || !r.t) continue;
+    const k = dayKey(r.t);
+    (byDay[k] = byDay[k] || { ms: r.t, ug: 0, km: 0, n: 0, places: [] });
+    const d = byDay[k];
+    d.ms = r.t; d.n += 1;
+    if (r.dose_ug != null) d.ug += r.dose_ug;
+    if (r.covered_km != null) d.km += r.covered_km;
+    const lbl = (r.to && r.to.label) || null;
+    if (lbl && d.places.length < 3 && !d.places.includes(lbl)) d.places.push(lbl);
+  }
+  const days = Object.entries(byDay).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 3);
+  if (!days.length) return '';
+  const rows = days.map(([k, d]) => `
+    <div class="hs-dayrow">
+      <div class="hs-dayname">${esc(dayName(d.ms))}</div>
+      <div class="hs-daynum num">${d.ug > 0 ? `~${Math.round(d.ug)}<span>µg inhaled</span>` : 'measured'}</div>
+      <div class="hs-daymeta">${[
+        d.n > 1 ? `${d.n} trips` : '1 trip',
+        d.km > 0 ? `${d.km.toFixed(1)} km` : null,
+      ].filter(Boolean).join(' · ')}${d.places.length ? ` — ${esc(d.places.join(', '))}` : ''}</div>
+    </div>`).join('');
+  return `<div class="hcard hs-dayscard">
+    <div class="hs-dayst">your days — what the air did</div>${rows}
+  </div>`;
+}
+
 /* ══ screen ══ */
 let root = null, heroEl = null, moodEl = null, moodIdx = -1, lastCount = null;
 
@@ -739,6 +787,7 @@ A.screen('home', {
         </div>
         <div class="hs-scroll">
           <section class="hs-fade" style="animation-delay:0ms"><div class="hs-hero" id="hs-hero"></div></section>
+          <section class="hs-fade" style="animation-delay:45ms"><div class="hs-days" id="hs-days"></div></section>
           <section class="hs-fade" id="hs-doorswrap" style="animation-delay:90ms"></section>
         </div>
       </div>`;
@@ -747,6 +796,7 @@ A.screen('home', {
     heroEl = elm.querySelector('#hs-hero');
     moodIdx = -1; lastCount = null;
     elm.querySelector('#hs-doorswrap').innerHTML = doorsHtml();
+    elm.querySelector('#hs-days').innerHTML = daysHtml();
 
     const brandEl = elm.querySelector('#hs-brand'), subEl = elm.querySelector('#hs-sub');
     const tickClock = () => {

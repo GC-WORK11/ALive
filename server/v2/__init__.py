@@ -16,13 +16,13 @@ if _SERVER_DIR not in sys.path:
 
 from fastapi import APIRouter  # noqa: E402
 
-from . import archive, city, day, explore, ledger, outlook, places, plan, reach, search, skill, strip, trip, why  # noqa: E402
+from . import archive, ask, city, day, explore, ledger, outlook, places, plan, reach, search, skill, strip, trip, why  # noqa: E402
 
 router = APIRouter(prefix="/v2", tags=["v2"])
 for _r in (search.router, places.router, plan.router,
            strip.router, trip.router, city.router, ledger.router,
            day.router, explore.router, outlook.router, reach.router,
-           archive.router, skill.router, why.router):
+           archive.router, skill.router, why.router, ask.router):
     router.include_router(_r)
 
 # /v2/p/* provider proxy (Ola, Mappls, TomTom — lane P, Oct 11). Guarded:

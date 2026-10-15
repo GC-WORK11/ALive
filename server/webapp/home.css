@@ -194,6 +194,17 @@ button.hs-spot { background: none; border: 0; padding: 0; width: 100%; text-alig
 .hs-doorchev { color: var(--ink4); flex: 0 0 auto; }
 .hs-doorsep { height: .5px; background: var(--hairc); margin-left: 56px; }
 
+/* your days — the measured-exposure card */
+.hs-days { margin: 12px 0 0; }
+.hs-dayscard { padding: 16px 18px 8px; }
+.hs-dayst { font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--ink4); text-transform: lowercase; margin-bottom: 8px; }
+.hs-dayrow { padding: 9px 0; border-top: .5px solid var(--hairc); }
+.hs-dayrow:first-of-type { border-top: 0; padding-top: 2px; }
+.hs-dayname { font-size: 13.5px; font-weight: 600; color: var(--ink); text-transform: lowercase; }
+.hs-daynum { font-size: 15px; font-weight: 650; color: var(--ink); margin-top: 1px; }
+.hs-daynum span { font-size: 11px; font-weight: 500; color: var(--ink3); margin-left: 5px; }
+.hs-daymeta { font-size: 12px; color: var(--ink3); margin-top: 2px; }
+
 .ic { display: inline-block; vertical-align: middle; }
 
 /* paper screens own their top — the frozen #chrome duplicates it on home */
