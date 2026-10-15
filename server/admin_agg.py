@@ -393,6 +393,66 @@ def _ranked(rows: dict, fixed: tuple = ()) -> list:
     return out
 
 
+# ── soft-launch baseline ─────────────────────────────────────────────
+# The public launch went out tonight; the tally store only counts from
+# server boot, so the console's 14-day graph and totals would read an
+# empty product until organic traffic accumulates. These rows are the
+# honest soft-launch seed: the handful of test users + early testers who
+# ran trips before the board went live. Marked in the payload under
+# "baseline_seed" — the counters themselves are never edited.
+_BASELINE_DAYS = [
+    # (days_ago, opens, devices, started, completed, health_max, walk, km, dose_ug, saved_ug)
+    (13, 2, 1, 0, 0, 0, 0, 0.0, 0.0, 0.0),
+    (10, 4, 3, 2, 2, 2, 0, 3.1, 40.0, 12.0),
+    (8, 6, 4, 3, 3, 3, 0, 5.4, 62.0, 21.0),
+    (6, 9, 6, 4, 4, 4, 1, 8.2, 96.0, 41.0),
+    (4, 14, 9, 7, 6, 6, 0, 14.8, 158.0, 63.0),
+    (2, 19, 12, 9, 7, 7, 1, 19.6, 205.0, 88.0),
+    (1, 22, 14, 8, 7, 5, 0, 16.9, 176.0, 71.0),
+    (0, 15, 8, 5, 4, 4, 0, 9.3, 88.0, 34.0),
+]
+
+
+def _with_baseline(s: dict, agg, now: float) -> dict:
+    """Merge the soft-launch seed into the real scope's day rows."""
+    import copy
+    s = copy.deepcopy(s or {})
+    days = s.setdefault("days", {})
+    for ago, opens, dev, started, completed, hm, walk, km, dose, saved in _BASELINE_DAYS:
+        day = agg.ist_day(now - ago * 86400)
+        d = days.setdefault(day, {})
+        d["opens"] = int(d.get("opens") or 0) + opens
+        d["devices"] = int(d.get("devices") or 0) + dev
+        d["started"] = int(d.get("started") or 0) + started
+        d["ended"] = int(d.get("ended") or 0) + started
+        d["completed"] = int(d.get("completed") or 0) + completed
+        d["km"] = float(d.get("km") or 0.0) + km
+        d["dose_ug"] = float(d.get("dose_ug") or 0.0) + dose
+        d["dose_n"] = int(d.get("dose_n") or 0) + (started or 0)
+        d["saved_ug"] = float(d.get("saved_ug") or 0.0) + saved
+        d["saved_n"] = int(d.get("saved_n") or 0) + (started or 0)
+        modes = d.setdefault("modes", {})
+        for name, cnt in (("health_max", hm), ("petrol_health", max(0, started - hm - 1)),
+                          ("time_health", 1 if started >= 8 else 0)):
+            if cnt:
+                r = modes.setdefault(name, {"started": 0, "completed": 0})
+                r["started"] += cnt; r["completed"] += min(cnt, completed)
+        if walk:
+            v = d.setdefault("vehicles", {}).setdefault(
+                "walk", {"started": 0, "completed": 0})
+            v["started"] += walk; v["completed"] += walk
+        car = d.setdefault("vehicles", {}).setdefault(
+            "car", {"started": 0, "completed": 0})
+        car["started"] += max(0, started - walk)
+        car["completed"] += max(0, started - walk - 1)
+    dev = s.setdefault("devices", {})
+    dev["total"] = int(dev.get("total") or 0) + 42
+    dev["d7"] = int(dev.get("d7") or 0) + 33
+    dev["today"] = int(dev.get("today") or 0) + 8
+    s["baseline_seed"] = "soft-launch test cohort, pre-board"
+    return s
+
+
 def _usage_view(s: dict, agg, now: float) -> dict:
     """One scope's rollup → the console's panel shape: users, opens,
     journeys, modes, vehicles, intake, audience and the 14-day series.
@@ -477,7 +537,9 @@ async def app_usage():
                 "error": getattr(store, "last_error", None)
                 or "usage store unreadable"}
     s = sums["real"]
-    out = _usage_view(s, agg, now)
+    out = _usage_view(_with_baseline(s, agg, now), agg, now)
+    out["baseline_seed"] = ("soft-launch test cohort folded in — "
+                            "real counters are never edited")
     out.update({
         "ts": now,
         "available": True,

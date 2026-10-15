@@ -228,7 +228,8 @@ fi
 # Plain-string secrets (SecretString = the key itself, no JSON field).
 PROVIDER_SECRETS=""
 for _pair in "OLA_API_KEY=alive108/ola" "TOMTOM_API_KEY=alive108/tomtom" \
-             "MAPPLS_API_KEY=alive108/mappls"; do
+             "MAPPLS_API_KEY=alive108/mappls" \
+             "ALIVE_GROQ_KEY=alive108/groq" "ALIVE_GEMINI_KEY=alive108/gemini"; do
   _env="${_pair%%=*}"; _sec="${_pair#*=}"
   _ok="$(aws secretsmanager describe-secret --secret-id "$_sec" \
     --query '[DeletedDate == null, VersionIdsToStages != null]' \

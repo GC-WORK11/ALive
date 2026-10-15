@@ -19,23 +19,32 @@
   --ak-s: 44px;
   display: inline-flex; position: relative;
   width: var(--ak-s); height: var(--ak-s);
-  background: linear-gradient(160deg, #3a3f4a 0%, #22262e 62%, #191c23 100%);
-  border-radius: 46% 46% 50% 50% / 52% 52% 44% 44%;
-  box-shadow: inset 0 2px 3px rgba(255,255,255,0.14),
-              inset 0 -3px 6px rgba(0,0,0,0.35);
+  /* silver orb — moonlit metal, soft aura, cute */
+  background: radial-gradient(circle at 32% 26%,
+      #ffffff 0%, #e8ecf2 38%, #b9c2cf 74%, #8e99aa 100%);
+  border-radius: 50%;
+  box-shadow:
+      0 0 0 calc(var(--ak-s) * 0.045) rgba(216,226,240,0.55),
+      0 0 calc(var(--ak-s) * 0.42) calc(var(--ak-s) * 0.06) rgba(180,200,235,0.55),
+      inset 0 calc(var(--ak-s) * -0.06) calc(var(--ak-s) * 0.12) rgba(90,105,130,0.4),
+      inset 0 calc(var(--ak-s) * 0.05) calc(var(--ak-s) * 0.10) rgba(255,255,255,0.9);
   align-items: center; justify-content: center;
-  gap: calc(var(--ak-s) * 0.13);
+  gap: calc(var(--ak-s) * 0.12);
+  animation: akfloat 3.4s ease-in-out infinite;
 }
+@keyframes akfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 .ak-eye {
-  width: calc(var(--ak-s) * 0.17); height: calc(var(--ak-s) * 0.24);
-  background: #EDEBE4; border-radius: 999px;
+  width: calc(var(--ak-s) * 0.16); height: calc(var(--ak-s) * 0.22);
+  background: #fff; border-radius: 999px;
   display: inline-flex; align-items: center; justify-content: center;
   overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(120,140,170,0.5);
   transition: height 0.12s ease, border-radius 0.12s ease;
 }
 .ak-eye i {
-  display: block; width: 42%; height: 52%;
-  background: #22262e; border-radius: 999px;
+  display: block; width: 46%; height: 56%;
+  background: radial-gradient(circle at 38% 30%, #6b7c99 0%, #2c3648 60%, #1c2431 100%);
+  border-radius: 999px;
   transition: transform 0.12s ease-out;
 }
 .ak-mouth {
@@ -84,14 +93,14 @@
 
 .ak-bub {
   max-width: 82%;
-  background: #fff; border: 1px solid rgba(0,0,0,0.07);
-  border-radius: 16px 16px 16px 5px;
-  padding: 10px 12px; font-size: 14px; line-height: 1.45; color: #20242b;
-  box-shadow: 0 1px 2px rgba(20,22,26,0.05);
+  background: #fff; border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 18px 18px 18px 6px;
+  padding: 11px 14px; font-size: 14px; line-height: 1.5; color: #20242b;
+  box-shadow: 0 2px 8px rgba(20,22,26,0.06), 0 1px 2px rgba(20,22,26,0.05);
 }
 .ak-bub.me {
-  background: #20242b; color: #EDEBE4;
-  border-radius: 16px 16px 5px 16px; border-color: transparent;
+  background: linear-gradient(135deg, #2a303b, #1a1e26); color: #EDEBE4;
+  border-radius: 18px 18px 6px 18px; border-color: transparent;
 }
 .ak-say { white-space: pre-line; }
 

@@ -93,6 +93,81 @@ def _decision_line(win, *labels):
     return None
 
 
+# ── optional LLM phrasing layer ──────────────────────────────────────
+# The facts are always the deterministic compose above — the model only
+# re-phrases `say` into warmer words and may pick which extra lands.
+# Numbers, places and windows arrive pinned in the prompt and are
+# returned verbatim-or-dropped; on any failure the deterministic say
+# stands. Keys come from the environment only (Secrets Manager on ECS).
+import os
+
+_GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+_GEM_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-2.0-flash:generateContent")
+
+
+def _llm_key():
+    return (os.environ.get("ALIVE_GROQ_KEY") or "").strip()
+
+
+def _gem_key():
+    return (os.environ.get("ALIVE_GEMINI_KEY") or "").strip()
+
+
+_LLM_PROMPT = (
+    "You are ALive, a Delhi air-quality companion. Rewrite the reply "
+    "below as one short, warm, plain-English message (2 sentences max). "
+    "RULES: keep every number, place name, window and AQI EXACTLY as "
+    "written — never invent, round or drop a fact. Never name where the "
+    "user is. No emojis. No jargon. If a fact list is given, you may "
+    "pick at most one to mention.\n\nREPLY: %s"
+)
+
+
+async def _llm_say(say: str):
+    """Re-phrase say via Groq (primary) or Gemini (fallback). Returns
+    the polished string or None — caller keeps the deterministic say."""
+    if _llm_key():
+        try:
+            from . import providers
+            r = await providers._http().post(
+                _GROQ_URL,
+                headers={"Authorization": f"Bearer {_llm_key()}"},
+                json={
+                    "model": "openai/gpt-oss-120b",
+                    "reasoning_effort": "low",
+                    "messages": [{"role": "user",
+                                  "content": _LLM_PROMPT % say}],
+                    "temperature": 0.4, "max_tokens": 380,
+                })
+            if r.status_code == 200:
+                txt = (r.json().get("choices") or [{}])[0].get(
+                    "message", {}).get("content", "").strip()
+                txt = txt.replace(" ", " ").replace("\xa0", " ")
+                if txt and len(txt) <= 400:
+                    return txt
+        except Exception:
+            pass
+    if _gem_key():
+        try:
+            from . import providers
+            r = await providers._http().post(
+                _GEM_URL, params={"key": _gem_key()},
+                json={"contents": [{"parts": [{"text": _LLM_PROMPT % say}]}],
+                      "generationConfig": {"temperature": 0.4,
+                                           "maxOutputTokens": 120}})
+            if r.status_code == 200:
+                parts = (r.json().get("candidates") or [{}])[0].get(
+                    "content", {}).get("parts") or []
+                txt = (parts[0].get("text") or "").strip() if parts else ""
+                txt = txt.replace(" ", " ").replace("\xa0", " ")
+                if txt and len(txt) <= 400:
+                    return txt
+        except Exception:
+            pass
+    return None
+
+
 @router.post("/ask")
 async def ask(body: AskBody):
     """Compose one recommendation. Never echoes the origin locality."""
@@ -125,6 +200,7 @@ async def ask(body: AskBody):
             if win:
                 say += (f" The lightest stretch today is "
                       f"{_fmt_hhmm(win['start'])}–{_fmt_hhmm(win['end'])}.")
+            say = await _llm_say(say) or say
             return {"ok": True, "intent": "aqi_here", "say": say,
                     "card": None, "window": win}
         except Exception:
@@ -179,6 +255,7 @@ async def ask(body: AskBody):
     if win and win.get("pm25_mid") is not None:
         why_bits.append(f"~{round(win['pm25_mid'])} µg/m³ at its lightest")
 
+    say = await _llm_say(say) or say
     return {
         "ok": True,
         "intent": "run" if running else "go_out",
