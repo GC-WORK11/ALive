@@ -50,20 +50,8 @@
   box-shadow: 0 0 3px rgba(255,255,255,0.9);
   transition: transform 0.12s ease-out;
 }
-.ak-mouth {
-  position: absolute; left: 50%; bottom: calc(var(--ak-s) * 0.2);
-  width: calc(var(--ak-s) * 0.2); height: calc(var(--ak-s) * 0.05);
-  background: #EDEBE4; border-radius: 999px;
-  transform: translateX(-50%);
-  transition: width 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
-}
 .ak-blink .ak-eye { height: calc(var(--ak-s) * 0.04); }
-.ak-m-think .ak-mouth { width: calc(var(--ak-s) * 0.1); height: calc(var(--ak-s) * 0.1); border-radius: 50%; }
-.ak-m-love .ak-mouth, .ak-m-happy .ak-mouth {
-  width: calc(var(--ak-s) * 0.26); height: calc(var(--ak-s) * 0.12);
-  border-radius: 0 0 999px 999px;
-}
-.ak-m-love .ak-eye { height: calc(var(--ak-s) * 0.28); }
+.ak-m-love .ak-eye, .ak-m-happy .ak-eye { height: calc(var(--ak-s) * 0.28); }
 
 /* ── the sheet ─────────────────────────────────────────── */
 /* a full-surface chat — .sheet's slide-in transform + top offset both

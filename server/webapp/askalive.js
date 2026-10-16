@@ -24,7 +24,6 @@ function botFace(size, mood) {
   return `<span class="ak-face ${mood || ''}" style="--ak-s:${size}px">
     <span class="ak-eye l"><i></i></span>
     <span class="ak-eye r"><i></i></span>
-    <span class="ak-mouth"></span>
   </span>`;
 }
 

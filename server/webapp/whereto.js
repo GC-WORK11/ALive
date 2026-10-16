@@ -54,7 +54,7 @@ const T = {
   locFail: 'couldn’t get your location — pick a place, or tap the map',
   recommendedTag: 'recommended', walkBit: '{d} walk',
   compare_doseNA: 'no air estimate', compare_fuelNA: 'fuel not known',
-  breathed: "you'd breathe", traffic: 'traffic', otherWays: 'other ways to go',
+  breathed: 'exposure', traffic: 'traffic', otherWays: 'other ways to go',
   startJourney: 'Start', arriveAt: 'arrive {t}',
   unitsKm: 'km', minUnit: 'min',
   viaStreets: 'via {streets}',
