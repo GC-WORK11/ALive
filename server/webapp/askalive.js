@@ -78,10 +78,10 @@ function faceMood(m, ms) {
 
 /* ── the chat sheet ────────────────────────────────────────── */
 const SUGGEST = [
-  'where can i run today?',
-  'a park to record a video',
+  'what is the aqi near me right now?',
+  'best place to go now',
   'when should i go out?',
-  'how is the air here?',
+  'where can i run today?',
 ];
 
 let st = null;
