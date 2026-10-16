@@ -18,41 +18,14 @@
 .ak-face {
   --ak-s: 44px;
   display: inline-flex; position: relative;
-  width: var(--ak-s); height: calc(var(--ak-s) * 0.92);
-  /* the pink gumdrop — soft mochi, two eyes, no mouth */
-  background: radial-gradient(circle at 36% 22%,
-      #fdd6e0 0%, #f7abc2 42%, #ef8fae 74%, #dd6f94 100%);
-  border-radius: 52% 52% 44% 44% / 70% 70% 42% 42%;
-  box-shadow:
-      0 calc(var(--ak-s) * 0.28) calc(var(--ak-s) * 0.6) rgba(214,105,140,0.35),
-      inset 0 calc(var(--ak-s) * -0.08) calc(var(--ak-s) * 0.14) rgba(160,60,95,0.28),
-      inset 0 calc(var(--ak-s) * 0.05) calc(var(--ak-s) * 0.10) rgba(255,255,255,0.55);
-  align-items: center; justify-content: center;
-  gap: calc(var(--ak-s) * 0.13);
+  width: var(--ak-s);
   animation: akfloat 3.4s ease-in-out infinite;
 }
+.ak-face-img {
+  width: 100%; height: auto; display: block;
+  filter: drop-shadow(0 6px 14px rgba(226,60,120,0.3));
+}
 @keyframes akfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
-.ak-eye {
-  width: calc(var(--ak-s) * 0.115); height: calc(var(--ak-s) * 0.28);
-  /* maroon beans — the gumdrop's eyes */
-  background: #6e2438;
-  border-radius: 999px;
-  display: inline-flex; align-items: flex-start; justify-content: center;
-  overflow: hidden;
-  box-shadow: inset 0 -2px 3px rgba(255,255,255,0.12);
-  transition: height 0.12s ease, border-radius 0.12s ease;
-}
-.ak-eye i {
-  /* the catchlight — it rides the eye's gaze, reads as the pupil */
-  display: block; width: 34%; height: 30%; margin-top: 18%;
-  background: #fff; border-radius: 999px;
-  box-shadow: 0 0 3px rgba(255,255,255,0.9);
-  transition: transform 0.12s ease-out;
-}
-.ak-eye.l { transform: rotate(7deg); }
-.ak-eye.r { transform: rotate(-7deg); }
-.ak-blink .ak-eye { height: calc(var(--ak-s) * 0.04); }
-.ak-m-love .ak-eye, .ak-m-happy .ak-eye { height: calc(var(--ak-s) * 0.3); }
 
 /* ── the sheet ─────────────────────────────────────────── */
 /* a full-surface chat — .sheet's slide-in transform + top offset both
