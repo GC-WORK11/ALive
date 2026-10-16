@@ -18,25 +18,24 @@
 .ak-face {
   --ak-s: 44px;
   display: inline-flex; position: relative;
-  width: var(--ak-s); height: var(--ak-s);
-  /* silver orb — moonlit metal, soft aura, cute */
-  background: radial-gradient(circle at 32% 26%,
-      #ffffff 0%, #e8ecf2 38%, #b9c2cf 74%, #8e99aa 100%);
-  border-radius: 50%;
+  width: var(--ak-s); height: calc(var(--ak-s) * 0.92);
+  /* the pink gumdrop — soft mochi, two eyes, no mouth */
+  background: radial-gradient(circle at 36% 22%,
+      #fdd6e0 0%, #f7abc2 42%, #ef8fae 74%, #dd6f94 100%);
+  border-radius: 52% 52% 44% 44% / 70% 70% 42% 42%;
   box-shadow:
-      0 0 0 calc(var(--ak-s) * 0.045) rgba(216,226,240,0.55),
-      0 0 calc(var(--ak-s) * 0.42) calc(var(--ak-s) * 0.06) rgba(180,200,235,0.55),
-      inset 0 calc(var(--ak-s) * -0.06) calc(var(--ak-s) * 0.12) rgba(90,105,130,0.4),
-      inset 0 calc(var(--ak-s) * 0.05) calc(var(--ak-s) * 0.10) rgba(255,255,255,0.9);
+      0 calc(var(--ak-s) * 0.28) calc(var(--ak-s) * 0.6) rgba(214,105,140,0.35),
+      inset 0 calc(var(--ak-s) * -0.08) calc(var(--ak-s) * 0.14) rgba(160,60,95,0.28),
+      inset 0 calc(var(--ak-s) * 0.05) calc(var(--ak-s) * 0.10) rgba(255,255,255,0.55);
   align-items: center; justify-content: center;
-  gap: calc(var(--ak-s) * 0.12);
+  gap: calc(var(--ak-s) * 0.13);
   animation: akfloat 3.4s ease-in-out infinite;
 }
 @keyframes akfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 .ak-eye {
-  width: calc(var(--ak-s) * 0.19); height: calc(var(--ak-s) * 0.26);
-  /* glossy black bead — kawaii, not cyborg */
-  background: radial-gradient(circle at 38% 28%, #3a4354 0%, #141922 55%, #05070b 100%);
+  width: calc(var(--ak-s) * 0.115); height: calc(var(--ak-s) * 0.28);
+  /* maroon beans — the gumdrop's eyes */
+  background: #6e2438;
   border-radius: 999px;
   display: inline-flex; align-items: flex-start; justify-content: center;
   overflow: hidden;
@@ -50,8 +49,10 @@
   box-shadow: 0 0 3px rgba(255,255,255,0.9);
   transition: transform 0.12s ease-out;
 }
+.ak-eye.l { transform: rotate(7deg); }
+.ak-eye.r { transform: rotate(-7deg); }
 .ak-blink .ak-eye { height: calc(var(--ak-s) * 0.04); }
-.ak-m-love .ak-eye, .ak-m-happy .ak-eye { height: calc(var(--ak-s) * 0.28); }
+.ak-m-love .ak-eye, .ak-m-happy .ak-eye { height: calc(var(--ak-s) * 0.3); }
 
 /* ── the sheet ─────────────────────────────────────────── */
 /* a full-surface chat — .sheet's slide-in transform + top offset both
