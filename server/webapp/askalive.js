@@ -21,7 +21,10 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
    lean toward wherever you're touching/scrolling; they blink on a
    slow timer and go wide when a reply lands. */
 function botFace(size, mood) {
-  return `<span class="ak-face ${mood || ''}" style="--ak-s:${size}px"><b>a</b></span>`;
+  return `<span class="ak-face ${mood || ''}" style="--ak-s:${size}px">
+    <span class="ak-eye l"><i></i></span>
+    <span class="ak-eye r"><i></i></span>
+  </span>`;
 }
 
 let fabEl = null, pupils = null, blinkT = 0, faceState = 'idle';

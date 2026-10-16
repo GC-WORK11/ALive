@@ -185,7 +185,9 @@ async def ask(body: AskBody):
     running = bool(_RUN.search(q))
     wants_when = bool(_WHEN.search(q))
     wants_here = bool(_AQI.search(q)) and re.search(
-        r"\b(here|now|right now|my|outside)\b", q, re.I) and not want_park
+        r"\b(here|now|right now|currently|current|today|my|outside|"
+        r"around me|near me|this area|my area|my location|where i am|"
+        r"at the moment)\b", q, re.I) and not want_park
 
     # ── "how's the air here" intent — pure readout, no place card ──
     if wants_here and have_pos:
