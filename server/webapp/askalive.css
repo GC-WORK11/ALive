@@ -18,12 +18,18 @@
 .ak-face {
   --ak-s: 44px;
   display: inline-flex; position: relative;
-  width: var(--ak-s);
+  width: var(--ak-s); height: var(--ak-s);
+  background: #171b21;
+  border-radius: calc(var(--ak-s) * 0.34);
+  box-shadow: 0 6px 18px rgba(20,26,32,0.28);
+  align-items: center; justify-content: center;
   animation: akfloat 3.4s ease-in-out infinite;
 }
-.ak-face-img {
-  width: 100%; height: auto; display: block;
-  filter: drop-shadow(0 6px 14px rgba(226,60,120,0.3));
+.ak-face b {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 800; font-size: calc(var(--ak-s) * 0.5);
+  color: #f4f0e4; line-height: 1; letter-spacing: -0.02em;
+  transform: translateY(-4%);
 }
 @keyframes akfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 
